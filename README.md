@@ -76,19 +76,18 @@ npm run tauri dev
 
 O pacote resultante contém o `.txt` UltraStar, o áudio `.ogg`, a capa `[CO].jpg` (quando encontrada) e, se solicitado, o vídeo `.mp4`. Pode ser carregado no UltraStar Deluxe ou no UltraStar Play.
 
+5. (Opcional) Clique em **Revisar alinhamento** ao final — ou em "Revisar um pacote já gerado..." na tela inicial — para abrir o editor de revisão: ouça a música (mix completo ou só o vocal isolado, se os intermediários foram mantidos), arraste notas no tempo/pitch, ajuste durações, sílabas e quebras de frase, desloque o GAP global e salve para regenerar o `.txt`.
+
 ## Estado do projeto
 
-Funcional de ponta a ponta pela interface gráfica. As quatro etapas de escopo estão concluídas:
+Funcional de ponta a ponta pela interface gráfica. Todas as etapas de escopo estão concluídas:
 
 - **Pipeline Python** — geração de pacotes jogáveis validada com músicas reais.
 - **Núcleo em Rust** — escrita do `.txt` com saída idêntica à do protótipo Python, coberta por testes.
 - **Integração Tauri + UI** — fluxo completo pela interface, com log ao vivo e barra de progresso.
 - **Metadados e vídeo** — capa/ano/gênero automáticos (fonte local e rede) e vídeo do YouTube opcional no pacote.
-
-### Próximos passos possíveis
-
-- Empacotamento para distribuição (PyInstaller + `externalBin` do Tauri).
-- Tela de revisão manual do alinhamento (estilo Yass).
+- **Distribuição** — instalador NSIS + setup assistido do ambiente de IA (`setup-sidecar.ps1`).
+- **Revisão manual** — editor estilo Yass integrado: timeline com waveform, playback (mix ou só vocal), ajuste de notas por arrastar/teclado, quebras de frase, GAP global e undo/redo; salvar regrava o `song_data.json` e regenera o `.txt` pelo núcleo Rust.
 
 ## Licença
 
