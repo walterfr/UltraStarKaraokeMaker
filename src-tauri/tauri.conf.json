@@ -14,14 +14,27 @@
       "all": true
     },
     "bundle": {
-      "active": false,
-      "targets": "all",
-      "identifier": "com.uskmaker.app",
+      "active": true,
+      "targets": ["nsis"],
+      "identifier": "br.com.walterfr.uskmaker",
       "icon": [
         "icons/32x32.png",
         "icons/128x128.png",
         "icons/icon.ico"
-      ]
+      ],
+      "resources": [
+        "../python-sidecar/main.py",
+        "../python-sidecar/verify_setup.py",
+        "../python-sidecar/requirements.txt",
+        "../python-sidecar/pipeline/*.py",
+        "../scripts/setup-sidecar.ps1"
+      ],
+      "windows": {
+        "nsis": {
+          "installMode": "perMachine",
+          "languages": ["PortugueseBR", "English"]
+        }
+      }
     },
     "security": {
       "csp": null

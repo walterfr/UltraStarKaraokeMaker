@@ -31,13 +31,21 @@
 // nova para o frontend via evento `pipeline-log`. Mais simples e muito
 // mais robusto no Windows.
 //
-// SIMPLIFICAÇÃO CONHECIDA (Fase 2, ainda não é produção): o caminho do
-// python-sidecar é resolvido via CARGO_MANIFEST_DIR (pasta irmã de
-// src-tauri dentro do repositório). Isso funciona bem em desenvolvimento,
-// mas não sobrevive a um build empacotado para distribuição - quando
-// chegarmos lá, o caminho correto é compilar o python-sidecar com
-// PyInstaller e referenciá-lo via `externalBin` do Tauri (sidecar de
-// verdade, não só "chamar python instalado").
+// DISTRIBUIÇÃO (07/07/2026): o caminho do python-sidecar agora é resolvido
+// em CASCATA, suportando dev e produção com o mesmo binário:
+//   1. DEV: CARGO_MANIFEST_DIR/../python-sidecar com venv local (o fluxo
+//      de desenvolvimento continua idêntico ao que sempre foi).
+//   2. PRODUÇÃO (app instalado): o CÓDIGO do sidecar é empacotado como
+//      resource do Tauri (só os .py, poucos KB) e o VENV é criado pelo
+//      usuário via scripts/setup-sidecar.ps1 em %LOCALAPPDATA%\USKMaker\venv
+//      (fora do Program Files, que é somente-leitura). Decisão consciente:
+//      NÃO usamos PyInstaller - empacotar torch CUDA geraria um binário de
+//      vários GB (não cabe em release do GitHub, limite 2 GB/arquivo) e o
+//      PyInstaller é frágil com whisperx/demucs. O venv real, criado na
+//      máquina do usuário com o build de torch certo pro hardware dele
+//      (CUDA ou CPU), é mais robusto e mais leve de distribuir.
+// Detalhe do Tauri v1: resources declarados com "../" são instalados sob
+// uma pasta "_up_" dentro do resource_dir - a resolução checa esse caminho.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -83,16 +91,52 @@ struct PipelineResult {
     genre: Option<String>,
 }
 
-/// Pasta do python-sidecar, resolvida a partir da pasta deste crate
-/// (src-tauri) em tempo de compilação. Ver nota de simplificação no topo
-/// do arquivo.
-fn sidecar_root() -> PathBuf {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    Path::new(manifest_dir).join("..").join("python-sidecar")
-}
+/// Resolução em cascata do sidecar (ver nota DISTRIBUIÇÃO no topo).
+/// Retorna (pasta do código python, caminho do python.exe do venv).
+fn resolve_sidecar(app: &tauri::AppHandle) -> Result<(PathBuf, PathBuf), String> {
+    // 1) DEV: pasta irmã do repositório, com venv local (fluxo clássico).
+    let dev_code = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("python-sidecar");
+    let dev_python = dev_code.join("venv").join("Scripts").join("python.exe");
+    if dev_python.exists() {
+        return Ok((dev_code, dev_python));
+    }
 
-fn venv_python() -> PathBuf {
-    sidecar_root().join("venv").join("Scripts").join("python.exe")
+    // 2) PRODUÇÃO: código nos resources do app + venv no LOCALAPPDATA.
+    let resource_dir = app
+        .path_resolver()
+        .resource_dir()
+        .ok_or_else(|| "Não foi possível localizar a pasta de resources do app.".to_string())?;
+    // Tauri v1 instala resources declarados com "../" sob "_up_".
+    let code_candidates = [
+        resource_dir.join("_up_").join("python-sidecar"),
+        resource_dir.join("python-sidecar"),
+    ];
+    let code_dir = code_candidates
+        .iter()
+        .find(|p| p.join("main.py").exists())
+        .cloned()
+        .ok_or_else(|| {
+            "Código do sidecar não encontrado nos resources do app (reinstale o USKMaker).".to_string()
+        })?;
+
+    let local_app_data = std::env::var("LOCALAPPDATA")
+        .map_err(|_| "Variável LOCALAPPDATA não definida.".to_string())?;
+    let venv_python = Path::new(&local_app_data)
+        .join("USKMaker")
+        .join("venv")
+        .join("Scripts")
+        .join("python.exe");
+
+    if !venv_python.exists() {
+        return Err(format!(
+            "O ambiente de IA ainda não foi configurado.\n\n\
+             Execute o script 'setup-sidecar.ps1' (na pasta de instalação do USKMaker) \
+             uma única vez para instalar as dependências. Esperado em: {}",
+            venv_python.display()
+        ));
+    }
+
+    Ok((code_dir, venv_python))
 }
 
 /// Acompanha um arquivo de log que está sendo escrito por outro processo
@@ -150,16 +194,12 @@ fn read_new_lines(path: &Path, last_pos: &mut u64, leftover: &mut String, window
 }
 
 #[tauri::command]
-async fn run_pipeline(window: Window, input: PipelineInput) -> Result<PipelineResult, String> {
-    let sidecar_dir = sidecar_root();
-    let python_exe = venv_python();
-
-    if !python_exe.exists() {
-        return Err(format!(
-            "Python do venv não encontrado em '{}'. Confira se o venv do python-sidecar foi criado (ver README).",
-            python_exe.display()
-        ));
-    }
+async fn run_pipeline(
+    app: tauri::AppHandle,
+    window: Window,
+    input: PipelineInput,
+) -> Result<PipelineResult, String> {
+    let (sidecar_dir, python_exe) = resolve_sidecar(&app)?;
 
     let out_dir = PathBuf::from(&input.out_dir);
     std::fs::create_dir_all(&out_dir)

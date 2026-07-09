@@ -33,7 +33,18 @@ O pipeline tem seis etapas:
 
 ## Instalação
 
-### 1. Sidecar Python
+### Opção A — Instalador (recomendado para uso)
+
+1. Baixe o instalador (`USKMaker_x.y.z_x64-setup.exe`) na página de [Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases) e instale normalmente.
+2. Instale o [Python 3.12](https://www.python.org/downloads/) (marque "Add python.exe to PATH").
+3. Na pasta de instalação do USKMaker, execute **uma única vez** o script `setup-sidecar.ps1` (clique-direito → "Executar com PowerShell"). Ele detecta sua GPU, cria o ambiente de IA em `%LOCALAPPDATA%\USKMaker` e instala as dependências (≈ 10 min, requer internet).
+4. Abra o USKMaker e use. Na primeira música, os modelos de IA são baixados automaticamente (~2 GB, só na primeira vez).
+
+Requisitos: Windows 10/11, [ffmpeg](https://www.gyan.dev/ffmpeg/builds/) no PATH com `libvorbis`, e (opcional, mas muito recomendado) GPU NVIDIA — sem ela o processamento roda em CPU, ~10 min por música.
+
+### Opção B — Ambiente de desenvolvimento
+
+#### 1. Sidecar Python
 
 ```powershell
 cd python-sidecar
@@ -49,7 +60,7 @@ Se `CUDA` retornar `False`, revise o driver/versão CUDA antes de continuar (o p
 
 > **Nota:** o WhisperX baixa modelos na primeira execução e pode pedir um token do Hugging Face. Configure-o via variável de ambiente `HF_TOKEN` ou pelo login do `huggingface-cli`. **Nunca** coloque o token dentro do código.
 
-### 2. App Tauri
+#### 2. App Tauri
 
 ```powershell
 npm install
