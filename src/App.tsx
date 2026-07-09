@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/api/dialog";
+import ReviewScreen from "./review/ReviewScreen";
 
 // USKMaker - Fase 2: primeira UI real, chamando o pipeline Python (via
 // Rust/Tauri) e o rust-core (ultrastar_writer) para o .txt final.
@@ -33,6 +34,8 @@ function App() {
   const [outDir, setOutDir] = useState("");
 
   const [isRunning, setIsRunning] = useState(false);
+  // Fase 4: quando não-nulo, a tela de revisão manual substitui o formulário.
+  const [reviewDir, setReviewDir] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PipelineResult | null>(null);
@@ -134,11 +137,25 @@ function App() {
     await invoke("open_folder", { path: result.outDir });
   }
 
+  async function pickPackageToReview() {
+    const selected = await openDialog({ directory: true, multiple: false });
+    if (typeof selected === "string") {
+      setReviewDir(selected);
+    }
+  }
+
+  if (reviewDir) {
+    return <ReviewScreen outDir={reviewDir} onClose={() => setReviewDir(null)} />;
+  }
+
   return (
     <div>
       <h1>USKMaker</h1>
       <p className="subtitle">
-        Gere pacotes UltraStar (letra sincronizada + pitch) a partir de um link do YouTube ou arquivo local.
+        Gere pacotes UltraStar (letra sincronizada + pitch) a partir de um link do YouTube ou arquivo local.{" "}
+        <button className="link-button" onClick={pickPackageToReview} disabled={isRunning}>
+          Revisar um pacote já gerado...
+        </button>
       </p>
 
       <div className="source-toggle">
@@ -310,6 +327,9 @@ function App() {
           </p>
           <button className="secondary" onClick={openOutputFolder}>
             Abrir pasta
+          </button>{" "}
+          <button className="secondary" onClick={() => setReviewDir(result.outDir)}>
+            Revisar alinhamento
           </button>
         </div>
       )}

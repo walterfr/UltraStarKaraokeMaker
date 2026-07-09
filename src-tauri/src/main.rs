@@ -321,6 +321,98 @@ async fn run_pipeline(
     })
 }
 
+// ---------------------------------------------------------------------------
+// Tela de revisão manual (estilo Yass) - Fase 4.
+//
+// O contrato continua o mesmo da arquitetura original: o song_data.json é a
+// fonte da verdade e o rust-core é o único que escreve o .txt. A tela de
+// revisão carrega esse JSON, deixa o usuário ajustar notas/tempos/quebras na
+// UI e, ao salvar, regrava o JSON E regenera o .txt pelo mesmo caminho de
+// código já validado - nada de segunda implementação do formato.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReviewData {
+    song: Song,
+    /// Áudio do pacote (.ogg) - None se o arquivo sumiu da pasta.
+    audio_path: Option<String>,
+    /// Stem vocal isolado (se a pasta _work foi mantida) - ouvir só a voz
+    /// facilita muito conferir o timing das sílabas.
+    vocals_path: Option<String>,
+    out_dir: String,
+}
+
+#[tauri::command]
+fn load_song(out_dir: String) -> Result<ReviewData, String> {
+    let dir = PathBuf::from(&out_dir);
+    let json_path = dir.join("song_data.json");
+    if !json_path.exists() {
+        return Err(format!(
+            "Não encontrei 'song_data.json' em '{}'. Selecione a pasta de um pacote \
+             gerado pelo USKMaker (a mesma escolhida como saída na geração).",
+            dir.display()
+        ));
+    }
+    let song = Song::from_json_file(&json_path)
+        .map_err(|e| format!("Erro ao ler '{}': {}", json_path.display(), e))?;
+
+    let audio = dir.join(&song.mp3_filename);
+    let audio_path = audio
+        .exists()
+        .then(|| audio.to_string_lossy().to_string());
+
+    // O stem vocal fica em _work/stems/htdemucs/<nome da música>/vocals.wav
+    // quando o usuário NÃO marcou "remover intermediários".
+    let mut vocals_path = None;
+    let stems_dir = dir.join("_work").join("stems").join("htdemucs");
+    if let Ok(entries) = std::fs::read_dir(&stems_dir) {
+        for entry in entries.flatten() {
+            let candidate = entry.path().join("vocals.wav");
+            if candidate.exists() {
+                vocals_path = Some(candidate.to_string_lossy().to_string());
+                break;
+            }
+        }
+    }
+
+    Ok(ReviewData {
+        song,
+        audio_path,
+        vocals_path,
+        out_dir: dir.to_string_lossy().to_string(),
+    })
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SaveResult {
+    txt_path: String,
+    /// Avisos de validação (ex.: notas sobrepostas) - o arquivo é escrito
+    /// mesmo assim, espelhando o comportamento de sempre do rust-core.
+    warnings: Vec<String>,
+}
+
+#[tauri::command]
+fn save_song(out_dir: String, song: Song) -> Result<SaveResult, String> {
+    let dir = PathBuf::from(&out_dir);
+
+    let json_path = dir.join("song_data.json");
+    let json = serde_json::to_string_pretty(&song)
+        .map_err(|e| format!("Erro ao serializar o song_data.json: {}", e))?;
+    std::fs::write(&json_path, json)
+        .map_err(|e| format!("Erro ao gravar '{}': {}", json_path.display(), e))?;
+
+    let txt_path = dir.join(format!("{} - {}.txt", song.artist, song.title));
+    song.write(&txt_path)
+        .map_err(|e| format!("Erro ao escrever '{}': {}", txt_path.display(), e))?;
+
+    Ok(SaveResult {
+        txt_path: txt_path.to_string_lossy().to_string(),
+        warnings: song.validate_no_overlap(),
+    })
+}
+
 #[tauri::command]
 fn open_folder(path: String) -> Result<(), String> {
     // Windows-only por enquanto (Fase 2 é dev no Windows) - abre o
@@ -334,7 +426,12 @@ fn open_folder(path: String) -> Result<(), String> {
 
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![run_pipeline, open_folder])
+        .invoke_handler(tauri::generate_handler![
+            run_pipeline,
+            open_folder,
+            load_song,
+            save_song
+        ])
         .run(tauri::generate_context!())
         .expect("erro ao rodar a aplicação Tauri");
 }

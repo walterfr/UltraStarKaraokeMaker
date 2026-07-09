@@ -205,3 +205,165 @@ button.secondary {
   color: #b8b8c4;
   word-break: break-all;
 }
+
+/* ---------------------------------------------------------------------------
+   Fase 4: tela de revisão manual do alinhamento (estilo Yass)
+   --------------------------------------------------------------------------- */
+
+/* A tela de revisão precisa de largura: quando ela está montada, o #root
+   abandona o max-width de formulário. */
+#root:has(.review-screen) {
+  max-width: 1500px;
+}
+
+.review-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.6rem;
+}
+.review-header h2 {
+  font-size: 1.15rem;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.review-header-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.submit-button.compact {
+  margin-top: 0;
+  padding: 0.45rem 1rem;
+  font-size: 0.9rem;
+}
+
+.review-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+.review-toolbar button,
+.review-toolbar select {
+  background: #1b1b24;
+  border: 1px solid #33333f;
+  color: #e8e8ec;
+  border-radius: 6px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  width: auto;
+}
+.review-toolbar button:hover {
+  border-color: #4f8ef7;
+}
+.toolbar-sep {
+  width: 1px;
+  height: 22px;
+  background: #33333f;
+  margin: 0 0.4rem;
+}
+.inline-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.85rem;
+}
+.gap-input {
+  width: 90px !important;
+  padding: 0.3rem 0.5rem !important;
+}
+.gap-step {
+  padding: 0.35rem 0.5rem !important;
+  font-family: ui-monospace, monospace;
+}
+
+.review-canvas {
+  width: 100%;
+  height: 380px;
+  display: block;
+  background: #121218;
+  border: 1px solid #262632;
+  border-radius: 8px;
+  user-select: none;
+  touch-action: none;
+}
+
+.review-hints {
+  color: #77778a;
+  font-size: 0.75rem;
+  margin: 0.4rem 0 0.8rem;
+}
+
+.note-inspector {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.8rem;
+  background: #17171f;
+  border: 1px solid #262632;
+  border-radius: 8px;
+  padding: 0.8rem 1rem;
+}
+.note-inspector .field-group {
+  margin-bottom: 0;
+  min-width: 90px;
+  flex: 0 0 auto;
+}
+.note-inspector input[type="number"] {
+  width: 110px;
+}
+.note-inspector input[type="text"] {
+  width: 140px;
+}
+.inspector-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-left: auto;
+  align-items: flex-end;
+}
+.note-time {
+  color: #9a9aa8;
+  font-size: 0.8rem;
+  font-family: ui-monospace, monospace;
+}
+button.danger {
+  background: #2a1418;
+  border: 1px solid #5c2028;
+  color: #ff9fa8;
+  border-radius: 6px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+button.danger:hover {
+  border-color: #e8554d;
+}
+
+.result-box.slim {
+  padding: 0.6rem 1rem;
+  margin-top: 0.8rem;
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: #4f8ef7;
+  cursor: pointer;
+  font-size: inherit;
+  padding: 0;
+  text-decoration: underline;
+}
+.link-button:hover {
+  color: #7fabf9;
+}
