@@ -1,0 +1,23 @@
+{
+  "title": "Sangue Latino",
+  "artist": "Rita Lee",
+  "mp3_filename": "Rita Lee - Sangue Latino.ogg",
+  "bpm": 123.05,
+  "gap_ms": 0,
+  "version": "1.0.0",
+  "genre": null,
+  "year": null,
+  "language": "pt",
+  "cover_filename": null,
+  "video_filename": null,
+  "background_filename": null,
+  "creator": "USKMaker",
+  "notes": [
+    {"start_beat": 266, "duration_beats": 2, "pitch": -3, "text": "Ju", "note_type": ":"},
+    {"start_beat": 268, "duration_beats": 3, "pitch": -1, "text": "~rei ", "note_type": ":"},
+    {"start_beat": 271, "duration_beats": 3, "pitch": 2, "text": "men", "note_type": ":"},
+    {"start_beat": 274, "duration_beats": 3, "pitch": 5, "text": "~ti", "note_type": ":"},
+    {"start_beat": 471, "duration_beats": 1, "pitch": 0, "text": "é ", "note_type": "F"}
+  ],
+  "phrase_breaks_after_index": [1]
+}

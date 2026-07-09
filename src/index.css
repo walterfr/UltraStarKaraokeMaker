@@ -1,0 +1,207 @@
+:root {
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #121218;
+  color: #e8e8ec;
+}
+
+#root {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+
+h1 {
+  font-size: 1.6rem;
+  margin-bottom: 0.25rem;
+}
+
+.subtitle {
+  color: #9a9aa8;
+  margin-top: 0;
+  margin-bottom: 2rem;
+  font-size: 0.95rem;
+}
+
+.field-group {
+  margin-bottom: 1rem;
+}
+
+label {
+  display: block;
+  font-size: 0.85rem;
+  color: #b8b8c4;
+  margin-bottom: 0.3rem;
+}
+
+input[type="text"],
+input[type="number"],
+textarea,
+select {
+  width: 100%;
+  box-sizing: border-box;
+  background: #1b1b24;
+  border: 1px solid #33333f;
+  color: #e8e8ec;
+  border-radius: 6px;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.95rem;
+}
+
+textarea {
+  min-height: 140px;
+  font-family: ui-monospace, monospace;
+  resize: vertical;
+}
+
+.row {
+  display: flex;
+  gap: 1rem;
+}
+.row > * {
+  flex: 1;
+}
+
+.source-toggle {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.source-toggle button {
+  flex: 1;
+  padding: 0.5rem;
+  border-radius: 6px;
+  border: 1px solid #33333f;
+  background: #1b1b24;
+  color: #b8b8c4;
+  cursor: pointer;
+}
+.source-toggle button.active {
+  background: #3d5afe;
+  border-color: #3d5afe;
+  color: white;
+}
+
+.file-picker {
+  display: flex;
+  gap: 0.5rem;
+}
+.file-picker input {
+  flex: 1;
+}
+
+.checkbox-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  font-size: 0.82rem;
+  color: #9a9aa8;
+  cursor: pointer;
+}
+.checkbox-line input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  cursor: pointer;
+}
+.file-picker button,
+button.secondary {
+  background: #262632;
+  border: 1px solid #33333f;
+  color: #e8e8ec;
+  border-radius: 6px;
+  padding: 0.55rem 0.9rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.submit-button {
+  width: 100%;
+  padding: 0.8rem;
+  margin-top: 1.5rem;
+  background: #3d5afe;
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.submit-button:disabled {
+  background: #2a2a38;
+  color: #6b6b78;
+  cursor: not-allowed;
+}
+
+.progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+.progress-bar {
+  flex: 1;
+  height: 8px;
+  background: #1b1b24;
+  border: 1px solid #33333f;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: #3d5afe;
+  border-radius: 6px 0 0 6px;
+  transition: width 0.4s ease;
+}
+.progress-label {
+  font-size: 0.8rem;
+  color: #9a9aa8;
+  white-space: nowrap;
+  min-width: 90px;
+  text-align: right;
+}
+
+.log-console {
+  background: #0a0a0e;
+  border: 1px solid #262632;
+  border-radius: 8px;
+  padding: 0.8rem 1rem;
+  margin-top: 1.5rem;
+  max-height: 320px;
+  overflow-y: auto;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  color: #9fd88b;
+  white-space: pre-wrap;
+}
+
+.error-box {
+  background: #2a1418;
+  border: 1px solid #5c2028;
+  color: #ff9fa8;
+  border-radius: 8px;
+  padding: 0.8rem 1rem;
+  margin-top: 1.5rem;
+  font-size: 0.9rem;
+}
+
+.result-box {
+  background: #12251a;
+  border: 1px solid #24512f;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 1.5rem;
+}
+.result-box h3 {
+  margin-top: 0;
+  color: #7ee095;
+}
+.result-box p {
+  font-size: 0.85rem;
+  color: #b8b8c4;
+  word-break: break-all;
+}

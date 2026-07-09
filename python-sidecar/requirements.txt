@@ -1,0 +1,70 @@
+# USKMaker - python-sidecar
+# Dependências do pipeline de IA.
+#
+# Testado em: NVIDIA RTX 4060 (8GB VRAM), CUDA
+# Python: 3.12 (testado com 3.12.10)
+#
+# INSTALAÇÃO RECOMENDADA (Windows, PowerShell):
+#   python -m venv venv
+#   .\venv\Scripts\Activate.ps1
+#   pip install --upgrade pip
+#   pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu126
+#   pip install -r requirements.txt
+#
+# NOTA: não fixar a versão do torch - deixe o pip resolver a versão mais
+# recente compatível com o Python instalado e com o build CUDA escolhido
+# (aqui usamos cu126, correspondente ao driver testado). Fixar versões
+# antigas quebra em Python 3.12+, que não tem wheels para elas.
+#
+# Verifique antes: `nvidia-smi` deve mostrar um driver CUDA recente.
+# Depois de instalar, confirme com:
+#   python -c "import torch; print(torch.cuda.is_available())"
+# Se retornar False, revise o driver CUDA antes de continuar (o pipeline
+# foi pensado para rodar em GPU).
+
+# --- Download / extração de áudio ---
+yt-dlp>=2024.4.9
+
+# --- Separação vocal ---
+demucs>=4.0.1
+
+# --- Forced alignment / transcrição ---
+# whisperx traz o whisper + wav2vec2 CTC para alinhamento por palavra
+git+https://github.com/m-bain/whisperx.git
+
+# --- Pitch tracking ---
+# SwiftF0 é mais leve/rápido que CREPE e roda bem em 8GB de VRAM
+# (versão corrigida - o PyPI só tem até 0.1.x até o momento desta escrita)
+swift-f0>=0.1.2
+# Fallback / comparação (opcional, mais pesado, usa TensorFlow):
+# crepe>=0.0.13
+# tensorflow>=2.10,<2.11  # última versão com suporte CUDA nativo no Windows
+
+# --- Beat / BPM detection ---
+librosa>=0.10.1
+
+# --- Separação silábica PT-BR ---
+pyphen>=0.15.0
+
+# --- Metadados (Fase 3): capa/ano/gênero automáticos ---
+# mutagen: lê tags embutidas no arquivo de áudio (FLAC/MP3/etc), incluindo
+# capa embutida - fonte primária, offline, instantânea.
+mutagen>=1.47.0
+# requests: consultas HTTP ao MusicBrainz + Cover Art Archive (fonte
+# secundária, quando o arquivo não traz metadados embutidos). APIs abertas,
+# sem chave. Pillow valida/converte a imagem de capa baixada.
+requests>=2.31.0
+Pillow>=10.0.0
+
+# --- Utilidades ---
+# NOTA: numpy 2.x é exigido pelo whisperx moderno (>=2.1.0). Historicamente
+# libs de áudio mais antigas (ex.: demucs) tinham problemas com numpy 2.0
+# (aliases removidos como np.float/np.complex) - se o demucs falhar em
+# runtime por causa disso, o ajuste é ou atualizar o demucs ou aplicar um
+# patch pontual no código dele, não voltar pro numpy 1.x (o whisperx não
+# aceita mais isso).
+numpy>=2.1.0
+soundfile>=0.12.1
+ffmpeg-python>=0.2.0
+pydub>=0.25.1
+rich>=13.7.0          # logs bonitos no terminal para acompanhar o progresso das etapas

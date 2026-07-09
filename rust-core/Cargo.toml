@@ -1,0 +1,21 @@
+[package]
+name = "uskmaker-core"
+version = "0.1.0"
+edition = "2021"
+description = "USKMaker - núcleo Rust do gerador de pacotes UltraStar (Fase 1: ultrastar_writer)"
+
+# Fase 1: crate standalone (lib + bin de teste), ainda sem Tauri.
+# Na Fase 2, este crate é incorporado a src-tauri/ como dependência local
+# ou movido diretamente para dentro do projeto Tauri.
+
+[lib]
+name = "uskmaker_core"
+path = "src/lib.rs"
+
+[[bin]]
+name = "uskmaker-writer"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

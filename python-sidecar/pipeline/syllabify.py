@@ -1,0 +1,58 @@
+"""
+syllabify.py
+Quebra cada palavra alinhada em sílabas, já que o UltraStar espera
+(idealmente) uma sílaba cantável por nota, não a palavra inteira.
+
+Usa pyphen (hifenização) com dicionário pt_BR como base. Isso NÃO é
+perfeito para canto (hifenização ortográfica != divisão silábica cantada
+- ex.: elisões, contrações regionais), mas é um ponto de partida sólido.
+Casos que vão exigir ajuste manual futuro (Fase 4 - tela de revisão):
+  - Elisão cantada ("de + eu" -> "d'eu")
+  - Palavras estendidas por vários beats (ex.: "amoooor")
+  - Ad-libs e vocalizações sem "palavra" real
+"""
+
+from __future__ import annotations
+
+import pyphen
+
+_dic = pyphen.Pyphen(lang="pt_BR")
+
+
+def split_word_syllables(word: str) -> list[str]:
+    """
+    Retorna a lista de sílabas de uma palavra, preservando pontuação simples
+    (mantida na última sílaba para não quebrar a leitura da letra na tela).
+    """
+    if not word:
+        return []
+
+    # separa pontuação de borda (vírgula, ponto, reticências etc.) para não
+    # atrapalhar a hifenização, e devolve depois
+    core = word.strip()
+    leading_punct = ""
+    trailing_punct = ""
+
+    while core and not core[0].isalnum():
+        leading_punct += core[0]
+        core = core[1:]
+    while core and not core[-1].isalnum():
+        trailing_punct = core[-1] + trailing_punct
+        core = core[:-1]
+
+    if not core:
+        return [word]
+
+    hyphenated = _dic.inserted(core)  # ex.: "ca-ro-lin-da"
+    syllables = hyphenated.split("-")
+
+    syllables[0] = leading_punct + syllables[0]
+    syllables[-1] = syllables[-1] + trailing_punct
+
+    return syllables
+
+
+if __name__ == "__main__":
+    # teste manual rápido
+    for w in ["coração", "saudade,", "impossível...", "é"]:
+        print(w, "->", split_word_syllables(w))

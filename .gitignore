@@ -1,0 +1,45 @@
+# USKMaker - .gitignore
+
+# --- Ambientes virtuais Python ---
+venv/
+env/
+.venv/
+__pycache__/
+*.pyc
+
+# --- Segredos e credenciais (NUNCA versionar) ---
+.env
+*.token
+hf_token.txt
+
+# --- Dados de trabalho / saída de testes (pesados, não versionar) ---
+python-sidecar/work/
+python-sidecar/output_test/
+*.wav
+*.mp3
+*.webm
+
+# Exceção: mantenha músicas de exemplo pequenas versionadas se precisar
+# (ajuste manualmente se algum dia quiser versionar um áudio específico)
+
+# --- Modelos de IA baixados (Demucs, Whisper, etc. - muito pesados) ---
+*.pt
+*.ckpt
+*.bin
+*.onnx
+
+# --- Rust / Tauri ---
+# Ignora QUALQUER pasta target/ (artefatos de build do Cargo) em qualquer
+# nível do projeto - tanto src-tauri/target/ quanto rust-core/target/.
+# (Antes só src-tauri/target/ estava listado, e o rust-core/target/ acabava
+# entrando no commit por engano - centenas de .o/.rlib/.exe/.pdb.)
+target/
+**/target/
+node_modules/
+dist/
+
+# --- IDE / SO ---
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
