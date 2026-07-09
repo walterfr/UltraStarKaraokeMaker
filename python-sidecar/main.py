@@ -42,7 +42,7 @@ from pathlib import Path
 import soundfile as sf
 from rich.console import Console
 
-from pipeline.align import align_lyrics_to_audio
+from pipeline.align import align_lyrics_to_audio, alignment_stats
 from pipeline.beatgrid import detect_bpm
 from pipeline.build_song import build_song
 from pipeline.download import get_source_audio
@@ -153,19 +153,21 @@ def run_pipeline(
     )
     debug_log(f"ETAPA 4 - concluída. {len(word_timings)} palavras")
 
-    anchored_count = sum(1 for w in word_timings if w.anchored)
-    interpolated_count = len(word_timings) - anchored_count
+    stats = alignment_stats(word_timings)
+    by_source = stats["by_source"]
+    interpolated_count = by_source["interpolated"]
     console.print(f"[green]OK[/green] {len(word_timings)} palavras processadas.")
     console.print(
-        f"    [dim]{anchored_count} ancoradas (medidas direto no áudio) / "
-        f"{interpolated_count} interpoladas[/dim]"
+        f"    [dim]{by_source['anchor']} âncora exata / {by_source['fuzzy']} fuzzy / "
+        f"{by_source['realign']} realinhadas no 2º passe / "
+        f"{interpolated_count} interpoladas (estimadas)[/dim]"
     )
     if interpolated_count:
         pct = 100 * interpolated_count / len(word_timings)
         console.print(
-            f"[yellow]AVISO[/yellow] {pct:.1f}% das palavras foram interpoladas "
-            "(sem correspondência direta no que o Whisper reconheceu) - "
-            "revisar se aparecerem muitas seguidas no mesmo trecho."
+            f"[yellow]AVISO[/yellow] {pct:.1f}% das palavras ficaram interpoladas "
+            "(não foi possível medi-las no áudio, nem no 2º passe) - "
+            f"maiores sequências seguidas: {stats['interpolated_runs']}."
         )
 
     # Checagem de cobertura: avisa se a letra termina muito antes do áudio

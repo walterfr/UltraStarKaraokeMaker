@@ -13,7 +13,7 @@ O pipeline tem seis etapas:
 1. **Obter áudio** — baixa do YouTube (via `yt-dlp`) ou normaliza um arquivo local para WAV. Opcionalmente baixa também o vídeo, para fundo animado no jogo.
 2. **Separação vocal** — isola voz e instrumental com Demucs (`htdemucs`).
 3. **Detecção de BPM** — estima o andamento com librosa.
-4. **Alinhamento letra-áudio** — WhisperX transcreve livremente o áudio e mede timestamps acústicos reais; em seguida, a transcrição é casada com a letra fornecida por *âncora + interpolação* (`difflib.SequenceMatcher`). Palavras que casam viram âncoras com timestamp medido; as demais são interpoladas entre âncoras vizinhas.
+4. **Alinhamento letra-áudio** — em quatro passes: WhisperX transcreve livremente o áudio e mede timestamps acústicos reais; a transcrição é casada com a letra fornecida (`difflib.SequenceMatcher`) gerando *âncoras exatas*; palavras que o Whisper grafou diferente ("tá"/"está", "pra"/"para") são recuperadas por *âncoras fuzzy* (similaridade de caracteres com pareamento monotônico); trechos ainda sem âncora passam por um *segundo forced alignment* (wav2vec2) restrito à janela de áudio entre as âncoras vizinhas, com o texto que falta; o que restar é interpolado com peso proporcional ao número de sílabas.
 5. **Metadados** — busca capa, ano e gênero em cascata: primeiro as tags embutidas no arquivo, depois MusicBrainz + Cover Art Archive para o que faltar.
 6. **Montagem** — extrai o pitch por sílaba (SwiftF0), separa sílabas (pyphen) e monta o arquivo `.txt` no formato UltraStar, com áudio convertido para `.ogg`.
 

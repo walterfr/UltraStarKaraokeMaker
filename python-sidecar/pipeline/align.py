@@ -5,78 +5,63 @@ pelo usuário ao áudio vocal isolado, obtendo timestamp de início/fim por
 palavra. Isso é "forced alignment", diferente de "transcrição" (o UltraSinger
 transcreve do zero; aqui, o texto já é conhecido e confiável).
 
-REESCRITA (06/07/2026, 3ª rodada de testes) - troca de estratégia de
-alinhamento:
+HISTÓRICO DE ESTRATÉGIAS:
 
-ABORDAGEM ANTIGA (mapeamento proporcional): dividia a letra real em pedaços
-e substituía o texto de cada segmento do Whisper por um desses pedaços,
-proporcionalmente por CONTAGEM de palavras. Funcionava bem na maior parte
-da música, mas tinha um ponto fraco real: palavras curtas/muito comuns
-("e", "a", "o") podiam ficar "grudadas" no timestamp de uma ocorrência
-ERRADA da mesma palavra em outro lugar da música, já que a distribuição
-proporcional não tem nenhuma forma de saber se a palavra que ela está
-posicionando ali é realmente aquela ocorrência específica. Confirmado em
-dois testes reais diferentes (Sangue Latino, "20 e poucos anos") - a letra
-"trava" numa palavra isolada com timestamp muito adiantado/atrasado, e só
-"pula" quando a próxima palavra corretamente posicionada aparece.
+1ª ABORDAGEM (mapeamento proporcional) - descartada: dividia a letra real em
+pedaços e substituía o texto de cada segmento do Whisper proporcionalmente
+por CONTAGEM de palavras. Palavras curtas/comuns ("e", "a", "o") podiam
+"grudar" no timestamp de uma ocorrência ERRADA em outro lugar da música.
+Confirmado em dois testes reais (Sangue Latino, "20 e poucos anos").
 
-ABORDAGEM NOVA (âncora + interpolação):
-  1. Deixa o Whisper transcrever o áudio LIVREMENTE (sem substituir nada) e
-     alinha essa transcrição própria - isso dá timestamps de alta confiança
-     para tudo que o Whisper efetivamente RECONHECEU no áudio (mesmo que a
-     ortografia/pontuação não bata 100% com a letra real).
-  2. Compara essa transcrição do Whisper com a letra real fornecida pelo
-     usuário usando difflib.SequenceMatcher (mesma família de algoritmo do
-     `diff` do Unix) - isso encontra os trechos onde as duas sequências de
-     palavras REALMENTE coincidem, sem exigir correspondência perfeita em
-     toda a música.
-  3. Para cada palavra da letra real que teve uma correspondência exata
-     (uma "âncora"), usa o timestamp que o Whisper mediu de verdade no
-     áudio - alta confiança, baseado em detecção acústica real.
-  4. Para palavras SEM correspondência (o Whisper errou/não reconheceu),
-     interpola o timestamp linearmente entre a âncora anterior e a
-     seguinte mais próximas - o erro fica contido a um intervalo pequeno
-     (entre duas âncoras vizinhas), não mais espalhado pela música toda.
+2ª ABORDAGEM (âncora + interpolação, 06/07/2026): o Whisper transcreve
+LIVREMENTE e essa transcrição própria é alinhada (timestamps acústicos
+reais); difflib.SequenceMatcher casa a transcrição com a letra real; cada
+palavra casada vira "âncora" com timestamp medido; as demais são
+interpoladas linearmente entre âncoras vizinhas. Erro fica confinado a
+janelas pequenas, mas trechos longos sem âncora ficavam com distribuição
+uniforme (irreal) e qualquer palavra que o Whisper grafasse diferente
+("tá" vs "está") perdia a âncora sem necessidade.
 
-Isso reduz drasticamente o tipo de erro visto nos testes reais: em vez de
-uma palavra isolada "roubar" o timestamp de uma ocorrência errada em
-qualquer lugar da música, o pior caso agora é uma palavra sem âncora
-própria ficar com um timestamp interpolado dentro de uma janela pequena e
-localizada (entre as duas âncoras vizinhas mais próximas).
+3ª ABORDAGEM (atual, 09/07/2026) - refinamento em quatro passes:
+  1. ÂNCORAS EXATAS: como antes (SequenceMatcher sobre palavras
+     normalizadas), timestamps medidos pelo whisperx para todo match exato.
+  2. ÂNCORAS FUZZY: dentro dos blocos que o diff marcou como "replace"
+     (Whisper ouviu ALGO ali, mas grafou diferente), casa palavras
+     quase-iguais (similaridade de caracteres, pareamento monotônico por
+     programação dinâmica). Insight: se o Whisper ouviu "cara" onde a letra
+     diz "casa", o EVENTO ACÚSTICO é o mesmo - o timestamp é bom, só a
+     grafia difere. Recupera "pra"/"para", "tá"/"está", plurais etc.
+  3. REALINHAMENTO ACÚSTICO DOS GAPS: para cada sequência de palavras ainda
+     sem âncora, roda whisperx.align() de novo SÓ na janela de áudio entre
+     as âncoras vizinhas, com o texto real que falta. O wav2vec2 faz forced
+     alignment de verdade dentro da janela - a palavra passa a ser MEDIDA,
+     não estimada. Resolve inclusive o caso de pausa instrumental no meio
+     do gap (a interpolação linear espalhava palavras pela pausa; o
+     alinhador acústico as localiza do lado certo).
+  4. INTERPOLAÇÃO PONDERADA (último fallback): o que ainda restar é
+     interpolado entre âncoras vizinhas com peso proporcional ao nº de
+     sílabas (aproximado por grupos de vogais) - "coração" ganha mais tempo
+     que "e" - em vez da distribuição uniforme antiga.
 
 DESCOBERTA IMPORTANTE (validada em teste real - "Sangue Latino", 05/07/2026):
 - O score de confiança do whisperx.align() vem sistematicamente baixo
   (às vezes 0.00-0.35) em trechos CANTADOS, mesmo quando o timestamp está
-  correto. Isso é esperado: o modelo de alinhamento fonético (wav2vec2 CTC)
-  foi treinado majoritariamente em fala, não em canto - vogais esticadas,
-  vibrato e variação de pitch distorcem a pronúncia de um jeito que a fala
-  normal não distorce, derrubando a confiança do modelo sem indicar erro
-  real de timing.
-- CONCLUSÃO PRÁTICA: não use o `score` sozinho como critério de "isso está
-  errado, descartar". Ele é mais um indicador de "baixa certeza fonética",
-  não de "timing incorreto". Trate os avisos de baixa confiança como
-  candidatos a checagem manual (ouvir o trecho), não como erros confirmados.
-  Na abordagem nova, palavras INTERPOLADAS (sem âncora) sempre recebem
-  score=0.0 explicitamente - é um sinal DIFERENTE do score fonético baixo
-  do whisperx, significa "esta palavra não foi medida, foi estimada".
+  correto. O modelo fonético (wav2vec2 CTC) foi treinado em fala; vogais
+  esticadas, vibrato e variação de pitch derrubam a confiança sem indicar
+  erro real de timing. NÃO use o score sozinho como critério de descarte -
+  trate como "baixa certeza fonética", candidato a checagem manual.
+- Palavras INTERPOLADAS (fallback final) sempre recebem score=0.0 -
+  sinal DIFERENTE do score fonético baixo: "não foi medida, foi estimada".
 
 DESCOBERTA CRÍTICA #2 (teste real - "Sangue Latino", 05/07/2026, 2ª rodada):
-- O UltraStar Deluxe e o UltraStar Play carregavam a música (reconheciam o
-  arquivo, mostravam capa/metadados) mas as notas NÃO rolavam na tela real
-  de canto, em AMBOS os engines. Causa raiz: o .txt gerado não tinha NENHUM
-  marcador de quebra de linha ("-") no arquivo inteiro. Corrigido propagando
+- O .txt sem NENHUM marcador de quebra de linha ("-") carrega mas as notas
+  NÃO rolam na tela de canto (UltraStar Deluxe E Play). Corrigido propagando
   qual palavra é a ÚLTIMA de cada linha da letra original (is_line_end).
 
 TODO conhecido:
-- A interpolação linear entre âncoras é uma aproximação simples. Para
-  trechos LONGOS sem nenhuma âncora (o Whisper errou muitas palavras
-  seguidas), a distribuição fica uniforme mesmo que o ritmo real da fala
-  não seja uniforme - ainda é um alvo razoável para a futura tela de
-  revisão manual (Fase 4) ajustar.
 - Alternativa mais "pura" de forced alignment (sem depender do Whisper para
-  segmentação): Montreal Forced Aligner (MFA) ou aeneas. Vale comparar
-  qualidade em PT-BR se a abordagem de âncora+interpolação ainda deixar
-  muitos casos sem âncora.
+  segmentação): Montreal Forced Aligner (MFA) ou aeneas. Só vale investigar
+  se o passe de realinhamento acústico ainda deixar casos ruins em PT-BR.
 
 Uso isolado (teste manual):
     python -m pipeline.align --vocals ./work/stems/htdemucs/musica/vocals.wav \
@@ -89,10 +74,15 @@ import argparse
 import difflib
 import json
 import re
+import unicodedata
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
-import whisperx
+# Fontes de timestamp, da mais confiável para a menos:
+SOURCE_ANCHOR = "anchor"          # match exato com a transcrição livre (medido)
+SOURCE_FUZZY = "fuzzy"            # match aproximado de grafia (medido)
+SOURCE_REALIGN = "realign"        # 2º passe de forced alignment na janela (medido)
+SOURCE_INTERPOLATED = "interpolated"  # estimado entre vizinhos (NÃO medido)
 
 
 @dataclass
@@ -100,16 +90,16 @@ class WordTiming:
     word: str
     start: float  # segundos
     end: float    # segundos
-    score: float  # confiança FONÉTICA do alinhamento (0-1) quando ANCORADA
-    # (medida de verdade pelo whisperx). Quando INTERPOLADA (sem
-    # correspondência no que o Whisper reconheceu), é sempre 0.0 - um sinal
-    # diferente do score fonético baixo, significa "estimada, não medida".
+    score: float  # confiança FONÉTICA do alinhamento (0-1) quando MEDIDA
+    # pelo whisperx. Quando INTERPOLADA é sempre 0.0 - um sinal diferente
+    # do score fonético baixo, significa "estimada, não medida".
     is_line_end: bool = False  # True se esta é a última palavra de uma
     # linha/frase da letra original - usado pelo build_song.py para saber
     # onde inserir os marcadores de quebra de frase ("-") no .txt final.
-    anchored: bool = True  # False = timestamp interpolado (sem
-    # correspondência direta na transcrição do Whisper) - útil para
-    # diagnóstico/revisão manual futura.
+    anchored: bool = True  # True = timestamp MEDIDO no áudio (âncora exata,
+    # fuzzy ou realinhamento de janela); False = interpolado/estimado.
+    source: str = SOURCE_ANCHOR  # qual passe produziu o timestamp - ver
+    # constantes SOURCE_* acima. Diagnóstico/revisão manual futura.
 
 
 def _load_lyrics_words_with_line_ends(lyrics_path: Path) -> tuple[list[str], list[bool]]:
@@ -142,7 +132,251 @@ def _normalize_word(word: str) -> str:
     preservando acentos - remover acentos criaria falsos positivos entre
     palavras diferentes em português (ex.: "e" vs "é").
     """
-    return re.sub(r"[^\w\u00C0-\u00FF]", "", word.lower())
+    return re.sub(r"[^\wÀ-ÿ]", "", word.lower())
+
+
+_VOWEL_GROUP_RE = re.compile(r"[aeiouyáàâãäéèêëíìîïóòôõöúùûü]+", re.IGNORECASE)
+
+
+def _syllable_weight(word: str) -> int:
+    """
+    Estimativa barata do nº de sílabas (grupos de vogais) para ponderar a
+    interpolação - não precisa ser hifenização perfeita, só capturar que
+    "coração" dura mais que "e". Mínimo 1.
+    """
+    return max(1, len(_VOWEL_GROUP_RE.findall(_normalize_word(word))))
+
+
+# Cada âncora é (start, end, score, source); None = ainda sem timestamp medido.
+Anchor = tuple[float, float, float, str]
+
+
+def _fold_accents(word: str) -> str:
+    """
+    Remove acentos SÓ para a comparação fuzzy ("tá" deve casar com "está").
+    O match EXATO continua preservando acentos (ver _normalize_word) - lá,
+    remover acentos criaria falsos positivos em palavras de 1 letra ("e" vs
+    "é"); aqui, palavras de 1 letra já ficam fora do fuzzy.
+    """
+    return "".join(
+        c for c in unicodedata.normalize("NFD", word) if unicodedata.category(c) != "Mn"
+    )
+
+
+def _fuzzy_pairs(
+    whisper_block: list[str],
+    real_block: list[str],
+    threshold: float = 0.6,
+) -> list[tuple[int, int]]:
+    """
+    Pareamento monotônico ótimo (programação dinâmica, estilo LCS) entre dois
+    blocos de palavras normalizadas, maximizando a soma das similaridades de
+    caracteres acima de `threshold`. Retorna pares (idx_whisper, idx_real).
+
+    Palavras de 1 caractere ficam de fora (similaridade de caracteres não
+    diz nada útil sobre "e"/"a"/"o").
+    """
+    n, m = len(whisper_block), len(real_block)
+    if n == 0 or m == 0 or n * m > 250_000:
+        return []
+
+    whisper_folded = [_fold_accents(w) for w in whisper_block]
+    real_folded = [_fold_accents(w) for w in real_block]
+
+    sims = [[0.0] * m for _ in range(n)]
+    for i, a in enumerate(whisper_folded):
+        if len(a) < 2:
+            continue
+        for j, b in enumerate(real_folded):
+            if len(b) < 2:
+                continue
+            r = difflib.SequenceMatcher(None, a, b).ratio()
+            if r >= threshold:
+                sims[i][j] = r
+
+    # dp[i][j] = melhor soma usando whisper_block[i:] e real_block[j:]
+    dp = [[0.0] * (m + 1) for _ in range(n + 1)]
+    for i in range(n - 1, -1, -1):
+        for j in range(m - 1, -1, -1):
+            best = max(dp[i + 1][j], dp[i][j + 1])
+            if sims[i][j] > 0.0:
+                best = max(best, sims[i][j] + dp[i + 1][j + 1])
+            dp[i][j] = best
+
+    pairs: list[tuple[int, int]] = []
+    i = j = 0
+    while i < n and j < m:
+        if sims[i][j] > 0.0 and abs(dp[i][j] - (sims[i][j] + dp[i + 1][j + 1])) < 1e-9:
+            pairs.append((i, j))
+            i += 1
+            j += 1
+        elif dp[i + 1][j] >= dp[i][j + 1]:
+            i += 1
+        else:
+            j += 1
+    return pairs
+
+
+def compute_anchors(
+    whisper_words: list[dict],
+    real_words: list[str],
+) -> list[Anchor | None]:
+    """
+    Passes 1 e 2: âncoras exatas (SequenceMatcher) + âncoras fuzzy dentro
+    dos blocos "replace", seguidas da demoção de âncoras suspeitas.
+
+    Retorna uma lista paralela a `real_words`: (start, end, score, source)
+    para palavras com timestamp medido, None para as demais.
+    """
+    whisper_norm = [_normalize_word(w.get("word", "")) for w in whisper_words]
+    real_norm = [_normalize_word(w) for w in real_words]
+
+    matcher = difflib.SequenceMatcher(None, whisper_norm, real_norm, autojunk=False)
+    anchors: list[Anchor | None] = [None] * len(real_words)
+
+    def _anchor_from(w: dict, source: str) -> Anchor:
+        return (
+            float(w.get("start", 0.0)),
+            float(w.get("end", 0.0)),
+            float(w.get("score", 0.0)),
+            source,
+        )
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            for offset in range(i2 - i1):
+                anchors[j1 + offset] = _anchor_from(whisper_words[i1 + offset], SOURCE_ANCHOR)
+        elif tag == "replace":
+            # O Whisper OUVIU algo neste trecho, só grafou diferente - se a
+            # grafia for parecida, o evento acústico é o mesmo e o timestamp
+            # medido vale ("cara" ouvido onde a letra diz "casa").
+            for bi, bj in _fuzzy_pairs(whisper_norm[i1:i2], real_norm[j1:j2]):
+                anchors[j1 + bj] = _anchor_from(whisper_words[i1 + bi], SOURCE_FUZZY)
+
+    _demote_suspicious_anchors(anchors, real_norm)
+    return anchors
+
+
+def _demote_suspicious_anchors(anchors: list[Anchor | None], real_norm: list[str]) -> None:
+    """
+    Demove (vira None) âncoras EXATAS de palavras muito curtas (<= 2 chars)
+    que estão isoladas no meio de um gap grande: um "e"/"de" casado sozinho
+    dentro de um trecho que o Whisper inteiro errou tem boa chance de ser a
+    ocorrência errada, e uma âncora errada envenena a interpolação E parte a
+    janela do realinhamento acústico no lugar errado. Sem ela, o passe de
+    realinhamento mede o trecho inteiro de uma vez.
+    """
+    n = len(anchors)
+    for j in range(n):
+        a = anchors[j]
+        if a is None or a[3] != SOURCE_ANCHOR or len(real_norm[j]) > 2:
+            continue
+        if (j > 0 and anchors[j - 1] is not None) or (j + 1 < n and anchors[j + 1] is not None):
+            continue  # não está isolada
+        # tamanho do gap ao redor (vizinhos None contíguos de cada lado)
+        before = 0
+        k = j - 1
+        while k >= 0 and anchors[k] is None:
+            before += 1
+            k -= 1
+        after = 0
+        k = j + 1
+        while k < n and anchors[k] is None:
+            after += 1
+            k += 1
+        if before >= 3 and after >= 3:
+            anchors[j] = None
+
+
+def timings_from_anchors(
+    anchors: list[Anchor | None],
+    real_words: list[str],
+) -> list[WordTiming]:
+    """
+    Passe 4 (fallback final): converte âncoras em WordTiming, interpolando
+    as palavras sem âncora entre as âncoras vizinhas com peso proporcional
+    ao nº estimado de sílabas. Processa gap a gap (não palavra a palavra).
+    """
+    n = len(real_words)
+    results: list[WordTiming | None] = [None] * n
+
+    for idx in range(n):
+        a = anchors[idx]
+        if a is not None:
+            start, end, score, source = a
+            results[idx] = WordTiming(
+                word=real_words[idx], start=start, end=end,
+                score=score, anchored=True, source=source,
+            )
+
+    # processa cada run contígua de índices sem âncora
+    idx = 0
+    while idx < n:
+        if results[idx] is not None:
+            idx += 1
+            continue
+        run_start = idx
+        while idx < n and results[idx] is None:
+            idx += 1
+        run = list(range(run_start, idx))
+
+        prev_idx = run_start - 1  # ancorado ou -1
+        next_idx = idx            # ancorado ou n
+
+        weights = [_syllable_weight(real_words[k]) for k in run]
+
+        if prev_idx >= 0 and next_idx < n:
+            prev_end = anchors[prev_idx][1]
+            next_start = anchors[next_idx][0]
+            span = max(0.05 * (len(run) + 1), next_start - prev_end)
+            # reserva uma "respiração" média antes da âncora seguinte, para
+            # não colar a última palavra interpolada na próxima medida
+            breath = sum(weights) / len(weights)
+            total = sum(weights) + breath
+            t = prev_end
+            for k, w in zip(run, weights):
+                dur = span * w / total
+                results[k] = WordTiming(
+                    word=real_words[k], start=t, end=t + dur,
+                    score=0.0, anchored=False, source=SOURCE_INTERPOLATED,
+                )
+                t += dur
+        elif prev_idx >= 0:
+            # fim da música sem âncora seguinte: encadeia para frente a
+            # partir da última âncora, ~0.15s por sílaba
+            t = anchors[prev_idx][1]
+            for k, w in zip(run, weights):
+                dur = min(0.8, max(0.2, 0.15 * w))
+                results[k] = WordTiming(
+                    word=real_words[k], start=t, end=t + dur,
+                    score=0.0, anchored=False, source=SOURCE_INTERPOLATED,
+                )
+                t += dur
+        elif next_idx < n:
+            # início da música sem âncora anterior: encadeia para trás,
+            # terminando na primeira âncora
+            t = anchors[next_idx][0]
+            for k, w in zip(reversed(run), reversed(weights)):
+                dur = min(0.8, max(0.2, 0.15 * w))
+                start = max(0.0, t - dur)
+                results[k] = WordTiming(
+                    word=real_words[k], start=start, end=t,
+                    score=0.0, anchored=False, source=SOURCE_INTERPOLATED,
+                )
+                t = start
+        else:
+            # nenhuma âncora em toda a música - não deveria acontecer (o
+            # realinhamento de janela cobre esse caso antes), evita crash
+            t = 0.0
+            for k, w in zip(run, weights):
+                dur = min(0.8, max(0.2, 0.15 * w))
+                results[k] = WordTiming(
+                    word=real_words[k], start=t, end=t + dur,
+                    score=0.0, anchored=False, source=SOURCE_INTERPOLATED,
+                )
+                t += dur
+
+    return results  # type: ignore[return-value]
 
 
 def anchor_and_interpolate(
@@ -150,93 +384,125 @@ def anchor_and_interpolate(
     real_words: list[str],
 ) -> list[WordTiming]:
     """
-    Núcleo da nova estratégia de alinhamento (ver docstring do módulo).
-
-    `whisper_words`: saída bruta do whisperx.align() sobre a TRANSCRIÇÃO
-    PRÓPRIA do Whisper (não substituída) - cada item tem 'word'/'start'/
-    'end'/'score'.
-    `real_words`: a letra fornecida pelo usuário, palavra por palavra.
-
-    Usa difflib.SequenceMatcher para achar os trechos onde a transcrição
-    do Whisper e a letra real coincidem (as "âncoras"), e interpola
-    linearmente as palavras sem correspondência usando as âncoras vizinhas
-    mais próximas.
+    Estratégia completa SEM o passe acústico de janela (passes 1, 2 e 4).
+    Mantida como função pura (testável sem GPU); o realinhamento acústico
+    (passe 3) é aplicado por cima em align_lyrics_to_audio.
     """
-    whisper_norm = [_normalize_word(w.get("word", "")) for w in whisper_words]
-    real_norm = [_normalize_word(w) for w in real_words]
+    anchors = compute_anchors(whisper_words, real_words)
+    return timings_from_anchors(anchors, real_words)
 
-    matcher = difflib.SequenceMatcher(None, whisper_norm, real_norm, autojunk=False)
 
-    # anchors[j] = (start, end, score) para a palavra real_words[j], ou
-    # None se ainda não tem correspondência direta
-    anchors: list[tuple[float, float, float] | None] = [None] * len(real_words)
+def realign_gap_windows(
+    timings: list[WordTiming],
+    align_model,
+    align_metadata: dict,
+    audio,
+    device: str,
+) -> int:
+    """
+    Passe 3: para cada run contígua de palavras INTERPOLADAS, roda
+    whisperx.align() na janela de áudio entre as palavras medidas vizinhas,
+    com o texto real que falta - forced alignment de verdade, localizado.
+    Muta `timings` in-place; retorna quantas palavras foram promovidas a
+    SOURCE_REALIGN.
 
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        if tag != "equal":
+    Janela = [fim da última palavra MEDIDA antes da run, início da primeira
+    palavra MEDIDA depois]. Sem vizinho medido, usa o começo/fim do áudio -
+    o que cobre inclusive o caso extremo de música inteira sem âncora
+    (vira um forced alignment global).
+    """
+    import whisperx  # import local: função só roda no caminho com GPU/modelo
+
+    sample_rate = 16000  # whisperx.audio.SAMPLE_RATE
+    audio_duration = float(len(audio)) / sample_rate
+
+    n = len(timings)
+    promoted = 0
+    idx = 0
+    while idx < n:
+        if timings[idx].source != SOURCE_INTERPOLATED:
+            idx += 1
             continue
-        for offset in range(i2 - i1):
-            w = whisper_words[i1 + offset]
-            anchors[j1 + offset] = (
-                float(w.get("start", 0.0)),
-                float(w.get("end", 0.0)),
-                float(w.get("score", 0.0)),
+        run_start = idx
+        while idx < n and timings[idx].source == SOURCE_INTERPOLATED:
+            idx += 1
+        run = list(range(run_start, idx))
+
+        win_start = timings[run_start - 1].end if run_start > 0 else 0.0
+        win_end = timings[idx].start if idx < n else audio_duration
+        win_start = max(0.0, min(win_start, audio_duration))
+        win_end = max(0.0, min(win_end, audio_duration))
+
+        # janela precisa de espaço mínimo para o CTC ter o que medir
+        if win_end - win_start < 0.10 + 0.08 * len(run):
+            continue
+
+        segment = {
+            "start": win_start,
+            "end": win_end,
+            "text": " ".join(timings[k].word for k in run),
+        }
+        try:
+            result = whisperx.align(
+                [segment], align_model, align_metadata, audio, device,
+                interpolate_method="nearest", return_char_alignments=False,
             )
+        except Exception:
+            continue  # janela problemática não pode derrubar a pipeline
 
-    n = len(real_words)
-    results: list[WordTiming] = []
+        words_out = [w for seg in result.get("segments", []) for w in seg.get("words", [])]
+        if len(words_out) != len(run):
+            continue  # mapeamento ambíguo - fica com a interpolação
 
-    for idx in range(n):
-        anchor = anchors[idx]
-        if anchor is not None:
-            start, end, score = anchor
-            anchored = True
-        else:
-            anchored = False
-            score = 0.0
+        # valida antes de aplicar: timestamps presentes, dentro da janela
+        # (com folga) e monotônicos
+        new_times: list[tuple[float, float, float]] = []
+        ok = True
+        last_start = win_start - 0.001
+        for w in words_out:
+            ws, we = w.get("start"), w.get("end")
+            if ws is None or we is None:
+                ok = False
+                break
+            ws, we = float(ws), float(we)
+            if ws < win_start - 0.5 or we > win_end + 0.5 or ws < last_start:
+                ok = False
+                break
+            last_start = ws
+            new_times.append((ws, max(we, ws + 0.02), float(w.get("score", 0.0))))
+        if not ok:
+            continue
 
-            prev_idx = idx - 1
-            while prev_idx >= 0 and anchors[prev_idx] is None:
-                prev_idx -= 1
-            next_idx = idx + 1
-            while next_idx < n and anchors[next_idx] is None:
-                next_idx += 1
+        for k, (ws, we, score) in zip(run, new_times):
+            timings[k].start = ws
+            timings[k].end = we
+            timings[k].score = score
+            timings[k].anchored = True
+            timings[k].source = SOURCE_REALIGN
+            promoted += 1
 
-            if prev_idx >= 0 and next_idx < n:
-                prev_end = anchors[prev_idx][1]
-                next_start = anchors[next_idx][0]
-                gap_words = next_idx - prev_idx  # nº de "slots" entre as âncoras
-                position = idx - prev_idx  # posição desta palavra dentro do gap
-                span = max(0.05, next_start - prev_end)
-                per_word = span / gap_words
-                start = prev_end + per_word * (position - 1)
-                end = start + per_word
-            elif prev_idx >= 0:
-                # não há âncora seguinte (fim da música sem correspondência) -
-                # estende um pouco a partir da última âncora conhecida
-                prev_end = anchors[prev_idx][1]
-                start = prev_end
-                end = start + 0.3
-            elif next_idx < n:
-                # não há âncora anterior (início da música sem correspondência)
-                next_start = anchors[next_idx][0]
-                end = next_start
-                start = max(0.0, end - 0.3)
-            else:
-                # nenhuma âncora em toda a música - não deveria acontecer na
-                # prática, mas evita crash
-                start, end = 0.0, 0.3
+    return promoted
 
-        results.append(
-            WordTiming(
-                word=real_words[idx],
-                start=start,
-                end=end,
-                score=score,
-                anchored=anchored,
-            )
-        )
 
-    return results
+def alignment_stats(timings: list[WordTiming]) -> dict:
+    """Resumo por fonte + maiores runs ainda interpoladas (diagnóstico)."""
+    counts = {s: 0 for s in (SOURCE_ANCHOR, SOURCE_FUZZY, SOURCE_REALIGN, SOURCE_INTERPOLATED)}
+    for t in timings:
+        counts[t.source] = counts.get(t.source, 0) + 1
+
+    runs: list[int] = []
+    cur = 0
+    for t in timings:
+        if t.source == SOURCE_INTERPOLATED:
+            cur += 1
+        elif cur:
+            runs.append(cur)
+            cur = 0
+    if cur:
+        runs.append(cur)
+    runs.sort(reverse=True)
+
+    return {"total": len(timings), "by_source": counts, "interpolated_runs": runs[:5]}
 
 
 def align_lyrics_to_audio(
@@ -245,11 +511,14 @@ def align_lyrics_to_audio(
     language: str = "pt",
     device: str = "cuda",
     whisper_model_size: str = "medium",
+    realign_gaps: bool = True,
 ) -> list[WordTiming]:
     """
     Retorna uma lista de WordTiming na ordem da letra fornecida, usando a
-    estratégia de âncora+interpolação (ver docstring do módulo).
+    estratégia de 4 passes (ver docstring do módulo).
     """
+    import whisperx
+
     compute_type = "float16"  # bom para RTX 4060; usar "int8" se faltar VRAM
 
     # 1) Transcrição LIVRE (sem substituir nada) - queremos saber o que o
@@ -271,10 +540,16 @@ def align_lyrics_to_audio(
         for w in seg.get("words", []):
             whisper_words.append(w)
 
-    # 3) Ancora a letra real nas palavras que o Whisper reconheceu, e
-    #    interpola o resto.
+    # 3) Âncoras exatas + fuzzy sobre a letra real; interpolação preliminar.
     real_words, line_end_flags = _load_lyrics_words_with_line_ends(lyrics_path)
     word_timings = anchor_and_interpolate(whisper_words, real_words)
+
+    # 4) Realinhamento acústico das janelas ainda interpoladas (reusa o
+    #    modelo wav2vec2 já carregado).
+    if realign_gaps:
+        promoted = realign_gap_windows(word_timings, align_model, metadata, audio, device)
+        if promoted:
+            print(f"[INFO] Realinhamento de janela: {promoted} palavras medidas no 2º passe.")
 
     for wt, is_end in zip(word_timings, line_end_flags):
         wt.is_line_end = is_end
@@ -283,35 +558,37 @@ def align_lyrics_to_audio(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Etapa 4: forced alignment letra<->áudio (Fase 0 - teste isolado)")
+    parser = argparse.ArgumentParser(description="Etapa 4: forced alignment letra<->áudio (teste isolado)")
     parser.add_argument("--vocals", required=True, help="Arquivo .wav do vocal isolado")
     parser.add_argument("--lyrics", required=True, help="Arquivo .txt com a letra (uma linha por frase)")
     parser.add_argument("--language", default="pt")
     parser.add_argument("--device", default="cuda", choices=["cuda", "cpu"])
     parser.add_argument("--whisper_model", default="medium")
+    parser.add_argument("--no-realign", action="store_true",
+                        help="Desliga o passe de realinhamento acústico das janelas (para comparar)")
     parser.add_argument("--out", default="./work/align.json")
     args = parser.parse_args()
 
     timings = align_lyrics_to_audio(
-        Path(args.vocals), Path(args.lyrics), args.language, args.device, args.whisper_model
+        Path(args.vocals), Path(args.lyrics), args.language, args.device,
+        args.whisper_model, realign_gaps=not args.no_realign,
     )
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps([asdict(t) for t in timings], ensure_ascii=False, indent=2), encoding="utf-8")
 
-    anchored_count = sum(1 for t in timings if t.anchored)
-    interpolated_count = len(timings) - anchored_count
+    stats = alignment_stats(timings)
+    by = stats["by_source"]
     line_ends = sum(1 for t in timings if t.is_line_end)
     print(
-        f"[OK] {len(timings)} palavras processadas ({anchored_count} ancoradas, "
-        f"{interpolated_count} interpoladas, {line_ends} marcadas como fim de linha). "
-        f"Salvo em {out_path}"
+        f"[OK] {stats['total']} palavras: {by[SOURCE_ANCHOR]} âncora exata, "
+        f"{by[SOURCE_FUZZY]} fuzzy, {by[SOURCE_REALIGN]} realinhadas (2º passe), "
+        f"{by[SOURCE_INTERPOLATED]} interpoladas; {line_ends} fins de linha. Salvo em {out_path}"
     )
-    if interpolated_count:
-        pct = 100 * interpolated_count / len(timings)
-        print(f"[INFO] {pct:.1f}% das palavras foram interpoladas (sem correspondência direta no Whisper).")
-        print("Palavras interpoladas ficam confinadas entre duas âncoras vizinhas - revisar se muitas seguidas:")
+    if by[SOURCE_INTERPOLATED]:
+        pct = 100 * by[SOURCE_INTERPOLATED] / stats["total"]
+        print(f"[INFO] {pct:.1f}% interpoladas (maiores sequências: {stats['interpolated_runs']}).")
         for t in timings:
-            if not t.anchored:
+            if t.source == SOURCE_INTERPOLATED:
                 print(f"   '{t.word}' @ {t.start:.2f}s (interpolada)")
