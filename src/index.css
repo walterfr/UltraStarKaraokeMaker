@@ -367,3 +367,26 @@ button.danger:hover {
 .link-button:hover {
   color: #7fabf9;
 }
+
+/* Proveniência do timing (cores por confiança) */
+.review-legend {
+  color: #9a9aa8;
+  font-size: 0.75rem;
+  margin: 0 0 0.8rem;
+}
+.legend-chip {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  vertical-align: baseline;
+  margin-right: 2px;
+}
+.note-source {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.review-toolbar button.jump-interpolated {
+  border-color: #d6802f;
+  color: #f0b573;
+}

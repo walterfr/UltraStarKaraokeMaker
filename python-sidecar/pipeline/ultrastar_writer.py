@@ -44,6 +44,10 @@ class Note:
     pitch: int
     text: str
     note_type: str = ":"  # ":" normal | "*" golden | "F" freestyle
+    source: str | None = None  # proveniência do timestamp da palavra de
+    # origem (anchor/fuzzy/realign/interpolated - ver align.py). Vai para o
+    # JSON intermediário para a tela de revisão colorir por confiança;
+    # NUNCA é escrito no .txt (não faz parte do formato UltraStar).
 
 
 @dataclass

@@ -28,7 +28,22 @@ interface USNote {
   pitch: number;
   text: string;
   note_type: string; // ":" normal | "*" golden | "F" freestyle
+  // Proveniência do timing (align.py): "anchor" | "fuzzy" | "realign" |
+  // "interpolated". Ausente em pacotes gerados antes desse campo existir.
+  source?: string | null;
 }
+
+// Cor de preenchimento por proveniência do timing - o olho do revisor deve
+// ir direto para o laranja ("interpolated" = timestamp estimado, não medido
+// no áudio). Golden/freestyle têm prioridade sobre a proveniência (são
+// informação de jogo, não de confiança).
+const SOURCE_COLORS: Record<string, string> = {
+  anchor: "#3d6fd6", // medido: match exato com a transcrição
+  fuzzy: "#2f9e8f", // medido: match aproximado de grafia
+  realign: "#7a5cd6", // medido: 2º passe de forced alignment na janela
+  interpolated: "#d6802f", // ESTIMADO: interpolação entre vizinhas - revisar!
+};
+const DEFAULT_NOTE_COLOR = "#3d6fd6";
 
 interface USSong {
   title: string;
@@ -376,7 +391,11 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
       const nh = Math.max(8, semitoneH - 2);
 
       ctx.fillStyle =
-        n.note_type === "F" ? "#4a4a58" : n.note_type === "*" ? "#c9a227" : "#3d6fd6";
+        n.note_type === "F"
+          ? "#4a4a58"
+          : n.note_type === "*"
+          ? "#c9a227"
+          : SOURCE_COLORS[n.source ?? ""] ?? DEFAULT_NOTE_COLOR;
       ctx.beginPath();
       ctx.roundRect(x, y, nw, nh, 3);
       ctx.fill();
@@ -791,6 +810,36 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
   }
 
   const sel = selected !== null ? song.notes[selected] : null;
+  // Pacotes antigos não têm o campo source - nesse caso a legenda e o botão
+  // de "pular para estimada" não fazem sentido e ficam ocultos.
+  const hasSourceInfo = song.notes.some((n) => n.source != null);
+  const interpolatedCount = song.notes.filter((n) => n.source === "interpolated").length;
+
+  function jumpToNextInterpolated() {
+    const s = songRef.current;
+    if (!s) return;
+    const from = selectedRef.current !== null ? selectedRef.current : -1;
+    const order = [...Array(s.notes.length).keys()];
+    // procura a partir da seleção atual, dando a volta no fim
+    const next = [...order.slice(from + 1), ...order.slice(0, from + 1)].find(
+      (i) => s.notes[i].source === "interpolated"
+    );
+    if (next === undefined) return;
+    setSelected(next);
+    selectedRef.current = next;
+    // centraliza a nota na viewport
+    const t = beatToSec(s, s.notes[next].start_beat);
+    const w = canvasRef.current?.clientWidth ?? 800;
+    viewRef.current.start = Math.max(0, t - w / viewRef.current.pxPerSec / 2);
+    draw();
+  }
+
+  const sourceLabels: Record<string, string> = {
+    anchor: "medida (match exato)",
+    fuzzy: "medida (grafia aproximada)",
+    realign: "medida (2º passe na janela)",
+    interpolated: "ESTIMADA (interpolada) — conferir",
+  };
 
   return (
     <div className="review-screen">
@@ -856,6 +905,18 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
         <button onClick={redo} title="Ctrl+Y">
           ↷ Refazer
         </button>
+        {hasSourceInfo && interpolatedCount > 0 && (
+          <>
+            <span className="toolbar-sep" />
+            <button
+              className="jump-interpolated"
+              onClick={jumpToNextInterpolated}
+              title="Seleciona e centraliza a próxima nota com timing estimado (não medido no áudio)"
+            >
+              ⚠ Próxima estimada ({interpolatedCount})
+            </button>
+          </>
+        )}
       </div>
 
       <canvas
@@ -874,6 +935,21 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
         nota · setas: ajuste fino (Shift+←→: duração) · Del: excluir · roda: rolar · Ctrl+roda: zoom
         · Espaço: tocar/pausar
       </p>
+
+      {hasSourceInfo && (
+        <p className="review-legend">
+          Timing:{" "}
+          <span className="legend-chip" style={{ background: SOURCE_COLORS.anchor }} /> medido
+          (exato){" "}
+          <span className="legend-chip" style={{ background: SOURCE_COLORS.fuzzy }} /> medido
+          (grafia≈){" "}
+          <span className="legend-chip" style={{ background: SOURCE_COLORS.realign }} /> medido (2º
+          passe){" "}
+          <span className="legend-chip" style={{ background: SOURCE_COLORS.interpolated }} />{" "}
+          estimado — conferir · <span className="legend-chip" style={{ background: "#c9a227" }} />{" "}
+          golden · <span className="legend-chip" style={{ background: "#4a4a58" }} /> freestyle
+        </p>
+      )}
 
       {sel !== null && selected !== null && (
         <div className="note-inspector">
@@ -944,6 +1020,14 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
               {beatToSec(song, sel.start_beat).toFixed(2)}s ·{" "}
               {(sel.duration_beats * beatDuration(song)).toFixed(2)}s de duração
             </span>
+            {sel.source != null && (
+              <span
+                className="note-source"
+                style={{ color: SOURCE_COLORS[sel.source] ?? "#9a9aa8" }}
+              >
+                {sourceLabels[sel.source] ?? sel.source}
+              </span>
+            )}
             <button className="danger" onClick={() => deleteNote(selected)}>
               Excluir nota
             </button>

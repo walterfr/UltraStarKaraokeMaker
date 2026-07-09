@@ -30,6 +30,12 @@ pub struct Note {
     pub text: String,
     #[serde(default = "default_note_type")]
     pub note_type: String, // ":" normal | "*" golden | "F" freestyle
+    /// Proveniência do timestamp da palavra de origem
+    /// (anchor/fuzzy/realign/interpolated - ver align.py do sidecar).
+    /// Diagnóstico para a tela de revisão colorir por confiança; NUNCA é
+    /// escrito no .txt. Opcional para compatibilidade com JSONs antigos.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 fn default_note_type() -> String {

@@ -128,6 +128,9 @@ def build_notes(
                     # nota de baixa confiança de pitch vira "F" (freestyle,
                     # não pontua) em vez de arriscar uma nota errada -
                     # decisão conservadora para revisar manualmente depois.
+                    source=wt.source,
+                    # proveniência do timing (herdada da palavra inteira) -
+                    # a tela de revisão usa para destacar notas estimadas.
                 )
             )
 
