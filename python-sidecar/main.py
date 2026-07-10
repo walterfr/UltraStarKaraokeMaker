@@ -45,7 +45,7 @@ from rich.console import Console
 from pipeline.align import align_lyrics_to_audio, alignment_stats
 from pipeline.beatgrid import detect_bpm
 from pipeline.build_song import build_song
-from pipeline.download import get_source_audio
+from pipeline.download import download_background_video, get_source_audio
 from pipeline.metadata import fetch_metadata
 from pipeline.proc_utils import run_subprocess
 from pipeline.separate import separate_vocals
@@ -105,6 +105,8 @@ def run_pipeline(
     manual_gap_ms: int,
     device: str,
     with_video: bool = False,
+    bg_video: bool = False,
+    bg_video_url: str | None = None,
     clean_work: bool = False,
 ):
     global _debug_log_path
@@ -130,6 +132,28 @@ def run_pipeline(
     console.print(f"[green]OK[/green] Áudio em: {source.audio_wav}")
     if source.video_path:
         console.print(f"[green]OK[/green] Vídeo baixado: {source.video_path}")
+
+    # Videoclipe de fundo para fonte LOCAL: o áudio do pacote continua sendo
+    # o arquivo do usuário (ex.: rip de CD, qualidade melhor que YouTube);
+    # o vídeo é só ilustração de fundo (#VIDEO). Com URL explícita usa ela;
+    # sem URL, busca o 1º resultado do YouTube por artista + título
+    # (geralmente o clipe oficial). NÃO-FATAL: sem vídeo, o pacote sai só
+    # com a capa - que já é o fallback natural do jogo.
+    if (bg_video or bg_video_url) and source.video_path is None:
+        query = (bg_video_url or "").strip() or f"ytsearch1:{artist} {title}"
+        console.print(f"[cyan]—[/cyan] Baixando videoclipe de fundo ({query})...")
+        debug_log(f"ETAPA 1b - baixando videoclipe de fundo: {query}")
+        bg_path = download_background_video(query, work_path / "bgvideo")
+        if bg_path:
+            source.video_path = bg_path
+            debug_log(f"ETAPA 1b - concluída. video={bg_path}")
+            console.print(f"[green]OK[/green] Videoclipe de fundo: {bg_path}")
+        else:
+            debug_log("ETAPA 1b - sem vídeo (falha não-fatal)")
+            console.print(
+                "[yellow]AVISO[/yellow] Não consegui baixar um videoclipe de fundo - "
+                "o pacote seguirá apenas com a imagem de capa."
+            )
 
     console.rule("[bold cyan]Etapa 2/6 — Separando vocal/instrumental (Demucs)")
     debug_log("ETAPA 2 - iniciando separate_vocals")
@@ -292,6 +316,17 @@ if __name__ == "__main__":
     parser.add_argument("--gap_ms", type=int, default=0, help="GAP manual em ms (ajustar após 1a rodada)")
     parser.add_argument("--device", default="cuda", choices=["cuda", "cpu"])
     parser.add_argument("--with-video", action="store_true", help="Baixar e incluir o vídeo do YouTube no pacote")
+    parser.add_argument(
+        "--bg-video",
+        action="store_true",
+        help="Fonte local: baixar do YouTube um videoclipe só para o fundo "
+        "(busca automática por artista + título; o áudio continua sendo o arquivo local)",
+    )
+    parser.add_argument(
+        "--bg-video-url",
+        default=None,
+        help="URL específica do videoclipe de fundo (implica --bg-video)",
+    )
     parser.add_argument("--clean-work", action="store_true", help="Remover a pasta _work (intermediários) ao final")
     args = parser.parse_args()
 
@@ -308,6 +343,8 @@ if __name__ == "__main__":
             manual_gap_ms=args.gap_ms,
             device=args.device,
             with_video=args.with_video,
+            bg_video=args.bg_video,
+            bg_video_url=args.bg_video_url,
             clean_work=args.clean_work,
         )
     except Exception:

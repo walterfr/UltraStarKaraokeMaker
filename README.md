@@ -69,7 +69,7 @@ npm run tauri dev
 
 ## Uso
 
-1. Escolha a fonte: link do YouTube ou arquivo de áudio local.
+1. Escolha a fonte: link do YouTube ou arquivo de áudio local. No modo arquivo local, você pode opcionalmente baixar um videoclipe do YouTube **só para o fundo** (`#VIDEO`) — o áudio do pacote continua sendo o seu arquivo (útil para coleções ripadas de CD, com qualidade melhor que a do YouTube). Informe o link do clipe ou deixe em branco para busca automática por artista + título; se nenhum vídeo for encontrado, o pacote sai só com a capa.
 2. Cole a letra — **uma linha por frase cantada**. Repita refrões por extenso, tantas vezes quantas forem cantados (não use "(2x)"); caso contrário, as repetições ficam sem notas.
 3. Preencha título, artista e idioma. O BPM é opcional (detectado automaticamente se em branco).
 4. Escolha a pasta de saída e gere.

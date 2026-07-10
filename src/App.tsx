@@ -30,6 +30,10 @@ function App() {
   const [language, setLanguage] = useState("pt");
   const [bpm, setBpm] = useState("");
   const [withVideo, setWithVideo] = useState(false);
+  // Fonte local: baixar videoclipe do YouTube só para o fundo (#VIDEO) -
+  // o áudio do pacote continua sendo o arquivo local (ex.: rip de CD).
+  const [bgVideo, setBgVideo] = useState(false);
+  const [bgVideoUrl, setBgVideoUrl] = useState("");
   const [cleanWork, setCleanWork] = useState(true);
   const [outDir, setOutDir] = useState("");
 
@@ -120,6 +124,8 @@ function App() {
           bpm: bpm.trim() ? parseFloat(bpm) : null,
           outDir: outDir.trim(),
           withVideo: sourceMode === "youtube" ? withVideo : false,
+          bgVideo: sourceMode === "file" ? bgVideo : false,
+          bgVideoUrl: sourceMode === "file" && bgVideo ? bgVideoUrl.trim() || null : null,
           cleanWork,
         },
       });
@@ -204,6 +210,25 @@ function App() {
               Procurar...
             </button>
           </div>
+          <label className="checkbox-line">
+            <input
+              type="checkbox"
+              checked={bgVideo}
+              onChange={(e) => setBgVideo(e.target.checked)}
+              disabled={isRunning}
+            />
+            Baixar videoclipe do YouTube para o fundo (o áudio continua sendo o seu arquivo; sem
+            vídeo disponível, fica só a capa)
+          </label>
+          {bgVideo && (
+            <input
+              type="text"
+              value={bgVideoUrl}
+              onChange={(e) => setBgVideoUrl(e.target.value)}
+              placeholder="Link do videoclipe (opcional — em branco, busca automática por artista + título)"
+              disabled={isRunning}
+            />
+          )}
         </div>
       )}
 

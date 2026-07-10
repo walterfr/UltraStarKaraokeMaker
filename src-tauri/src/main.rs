@@ -72,6 +72,14 @@ struct PipelineInput {
     out_dir: String,
     #[serde(default)]
     with_video: bool,
+    /// Fonte local: baixar um videoclipe do YouTube só para o fundo
+    /// (#VIDEO) - o áudio do pacote continua sendo o arquivo local.
+    #[serde(default)]
+    bg_video: bool,
+    /// URL específica do videoclipe de fundo; vazia = busca automática
+    /// por artista + título no YouTube.
+    #[serde(default)]
+    bg_video_url: Option<String>,
     #[serde(default)]
     clean_work: bool,
 }
@@ -241,6 +249,16 @@ async fn run_pipeline(
 
     if input.with_video {
         cmd.arg("--with-video");
+    }
+
+    match &input.bg_video_url {
+        Some(url) if !url.trim().is_empty() => {
+            cmd.arg("--bg-video-url").arg(url.trim());
+        }
+        _ if input.bg_video => {
+            cmd.arg("--bg-video");
+        }
+        _ => {}
     }
 
     if input.clean_work {

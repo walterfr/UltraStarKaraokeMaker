@@ -126,6 +126,59 @@ def download_from_youtube_with_video(url: str, out_dir: Path) -> SourceAudio:
     return SourceAudio(audio_wav=audio_wav, video_path=video_path)
 
 
+def download_background_video(url_or_query: str, out_dir: Path) -> Path | None:
+    """
+    Baixa SÓ a trilha de VÍDEO do YouTube, para servir de fundo (#VIDEO) de
+    um pacote cujo áudio veio de arquivo local (caso típico: coleção ripada
+    de CD com qualidade melhor que a do YouTube; o clipe é só ilustração).
+
+    `url_or_query` pode ser uma URL do YouTube OU uma busca no formato
+    "ytsearch1:artista título" (yt-dlp resolve a busca e baixa o 1º
+    resultado - geralmente o clipe oficial, que é o mais relevante).
+
+    Diferenças para download_from_youtube_with_video:
+      - NÃO baixa a trilha de áudio (o áudio do pacote é o arquivo local do
+        usuário; vídeo sem áudio é menor e o UltraStar toca o vídeo mudo de
+        qualquer forma). Se só existir stream combinado, cai para ele.
+      - NÃO-FATAL: qualquer falha (sem resultado, rede, formato) retorna
+        None - o pacote segue normalmente só com a capa (#COVER), que já é
+        o fallback natural do jogo quando não há #VIDEO.
+      - Limita a 1080p: fundo de karaokê não precisa de 4K, e o arquivo
+        fica muito menor.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Reaproveita download anterior (mesma filosofia das etapas raw/stems:
+    # reprocessar uma música não deve baixar tudo de novo).
+    existing = sorted(out_dir.glob("bgvideo.*"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if existing:
+        print(f"[OK] Videoclipe de fundo já baixado, reaproveitando: {existing[0]}")
+        return existing[0]
+
+    # nome fixo (em pasta própria) - evita a heurística de "arquivo mais
+    # recente por extensão" usada na pasta raw, que poderia confundir com
+    # outros artefatos
+    output_template = str(out_dir / "bgvideo.%(ext)s")
+
+    cmd = _yt_dlp_base_cmd() + [
+        "-f", "bestvideo[ext=mp4][height<=1080]/bestvideo[height<=1080]/best[ext=mp4]/best",
+        "--no-playlist",
+        "-o", output_template,
+        url_or_query,
+    ]
+    try:
+        run_subprocess(cmd)
+    except Exception as e:
+        print(f"[AVISO] Download do videoclipe de fundo falhou (seguindo sem vídeo): {e}")
+        return None
+
+    candidates = sorted(out_dir.glob("bgvideo.*"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not candidates:
+        print("[AVISO] yt-dlp rodou mas nenhum vídeo de fundo foi encontrado (seguindo sem vídeo).")
+        return None
+    return candidates[0]
+
+
 def normalize_local_file(file_path: Path, out_dir: Path) -> Path:
     """
     Para um mp3/wav local: copia para a pasta de trabalho e garante .wav
