@@ -4,7 +4,7 @@ Gerador de pacotes de karaokê **UltraStar** a partir de um link do YouTube ou d
 
 O diferencial em relação a ferramentas como o UltraSinger é que o USKMaker parte da **letra que o usuário já fornece**. O problema passa a ser de *forced alignment* (alinhar uma letra conhecida ao áudio), não de transcrição do zero — o que resulta em sincronização bem mais precisa, especialmente em português.
 
-Todo o processamento é **local**: não depende de APIs pagas nem envia áudio para serviços externos. As únicas consultas de rede são a bancos abertos e gratuitos (MusicBrainz e Cover Art Archive) para enriquecer metadados, e o download do YouTube quando essa é a fonte escolhida.
+Todo o processamento é **local**: não depende de APIs pagas nem envia áudio para serviços externos. As únicas consultas de rede são a bancos abertos e gratuitos (MusicBrainz/Cover Art Archive, iTunes, Deezer e — opcionalmente, com token pessoal — Discogs) para enriquecer metadados, e o download do YouTube quando solicitado.
 
 ## Como funciona
 
@@ -14,7 +14,7 @@ O pipeline tem seis etapas:
 2. **Separação vocal** — isola voz e instrumental com Demucs (`htdemucs`).
 3. **Detecção de BPM** — estima o andamento com librosa.
 4. **Alinhamento letra-áudio** — em quatro passes: WhisperX transcreve livremente o áudio e mede timestamps acústicos reais; a transcrição é casada com a letra fornecida (`difflib.SequenceMatcher`) gerando *âncoras exatas*; palavras que o Whisper grafou diferente ("tá"/"está", "pra"/"para") são recuperadas por *âncoras fuzzy* (similaridade de caracteres com pareamento monotônico); trechos ainda sem âncora passam por um *segundo forced alignment* (wav2vec2) restrito à janela de áudio entre as âncoras vizinhas, com o texto que falta; o que restar é interpolado com peso proporcional ao número de sílabas.
-5. **Metadados** — busca capa, ano e gênero em cascata: primeiro as tags embutidas no arquivo, depois MusicBrainz + Cover Art Archive para o que faltar.
+5. **Metadados** — busca capa, ano e gênero em cascata, cada fonte preenchendo só o que ainda falta: tags embutidas no arquivo → MusicBrainz + Cover Art Archive → iTunes (capa 600x600, ano e gênero) → Deezer (capa 1000px) → Discogs (opcional: defina a variável de ambiente `DISCOGS_TOKEN` com um [token pessoal gratuito](https://www.discogs.com/settings/developers); sem ela, a fonte é pulada).
 6. **Montagem** — extrai o pitch por sílaba (SwiftF0), separa sílabas (pyphen) e monta o arquivo `.txt` no formato UltraStar, com áudio convertido para `.ogg`.
 
 ## Stack
@@ -95,4 +95,4 @@ MIT. Veja o arquivo [LICENSE](LICENSE).
 
 ## Créditos
 
-Apoia-se em: [WhisperX](https://github.com/m-bain/whisperx), [Demucs](https://github.com/facebookresearch/demucs), [librosa](https://librosa.org/), [SwiftF0](https://github.com/lars76/swift-f0), [yt-dlp](https://github.com/yt-dlp/yt-dlp), [Tauri](https://tauri.app/), [MusicBrainz](https://musicbrainz.org/) e [Cover Art Archive](https://coverartarchive.org/). Inspiração de fluxo: [UltraSinger](https://github.com/rakuri255/UltraSinger).
+Apoia-se em: [WhisperX](https://github.com/m-bain/whisperx), [Demucs](https://github.com/facebookresearch/demucs), [librosa](https://librosa.org/), [SwiftF0](https://github.com/lars76/swift-f0), [yt-dlp](https://github.com/yt-dlp/yt-dlp), [Tauri](https://tauri.app/), [MusicBrainz](https://musicbrainz.org/), [Cover Art Archive](https://coverartarchive.org/), [iTunes Search API](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/), [Deezer API](https://developers.deezer.com/api) e [Discogs](https://www.discogs.com/developers). Inspiração de fluxo: [UltraSinger](https://github.com/rakuri255/UltraSinger).

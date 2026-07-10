@@ -16,6 +16,18 @@ ESTRATÉGIA EM CASCATA (da fonte mais confiável/barata para a mais custosa):
      embutidos). Sempre tentada primeiro.
   2. MusicBrainz + Cover Art Archive - APIs abertas, sem chave, usadas só
      para preencher o que faltou na etapa 1. Requer rede.
+  3. iTunes Search API - sem chave/cadastro; além da capa (pedida em
+     600x600), a MESMA resposta traz ano e gênero - preenche o que ainda
+     faltar.
+  4. Deezer API - sem chave/cadastro; capa cover_xl (1000px). Catálogo
+     forte de música brasileira.
+  5. Discogs (OPCIONAL) - a API de busca exige token pessoal (gratuito,
+     mas requer conta). Só é consultada se a variável de ambiente
+     DISCOGS_TOKEN estiver definida; sem token, é pulada em silêncio.
+
+Cada fonte só é consultada para os campos que AINDA faltam, e qualquer
+falha degrada para a próxima fonte - a filosofia de "enriquecimento,
+nunca requisito" continua valendo para todas.
 
 REGRAS DO MUSICBRAINZ (respeitadas aqui, senão eles bloqueiam o IP):
   - User-Agent identificável e honesto é OBRIGATÓRIO.
@@ -29,6 +41,8 @@ REGRAS DO MUSICBRAINZ (respeitadas aqui, senão eles bloqueiam o IP):
 from __future__ import annotations
 
 import io
+import os
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -60,7 +74,8 @@ class SongMetadata:
     year: int | None = None
     genre: str | None = None
     cover_path: Path | None = None  # caminho local da capa já salva, se houver
-    source: str = "nenhuma"  # "arquivo", "musicbrainz", "arquivo+musicbrainz", "nenhuma"
+    source: str = "nenhuma"  # fontes usadas, unidas por "+" (ex.:
+    # "arquivo+itunes"); "nenhuma" quando nada foi encontrado
 
 
 def _respect_mb_rate_limit() -> None:
@@ -281,6 +296,148 @@ def _caa_download_cover(release_mbid: str, out_cover_path: Path) -> Path | None:
 
 
 # ---------------------------------------------------------------------------
+# Fonte 3: iTunes Search API (sem chave; capa + ano + gênero numa resposta)
+# ---------------------------------------------------------------------------
+
+def _itunes_search(artist: str, title: str) -> dict | None:
+    """
+    Busca a faixa no iTunes e retorna o primeiro resultado plausível (dict
+    cru da API), ou None. Sem autenticação; rate limit oficial é ~20 req/min,
+    irrelevante para 1 chamada por música.
+    """
+    try:
+        resp = requests.get(
+            "https://itunes.apple.com/search",
+            params={"term": f"{artist} {title}", "media": "music", "entity": "song", "limit": 5},
+            headers={"User-Agent": _USER_AGENT},
+            timeout=_HTTP_TIMEOUT,
+        )
+        resp.raise_for_status()
+        results = resp.json().get("results") or []
+        return results[0] if results else None
+    except Exception as e:
+        print(f"[metadata] aviso: busca no iTunes falhou ({e}) - seguindo sem ela.")
+        return None
+
+
+def _itunes_fill(meta: SongMetadata, artist: str, title: str, out_cover_path: Path) -> bool:
+    """
+    Preenche capa/ano/gênero que ainda faltem em `meta` a partir do iTunes.
+    Retorna True se usou algo da fonte.
+    """
+    result = _itunes_search(artist, title)
+    if not result:
+        return False
+
+    used = False
+
+    if meta.cover_path is None:
+        art_url = result.get("artworkUrl100")
+        if art_url:
+            # truque documentado pela comunidade: a URL do thumbnail aceita
+            # outras resoluções trocando o sufixo "100x100" (600x600 existe
+            # para praticamente todo o catálogo)
+            art_url = art_url.replace("100x100", "600x600")
+            try:
+                img = requests.get(art_url, headers={"User-Agent": _USER_AGENT}, timeout=_HTTP_TIMEOUT)
+                img.raise_for_status()
+                if _save_cover_image(img.content, out_cover_path):
+                    meta.cover_path = out_cover_path
+                    used = True
+            except Exception as e:
+                print(f"[metadata] aviso: download da capa do iTunes falhou ({e}).")
+
+    if meta.year is None:
+        m = re.search(r"\d{4}", result.get("releaseDate") or "")
+        if m:
+            meta.year = int(m.group())
+            used = True
+
+    if meta.genre is None:
+        genre = (result.get("primaryGenreName") or "").strip()
+        if genre and genre.lower() != "music":  # "Music" é o gênero-lixo genérico
+            meta.genre = genre
+            used = True
+
+    return used
+
+
+# ---------------------------------------------------------------------------
+# Fonte 4: Deezer API (sem chave; capa cover_xl de 1000px)
+# ---------------------------------------------------------------------------
+
+def _deezer_fetch_cover(artist: str, title: str, out_cover_path: Path) -> Path | None:
+    """Busca a faixa no Deezer e baixa a capa do álbum. Retorna o caminho ou None."""
+    try:
+        resp = requests.get(
+            "https://api.deezer.com/search",
+            params={"q": f'artist:"{artist}" track:"{title}"', "limit": 5},
+            headers={"User-Agent": _USER_AGENT},
+            timeout=_HTTP_TIMEOUT,
+        )
+        resp.raise_for_status()
+        results = resp.json().get("data") or []
+        if not results:
+            return None
+        album = results[0].get("album") or {}
+        cover_url = album.get("cover_xl") or album.get("cover_big")
+        if not cover_url:
+            return None
+        img = requests.get(cover_url, headers={"User-Agent": _USER_AGENT}, timeout=_HTTP_TIMEOUT)
+        img.raise_for_status()
+        if _save_cover_image(img.content, out_cover_path):
+            return out_cover_path
+    except Exception as e:
+        print(f"[metadata] aviso: busca/capa no Deezer falhou ({e}) - seguindo sem ela.")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Fonte 5 (opcional): Discogs - exige token pessoal em DISCOGS_TOKEN
+# ---------------------------------------------------------------------------
+
+def _discogs_fetch_cover(artist: str, title: str, out_cover_path: Path) -> Path | None:
+    """
+    Busca a capa no Discogs. A API de busca exige autenticação, então esta
+    fonte só participa da cascata quando a variável de ambiente
+    DISCOGS_TOKEN está definida (token pessoal gratuito, gerado em
+    https://www.discogs.com/settings/developers). Sem token: retorna None
+    em silêncio (não é erro - a fonte é opcional por design).
+    """
+    token = (os.environ.get("DISCOGS_TOKEN") or "").strip()
+    if not token:
+        return None
+    try:
+        resp = requests.get(
+            "https://api.discogs.com/database/search",
+            params={"artist": artist, "track": title, "type": "release", "per_page": 5},
+            headers={
+                "User-Agent": _USER_AGENT,
+                "Authorization": f"Discogs token={token}",
+            },
+            timeout=_HTTP_TIMEOUT,
+        )
+        resp.raise_for_status()
+        results = resp.json().get("results") or []
+        for result in results:
+            cover_url = result.get("cover_image")
+            # o Discogs devolve um placeholder "spacer.gif" quando não há imagem
+            if not cover_url or cover_url.endswith(".gif"):
+                continue
+            img = requests.get(
+                cover_url,
+                headers={"User-Agent": _USER_AGENT, "Authorization": f"Discogs token={token}"},
+                timeout=_HTTP_TIMEOUT,
+            )
+            img.raise_for_status()
+            if _save_cover_image(img.content, out_cover_path):
+                return out_cover_path
+    except Exception as e:
+        print(f"[metadata] aviso: busca/capa no Discogs falhou ({e}) - seguindo sem ela.")
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Utilitário de imagem
 # ---------------------------------------------------------------------------
 
@@ -331,31 +488,49 @@ def fetch_metadata(
     use_network: se False, usa só as tags embutidas (modo offline).
     """
     meta = _extract_embedded(audio_path, out_cover_path)
+    sources_used: list[str] = ["arquivo"] if meta.source == "arquivo" else []
 
-    need_year = meta.year is None
-    need_genre = meta.genre is None
-    need_cover = meta.cover_path is None
+    def _missing_something() -> bool:
+        return meta.year is None or meta.genre is None or meta.cover_path is None
 
-    if use_network and (need_year or need_genre or need_cover):
+    if use_network and _missing_something():
+        # --- MusicBrainz + Cover Art Archive ---
         release_mbid = _mb_find_release_mbid(artist, title)
         if release_mbid:
             used_mb = False
-            if need_year or need_genre:
+            if meta.year is None or meta.genre is None:
                 mb_year, mb_genre = _mb_fetch_year_genre(release_mbid)
-                if need_year and mb_year:
+                if meta.year is None and mb_year:
                     meta.year = mb_year
                     used_mb = True
-                if need_genre and mb_genre:
+                if meta.genre is None and mb_genre:
                     meta.genre = mb_genre
                     used_mb = True
-            if need_cover:
-                cover = _caa_download_cover(release_mbid, out_cover_path)
-                if cover:
-                    meta.cover_path = cover
+            if meta.cover_path is None:
+                if _caa_download_cover(release_mbid, out_cover_path):
+                    meta.cover_path = out_cover_path
                     used_mb = True
             if used_mb:
-                meta.source = "arquivo+musicbrainz" if meta.source == "arquivo" else "musicbrainz"
+                sources_used.append("musicbrainz")
 
+        # --- iTunes (capa 600x600 + ano + gênero, sem chave) ---
+        if _missing_something():
+            if _itunes_fill(meta, artist, title, out_cover_path):
+                sources_used.append("itunes")
+
+        # --- Deezer (capa 1000px, sem chave) ---
+        if meta.cover_path is None:
+            if _deezer_fetch_cover(artist, title, out_cover_path):
+                meta.cover_path = out_cover_path
+                sources_used.append("deezer")
+
+        # --- Discogs (capa; só participa com DISCOGS_TOKEN definido) ---
+        if meta.cover_path is None:
+            if _discogs_fetch_cover(artist, title, out_cover_path):
+                meta.cover_path = out_cover_path
+                sources_used.append("discogs")
+
+    meta.source = "+".join(sources_used) if sources_used else "nenhuma"
     return meta
 
 
