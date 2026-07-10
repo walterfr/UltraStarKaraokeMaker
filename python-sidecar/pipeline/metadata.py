@@ -21,7 +21,10 @@ ESTRATÉGIA EM CASCATA (da fonte mais confiável/barata para a mais custosa):
      faltar.
   4. Deezer API - sem chave/cadastro; capa cover_xl (1000px). Catálogo
      forte de música brasileira.
-  5. Discogs (OPCIONAL) - a API de busca exige token pessoal (gratuito,
+  5. Last.fm (OPCIONAL) - capa e gênero (tags mais votadas, filtrando
+     folksonomia que não é gênero). Exige chave de API gratuita/imediata;
+     só é consultada se LASTFM_API_KEY estiver definida.
+  6. Discogs (OPCIONAL) - a API de busca exige token pessoal (gratuito,
      mas requer conta). Só é consultada se a variável de ambiente
      DISCOGS_TOKEN estiver definida; sem token, é pulada em silêncio.
 
@@ -393,7 +396,83 @@ def _deezer_fetch_cover(artist: str, title: str, out_cover_path: Path) -> Path |
 
 
 # ---------------------------------------------------------------------------
-# Fonte 5 (opcional): Discogs - exige token pessoal em DISCOGS_TOKEN
+# Fonte 5 (opcional): Last.fm - exige chave de API em LASTFM_API_KEY
+# ---------------------------------------------------------------------------
+
+# tags do Last.fm são folksonomia (usuários escrevem qualquer coisa) - as
+# mais comuns que NÃO são gênero e devem ser ignoradas ao preencher #GENRE
+_LASTFM_JUNK_TAGS = {
+    "seen live", "favorites", "favourites", "favorite songs", "beautiful",
+    "awesome", "love", "loved", "brazil", "brasil", "female vocalists",
+    "male vocalists", "under 2000 listeners",
+}
+
+
+def _lastfm_fill(meta: SongMetadata, artist: str, title: str, out_cover_path: Path) -> bool:
+    """
+    Preenche capa e gênero (via tags mais votadas) que ainda faltem, usando
+    track.getInfo do Last.fm. Fonte opcional: só participa quando a variável
+    de ambiente LASTFM_API_KEY está definida (chave gratuita e imediata em
+    https://www.last.fm/api/account/create). Retorna True se usou algo.
+    """
+    api_key = (os.environ.get("LASTFM_API_KEY") or "").strip()
+    if not api_key:
+        print("[metadata] Last.fm: LASTFM_API_KEY não definido neste processo - fonte pulada.")
+        return False
+
+    try:
+        resp = requests.get(
+            "https://ws.audioscrobbler.com/2.0/",
+            params={
+                "method": "track.getInfo",
+                "artist": artist,
+                "track": title,
+                "api_key": api_key,
+                "format": "json",
+                "autocorrect": 1,
+            },
+            headers={"User-Agent": _USER_AGENT},
+            timeout=_HTTP_TIMEOUT,
+        )
+        resp.raise_for_status()
+        track = resp.json().get("track") or {}
+    except Exception as e:
+        print(f"[metadata] aviso: busca no Last.fm falhou ({e}) - seguindo sem ela.")
+        return False
+
+    used = False
+
+    if meta.cover_path is None:
+        images = (track.get("album") or {}).get("image") or []
+        # a lista vem ordenada do menor para o maior; pega a maior com URL
+        cover_url = next(
+            (img.get("#text") for img in reversed(images) if (img.get("#text") or "").strip()),
+            None,
+        )
+        if cover_url:
+            try:
+                img = requests.get(cover_url, headers={"User-Agent": _USER_AGENT}, timeout=_HTTP_TIMEOUT)
+                img.raise_for_status()
+                if _save_cover_image(img.content, out_cover_path):
+                    meta.cover_path = out_cover_path
+                    used = True
+            except Exception as e:
+                print(f"[metadata] aviso: download da capa do Last.fm falhou ({e}).")
+
+    if meta.genre is None:
+        tags = ((track.get("toptags") or {}).get("tag") or [])
+        for tag in tags:
+            name = (tag.get("name") or "").strip()
+            if name and name.lower() not in _LASTFM_JUNK_TAGS and name.lower() != artist.lower():
+                meta.genre = name.title()
+                used = True
+                break
+
+    return used
+
+
+# ---------------------------------------------------------------------------
+# Fonte 6 (opcional): Discogs - exige token pessoal em DISCOGS_TOKEN
 # ---------------------------------------------------------------------------
 
 def _discogs_fetch_cover(artist: str, title: str, out_cover_path: Path) -> Path | None:
@@ -539,6 +618,11 @@ def fetch_metadata(
             if _deezer_fetch_cover(artist, title, out_cover_path):
                 meta.cover_path = out_cover_path
                 sources_used.append("deezer")
+
+        # --- Last.fm (capa + gênero via tags; só com LASTFM_API_KEY) ---
+        if meta.cover_path is None or meta.genre is None:
+            if _lastfm_fill(meta, artist, title, out_cover_path):
+                sources_used.append("lastfm")
 
         # --- Discogs (capa; só participa com DISCOGS_TOKEN definido) ---
         if meta.cover_path is None:
