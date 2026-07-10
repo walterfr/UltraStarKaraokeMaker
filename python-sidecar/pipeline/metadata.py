@@ -406,32 +406,48 @@ def _discogs_fetch_cover(artist: str, title: str, out_cover_path: Path) -> Path 
     """
     token = (os.environ.get("DISCOGS_TOKEN") or "").strip()
     if not token:
+        # fonte opcional: sem token não é erro, mas dizemos o porquê para o
+        # "None" não virar mistério em diagnóstico (setx não vale para
+        # terminais já abertos - causa clássica de token "sumido")
+        print("[metadata] Discogs: DISCOGS_TOKEN não definido neste processo - fonte pulada.")
         return None
+
+    headers = {"User-Agent": _USER_AGENT, "Authorization": f"Discogs token={token}"}
+
+    # duas tentativas de busca: por campos estruturados (artist+track) e,
+    # se nada vier, texto livre - a indexação de faixas do Discogs é
+    # irregular e o texto livre costuma achar o single/álbum mesmo assim
+    param_sets = [
+        {"artist": artist, "track": title, "type": "release", "per_page": 5},
+        {"q": f"{artist} {title}", "type": "release", "per_page": 5},
+    ]
     try:
-        resp = requests.get(
-            "https://api.discogs.com/database/search",
-            params={"artist": artist, "track": title, "type": "release", "per_page": 5},
-            headers={
-                "User-Agent": _USER_AGENT,
-                "Authorization": f"Discogs token={token}",
-            },
-            timeout=_HTTP_TIMEOUT,
-        )
-        resp.raise_for_status()
-        results = resp.json().get("results") or []
-        for result in results:
-            cover_url = result.get("cover_image")
-            # o Discogs devolve um placeholder "spacer.gif" quando não há imagem
-            if not cover_url or cover_url.endswith(".gif"):
-                continue
-            img = requests.get(
-                cover_url,
-                headers={"User-Agent": _USER_AGENT, "Authorization": f"Discogs token={token}"},
+        found_any = False
+        for params in param_sets:
+            resp = requests.get(
+                "https://api.discogs.com/database/search",
+                params=params,
+                headers=headers,
                 timeout=_HTTP_TIMEOUT,
             )
-            img.raise_for_status()
-            if _save_cover_image(img.content, out_cover_path):
-                return out_cover_path
+            resp.raise_for_status()
+            results = resp.json().get("results") or []
+            if not results:
+                continue
+            found_any = True
+            for result in results:
+                cover_url = result.get("cover_image")
+                # o Discogs devolve um placeholder "spacer.gif" quando não há imagem
+                if not cover_url or cover_url.endswith(".gif"):
+                    continue
+                img = requests.get(cover_url, headers=headers, timeout=_HTTP_TIMEOUT)
+                img.raise_for_status()
+                if _save_cover_image(img.content, out_cover_path):
+                    return out_cover_path
+        if found_any:
+            print("[metadata] Discogs: resultados encontrados, mas nenhum com imagem utilizável.")
+        else:
+            print(f"[metadata] Discogs: nenhum resultado para '{artist} - {title}'.")
     except Exception as e:
         print(f"[metadata] aviso: busca/capa no Discogs falhou ({e}) - seguindo sem ela.")
     return None
