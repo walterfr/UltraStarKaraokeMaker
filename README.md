@@ -84,7 +84,7 @@ Funcional de ponta a ponta pela interface gráfica. Todas as etapas de escopo es
 
 - **Pipeline Python** — geração de pacotes jogáveis validada com músicas reais.
 - **Núcleo em Rust** — escrita do `.txt` com saída idêntica à do protótipo Python, coberta por testes.
-- **Integração Tauri + UI** — fluxo completo pela interface, com log ao vivo e barra de progresso.
+- **Integração Tauri + UI** — fluxo completo pela interface: checagem de ambiente na abertura (IA/ffmpeg/GPU), validação da letra em tempo real (detecta "(2x)", "[Refrão]", timestamps .lrc antes de gastar GPU), lista de etapas com estado e duração típica, botão de cancelar que encerra a árvore de processos, log técnico colapsado e resultado com capa, metadados e contagem de notas por confiança. Preferências e janela persistem entre sessões.
 - **Metadados e vídeo** — capa/ano/gênero automáticos (fonte local e rede) e vídeo do YouTube opcional no pacote.
 - **Distribuição** — instalador NSIS + setup assistido do ambiente de IA (`setup-sidecar.ps1`).
 - **Revisão manual** — editor estilo Yass integrado: timeline com waveform, playback (mix ou só vocal), ajuste de notas por arrastar/teclado, quebras de frase, GAP global e undo/redo; salvar regrava o `song_data.json` e regenera o `.txt` pelo núcleo Rust.

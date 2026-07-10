@@ -53,11 +53,31 @@ use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use tauri::Window;
 use tokio::process::Command;
 use tokio::sync::watch;
 use tokio::time::{sleep, Duration};
 use uskmaker_core::Song;
+
+/// Flag do Windows para criar subprocessos sem janela de console piscando
+/// (CREATE_NO_WINDOW) - relevante porque o app roda como GUI.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Estado compartilhado da geração em andamento - existe para o botão
+/// Cancelar da UI. Guardamos só o PID (não o Child inteiro) porque o
+/// run_pipeline precisa continuar dono do handle para dar .wait().
+#[derive(Default)]
+struct PipelineState {
+    child_pid: Mutex<Option<u32>>,
+    cancel_requested: AtomicBool,
+}
+
+/// Mensagem-sentinela que o frontend usa para distinguir "cancelado pelo
+/// usuário" (informativo, azul) de erro real (vermelho).
+const CANCELLED_MSG: &str = "__CANCELADO__";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -97,6 +117,11 @@ struct PipelineResult {
     cover_path: Option<String>,
     year: Option<i64>,
     genre: Option<String>,
+    // UX (07/2026): estatísticas de confiança do alinhamento para o
+    // resultado rico - quantas notas foram MEDIDAS no áudio vs ESTIMADAS
+    // (interpoladas). Vêm do campo `source` de cada nota do song_data.json.
+    notes_total: usize,
+    notes_estimated: usize,
 }
 
 /// Resolução em cascata do sidecar (ver nota DISTRIBUIÇÃO no topo).
@@ -185,13 +210,20 @@ fn read_new_lines(path: &Path, last_pos: &mut u64, leftover: &mut String, window
     if file.seek(SeekFrom::Start(*last_pos)).is_err() {
         return;
     }
-    let mut buf = String::new();
-    // Se der erro (ex.: leu no meio de um caractere UTF-8 multibyte sendo
-    // escrito), simplesmente ignora este poll - pega na próxima rodada.
-    if file.read_to_string(&mut buf).is_err() || buf.is_empty() {
+    // BUG CORRIGIDO (10/07/2026): a versão anterior usava read_to_string,
+    // que FALHA se houver qualquer byte não-UTF-8 - e sem avançar last_pos,
+    // falhava para sempre: a UI ficava sem NENHUMA linha de log. Era o que
+    // acontecia quando o Python escrevia em cp1252 (ex.: o "—" das réguas
+    // do rich vira 0x97). Agora lemos BYTES e convertemos com perdas
+    // (from_utf8_lossy): um caractere estranho vira "�", mas o log flui.
+    // O run_pipeline também passou a exportar PYTHONUTF8=1, então o caso
+    // nem deve mais ocorrer - isto aqui é a rede de segurança.
+    let mut bytes = Vec::new();
+    if file.read_to_end(&mut bytes).is_err() || bytes.is_empty() {
         return;
     }
-    *last_pos += buf.len() as u64;
+    let buf = String::from_utf8_lossy(&bytes).into_owned();
+    *last_pos += bytes.len() as u64;
     leftover.push_str(&buf);
 
     while let Some(idx) = leftover.find('\n') {
@@ -205,9 +237,11 @@ fn read_new_lines(path: &Path, last_pos: &mut u64, leftover: &mut String, window
 async fn run_pipeline(
     app: tauri::AppHandle,
     window: Window,
+    state: tauri::State<'_, PipelineState>,
     input: PipelineInput,
 ) -> Result<PipelineResult, String> {
     let (sidecar_dir, python_exe) = resolve_sidecar(&app)?;
+    state.cancel_requested.store(false, Ordering::SeqCst);
 
     let out_dir = PathBuf::from(&input.out_dir);
     std::fs::create_dir_all(&out_dir)
@@ -229,6 +263,10 @@ async fn run_pipeline(
 
     let mut cmd = Command::new(&python_exe);
     cmd.current_dir(&sidecar_dir)
+        // Força o Python a escrever stdout/stderr em UTF-8 mesmo redirecionado
+        // para arquivo (sem isso o Windows usa cp1252 e o tail de log quebrava
+        // nos caracteres fora do ASCII - ver nota em read_new_lines).
+        .env("PYTHONUTF8", "1")
         .arg("main.py")
         .arg("--lyrics")
         .arg(&lyrics_path)
@@ -277,9 +315,15 @@ async fn run_pipeline(
         }
     }
 
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("Erro ao iniciar o processo Python: {}", e))?;
+
+    // registra o PID para o botão Cancelar da UI
+    *state.child_pid.lock().unwrap() = child.id();
 
     let (stop_tx, stop_rx) = watch::channel(false);
     let tail_window = window.clone();
@@ -291,10 +335,17 @@ async fn run_pipeline(
         .await
         .map_err(|e| format!("Erro ao aguardar o processo Python: {}", e))?;
 
+    *state.child_pid.lock().unwrap() = None;
+
     let _ = stop_tx.send(true);
     let _ = tail_task.await;
 
     if !status.success() {
+        // cancelamento pedido pela UI não é erro - devolve a sentinela para
+        // o frontend mostrar um aviso neutro em vez de caixa vermelha
+        if state.cancel_requested.load(Ordering::SeqCst) {
+            return Err(CANCELLED_MSG.to_string());
+        }
         return Err(format!(
             "Pipeline Python terminou com erro (código {:?}). Veja o log acima para detalhes \
              (também salvo em '{}' e em 'pipeline_debug.log' na pasta de saída).",
@@ -329,6 +380,13 @@ async fn run_pipeline(
         }
     });
 
+    let notes_total = song.notes.len();
+    let notes_estimated = song
+        .notes
+        .iter()
+        .filter(|n| n.source.as_deref() == Some("interpolated"))
+        .count();
+
     Ok(PipelineResult {
         txt_path: txt_path.to_string_lossy().to_string(),
         audio_path: audio_path.to_string_lossy().to_string(),
@@ -336,6 +394,86 @@ async fn run_pipeline(
         cover_path,
         year: song.year,
         genre: song.genre.clone(),
+        notes_total,
+        notes_estimated,
+    })
+}
+
+/// Cancela a geração em andamento: mata a ÁRVORE de processos do sidecar
+/// (taskkill /T) - só matar o python.exe deixaria ffmpeg/yt-dlp filhos
+/// órfãos rodando. O run_pipeline percebe a morte no .wait() e devolve a
+/// sentinela CANCELLED_MSG em vez de erro.
+#[tauri::command]
+async fn cancel_pipeline(state: tauri::State<'_, PipelineState>) -> Result<(), String> {
+    state.cancel_requested.store(true, Ordering::SeqCst);
+    let pid = *state.child_pid.lock().unwrap();
+    let Some(pid) = pid else {
+        return Ok(()); // nada rodando - cancelamento vira no-op
+    };
+    let mut kill = Command::new("taskkill");
+    kill.args(["/PID", &pid.to_string(), "/T", "/F"]);
+    #[cfg(windows)]
+    kill.creation_flags(CREATE_NO_WINDOW);
+    kill.output()
+        .await
+        .map_err(|e| format!("Erro ao cancelar o processo: {}", e))?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Checagem de ambiente (UX): roda na abertura do app para o usuário descobrir
+// problemas de instalação ANTES de gastar minutos numa geração que vai falhar.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EnvCheck {
+    sidecar_ok: bool,
+    sidecar_msg: String,
+    ffmpeg_ok: bool,
+    /// libvorbis é necessário para gerar o .ogg do pacote
+    vorbis_ok: bool,
+    /// nome da GPU NVIDIA, ou None = processamento em CPU (bem mais lento)
+    gpu_name: Option<String>,
+}
+
+#[tauri::command]
+async fn check_environment(app: tauri::AppHandle) -> Result<EnvCheck, String> {
+    let (sidecar_ok, sidecar_msg) = match resolve_sidecar(&app) {
+        Ok((_, python)) => (true, python.display().to_string()),
+        Err(e) => (false, e),
+    };
+
+    let mut ffmpeg_cmd = Command::new("ffmpeg");
+    ffmpeg_cmd.arg("-version");
+    #[cfg(windows)]
+    ffmpeg_cmd.creation_flags(CREATE_NO_WINDOW);
+    let (ffmpeg_ok, vorbis_ok) = match ffmpeg_cmd.output().await {
+        Ok(out) if out.status.success() => {
+            let text = String::from_utf8_lossy(&out.stdout).to_string();
+            (true, text.contains("libvorbis"))
+        }
+        _ => (false, false),
+    };
+
+    let mut gpu_cmd = Command::new("nvidia-smi");
+    gpu_cmd.args(["--query-gpu=name", "--format=csv,noheader"]);
+    #[cfg(windows)]
+    gpu_cmd.creation_flags(CREATE_NO_WINDOW);
+    let gpu_name = match gpu_cmd.output().await {
+        Ok(out) if out.status.success() => {
+            let name = String::from_utf8_lossy(&out.stdout).lines().next().unwrap_or("").trim().to_string();
+            if name.is_empty() { None } else { Some(name) }
+        }
+        _ => None,
+    };
+
+    Ok(EnvCheck {
+        sidecar_ok,
+        sidecar_msg,
+        ffmpeg_ok,
+        vorbis_ok,
+        gpu_name,
     })
 }
 
@@ -444,11 +582,14 @@ fn open_folder(path: String) -> Result<(), String> {
 
 fn main() {
     tauri::Builder::default()
+        .manage(PipelineState::default())
         .invoke_handler(tauri::generate_handler![
             run_pipeline,
             open_folder,
             load_song,
-            save_song
+            save_song,
+            cancel_pipeline,
+            check_environment
         ])
         .run(tauri::generate_context!())
         .expect("erro ao rodar a aplicação Tauri");

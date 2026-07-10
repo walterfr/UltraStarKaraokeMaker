@@ -390,3 +390,239 @@ button.danger:hover {
   border-color: #d6802f;
   color: #f0b573;
 }
+
+/* ---------------------------------------------------------------------------
+   UX da tela principal (07/2026): ambiente, validação de letra, etapas,
+   cancelamento e resultado rico
+   --------------------------------------------------------------------------- */
+
+.env-strip {
+  font-size: 0.78rem;
+  color: #7fbf8a;
+  background: #12251a;
+  border: 1px solid #1d3a26;
+  border-radius: 6px;
+  padding: 0.35rem 0.7rem;
+  margin: -1rem 0 1.2rem;
+}
+.env-problems ul {
+  margin: 0.4rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.lyrics-count {
+  float: right;
+  color: #77778a;
+  font-size: 0.78rem;
+}
+.lyrics-warning {
+  color: #f0b573;
+  background: #2a2014;
+  border: 1px solid #5c4520;
+  border-radius: 6px;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.82rem;
+  margin: 0.4rem 0 0;
+}
+
+.running-actions {
+  display: flex;
+  gap: 0.6rem;
+  align-items: stretch;
+}
+.running-actions .submit-button {
+  flex: 1;
+}
+.cancel-button {
+  background: #2a1418;
+  border: 1px solid #5c2028;
+  color: #ff9fa8;
+  border-radius: 8px;
+  padding: 0 1.4rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+  margin-top: 1rem;
+}
+.cancel-button:hover {
+  border-color: #e8554d;
+}
+
+.steps-list {
+  list-style: none;
+  margin: 1.2rem 0 0;
+  padding: 0.8rem 1rem;
+  background: #17171f;
+  border: 1px solid #262632;
+  border-radius: 8px;
+}
+.step {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.28rem 0;
+  font-size: 0.9rem;
+  color: #77778a;
+}
+.step.done {
+  color: #7fbf8a;
+}
+.step.running {
+  color: #e8e8ec;
+  font-weight: 600;
+}
+.step-icon {
+  width: 1.2rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+.step-hint {
+  color: #77778a;
+  font-weight: 400;
+  font-size: 0.78rem;
+  margin-left: auto;
+}
+.spinner {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid #33333f;
+  border-top-color: #4f8ef7;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.info-box {
+  background: #14202a;
+  border: 1px solid #20405c;
+  color: #9fc8ff;
+  border-radius: 8px;
+  padding: 0.8rem 1rem;
+  margin-top: 1.5rem;
+  font-size: 0.9rem;
+}
+
+.log-details {
+  margin-top: 1rem;
+}
+.log-details summary {
+  color: #77778a;
+  font-size: 0.82rem;
+  cursor: pointer;
+  user-select: none;
+}
+.log-details summary:hover {
+  color: #b8b8c4;
+}
+.log-details .log-console {
+  margin-top: 0.5rem;
+}
+
+.result-box.rich {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+.result-cover {
+  width: 110px;
+  height: 110px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #24512f;
+  flex-shrink: 0;
+}
+.result-body {
+  min-width: 0;
+}
+.result-paths {
+  font-size: 0.78rem !important;
+  color: #77778a !important;
+  word-break: break-all;
+}
+.estimated-badge {
+  color: #f0b573;
+}
+.result-actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+
+/* Foco visível para navegação por teclado (acessibilidade) */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+button:focus-visible {
+  outline: 2px solid #4f8ef7;
+  outline-offset: 1px;
+}
+
+/* Revisão: minimapa + painel de versos (07/2026) */
+.review-minimap {
+  width: 100%;
+  height: 26px;
+  display: block;
+  border: 1px solid #262632;
+  border-radius: 6px;
+  margin-bottom: 0.4rem;
+  cursor: pointer;
+}
+.review-main {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+.review-main .review-canvas {
+  flex: 1;
+  min-width: 0;
+}
+.verse-list {
+  width: 210px;
+  flex-shrink: 0;
+  max-height: 380px;
+  overflow-y: auto;
+  background: #17171f;
+  border: 1px solid #262632;
+  border-radius: 8px;
+  padding: 0.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.verse-item {
+  display: flex;
+  gap: 0.45rem;
+  align-items: baseline;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  color: #b8b8c4;
+  font-size: 0.78rem;
+  text-align: left;
+  padding: 0.28rem 0.45rem;
+  cursor: pointer;
+  line-height: 1.25;
+}
+.verse-item:hover {
+  background: #1e1e28;
+}
+.verse-item.active {
+  background: #22304d;
+  color: #e8e8ec;
+}
+.verse-time {
+  color: #77778a;
+  font-family: ui-monospace, monospace;
+  font-size: 0.72rem;
+  flex-shrink: 0;
+}
+.verse-text {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}

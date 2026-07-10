@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/tauri";
 import { ask } from "@tauri-apps/api/dialog";
 
@@ -114,6 +114,46 @@ const NOTE_EDGE_PX = 6; // zona de "pegar a borda" para redimensionar
 const MIN_PX_PER_SEC = 8;
 const MAX_PX_PER_SEC = 800;
 
+// Pitch do UltraStar é relativo ao C4 (dó central): pitch 0 = C4 = MIDI 60.
+const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+function pitchName(pitch: number): string {
+  const midi = pitch + 60;
+  const name = NOTE_NAMES[((midi % 12) + 12) % 12];
+  const octave = Math.floor(midi / 12) - 1;
+  return `${name}${octave}`;
+}
+
+// Um "verso" = trecho entre quebras de frase; alimenta o painel lateral de
+// navegação (clicar num verso pula a viewport e seleciona a 1ª nota dele).
+interface Verse {
+  firstNote: number;
+  text: string;
+  time: number; // segundos do início do verso
+}
+
+function deriveVerses(song: USSong): Verse[] {
+  const breaks = new Set(song.phrase_breaks_after_index);
+  const verses: Verse[] = [];
+  let start = 0;
+  for (let i = 0; i < song.notes.length; i++) {
+    if (breaks.has(i) || i === song.notes.length - 1) {
+      const text = song.notes
+        .slice(start, i + 1)
+        .map((n) => n.text.replace(/~/g, ""))
+        .join("")
+        .replace(/\s+/g, " ")
+        .trim();
+      verses.push({
+        firstNote: start,
+        text: text || "(sem texto)",
+        time: beatToSec(song, song.notes[start].start_beat),
+      });
+      start = i + 1;
+    }
+  }
+  return verses;
+}
+
 type DragMode =
   | { kind: "none" }
   | { kind: "seek" }
@@ -135,7 +175,10 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
   const [saving, setSaving] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const minimapRef = useRef<HTMLCanvasElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [activeVerse, setActiveVerse] = useState(0);
+  const activeVerseRef = useRef(0);
 
   // Estado imperativo do editor (ver nota no topo do arquivo).
   const songRef = useRef<USSong | null>(null);
@@ -360,6 +403,22 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
       ctx.stroke();
     }
 
+    // régua de pitch com nomes de nota (C4, D4...) na borda esquerda -
+    // pitch numérico é abstrato; nome de nota é o vocabulário do músico.
+    // Com pouco espaço vertical, mostra só os Dós (âncora de oitava).
+    ctx.fillStyle = "rgba(18, 18, 24, 0.82)";
+    ctx.fillRect(0, laneTop, 30, laneH);
+    ctx.font = "9px ui-monospace, monospace";
+    ctx.textBaseline = "middle";
+    const labelEvery = semitoneH >= 11 ? 1 : semitoneH >= 6 ? 2 : 12;
+    for (let p = Math.ceil(pMin); p <= pMax; p++) {
+      const isC = ((p + 60) % 12 + 12) % 12 === 0;
+      if (labelEvery === 12 ? !isC : p % labelEvery !== 0) continue;
+      const y = yOfPitch(p) + semitoneH / 2;
+      ctx.fillStyle = isC ? "#9a9aa8" : "#55556a";
+      ctx.fillText(pitchName(p), 2, y);
+    }
+
     // --- quebras de frase (linha tracejada no fim da nota marcada) ---
     ctx.strokeStyle = "#5a5a72";
     ctx.setLineDash([4, 4]);
@@ -426,7 +485,98 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
         ctx.stroke();
       }
     }
+
+    // --- minimapa: música inteira, notas como riscos, retângulo = viewport ---
+    const mini = minimapRef.current;
+    if (mini) {
+      const mw = mini.clientWidth;
+      const mh = mini.clientHeight;
+      if (mini.width !== mw * dpr || mini.height !== mh * dpr) {
+        mini.width = mw * dpr;
+        mini.height = mh * dpr;
+      }
+      const mctx = mini.getContext("2d");
+      if (mctx) {
+        mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        mctx.clearRect(0, 0, mw, mh);
+        mctx.fillStyle = "#17171f";
+        mctx.fillRect(0, 0, mw, mh);
+
+        const lastNote = s.notes[s.notes.length - 1];
+        const songEnd = Math.max(
+          peaksRef.current?.duration ?? 0,
+          lastNote ? beatToSec(s, lastNote.start_beat + lastNote.duration_beats) : 0,
+          1
+        );
+        const mxOf = (t: number) => (t / songEnd) * mw;
+
+        for (const n of s.notes) {
+          const nx = mxOf(beatToSec(s, n.start_beat));
+          if (n.source === "interpolated") {
+            // notas estimadas saltam aos olhos até no minimapa
+            mctx.fillStyle = SOURCE_COLORS.interpolated;
+            mctx.fillRect(nx, 2, 2, mh - 4);
+          } else {
+            mctx.fillStyle = "#3d6fd6";
+            mctx.fillRect(nx, mh * 0.3, 1, mh * 0.4);
+          }
+        }
+
+        // viewport atual
+        const vx0 = mxOf(start);
+        const vx1 = mxOf(visibleEnd);
+        mctx.strokeStyle = "#9a9aa8";
+        mctx.strokeRect(Math.max(0, vx0) + 0.5, 0.5, Math.max(4, vx1 - vx0), mh - 1);
+
+        // playhead no minimapa
+        if (audio && !isNaN(audio.currentTime)) {
+          mctx.fillStyle = "#e8554d";
+          mctx.fillRect(mxOf(audio.currentTime), 0, 1, mh);
+        }
+      }
+    }
   }, []);
+
+  // versos derivados (painel lateral de navegação)
+  const verses = useMemo(() => (song ? deriveVerses(song) : []), [song]);
+  const versesRef = useRef<Verse[]>([]);
+  versesRef.current = verses;
+
+  const jumpToVerse = useCallback(
+    (i: number) => {
+      const v = versesRef.current[i];
+      if (!v) return;
+      setActiveVerse(i);
+      activeVerseRef.current = i;
+      setSelected(v.firstNote);
+      selectedRef.current = v.firstNote;
+      viewRef.current.start = Math.max(0, v.time - 1);
+      draw();
+    },
+    [draw]
+  );
+
+  const onMinimapSeek = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>, requireButton: boolean) => {
+      if (requireButton && e.buttons !== 1) return;
+      const mini = minimapRef.current;
+      const s = songRef.current;
+      if (!mini || !s || s.notes.length === 0) return;
+      const rect = mini.getBoundingClientRect();
+      const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+      const last = s.notes[s.notes.length - 1];
+      const songEnd = Math.max(
+        peaksRef.current?.duration ?? 0,
+        beatToSec(s, last.start_beat + last.duration_beats),
+        1
+      );
+      const w = canvasRef.current?.clientWidth ?? 800;
+      const span = w / viewRef.current.pxPerSec;
+      viewRef.current.start = Math.max(-1, frac * songEnd - span / 2);
+      draw();
+    },
+    [draw]
+  );
 
   // redesenha quando o React muda algo relevante
   useEffect(() => {
@@ -442,6 +592,22 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
         if (playUntilRef.current !== null && audio.currentTime >= playUntilRef.current) {
           audio.pause();
           playUntilRef.current = null;
+        }
+        // acompanha o verso atual no painel lateral durante o playback
+        const vs = versesRef.current;
+        if (vs.length > 0) {
+          let idx = 0;
+          for (let i = 0; i < vs.length; i++) {
+            if (vs[i].time <= audio.currentTime + 0.05) idx = i;
+            else break;
+          }
+          if (idx !== activeVerseRef.current) {
+            activeVerseRef.current = idx;
+            setActiveVerse(idx);
+            document
+              .getElementById(`verse-item-${idx}`)
+              ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+          }
         }
         // auto-scroll: mantém o playhead visível
         const { start, pxPerSec } = viewRef.current;
@@ -698,6 +864,28 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
       const s = songRef.current;
       if (sel === null || !s) return;
 
+      if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && e.altKey) {
+        // Alt+setas: move a FRASE inteira que contém a nota selecionada -
+        // o erro típico de alinhamento desloca o verso todo, não uma sílaba
+        e.preventDefault();
+        const delta = e.key === "ArrowLeft" ? -1 : 1;
+        let lineStart = 0;
+        let lineEnd = s.notes.length - 1;
+        for (const b of s.phrase_breaks_after_index) {
+          if (b < sel) lineStart = b + 1;
+          if (b >= sel) {
+            lineEnd = b;
+            break;
+          }
+        }
+        mutate((d) => {
+          for (let k = lineStart; k <= lineEnd; k++) {
+            d.notes[k].start_beat += delta;
+          }
+        });
+        return;
+      }
+
       if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         e.preventDefault();
         const delta = e.key === "ArrowLeft" ? -1 : 1;
@@ -920,20 +1108,45 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
       </div>
 
       <canvas
-        ref={canvasRef}
-        className="review-canvas"
-        onMouseDown={onMouseDown}
-        onMouseMove={onMouseMove}
-        onMouseUp={onMouseUp}
-        onMouseLeave={onMouseUp}
-        onDoubleClick={onDoubleClick}
-        onWheel={onWheel}
+        ref={minimapRef}
+        className="review-minimap"
+        title="Visão geral da música — clique para navegar; riscos laranja = notas estimadas"
+        onMouseDown={(e) => onMinimapSeek(e, false)}
+        onMouseMove={(e) => onMinimapSeek(e, true)}
       />
+
+      <div className="review-main">
+        <div className="verse-list">
+          {verses.map((v, i) => (
+            <button
+              key={i}
+              id={`verse-item-${i}`}
+              className={`verse-item ${i === activeVerse ? "active" : ""}`}
+              onClick={() => jumpToVerse(i)}
+            >
+              <span className="verse-time">
+                {Math.floor(v.time / 60)}:{String(Math.floor(v.time % 60)).padStart(2, "0")}
+              </span>
+              <span className="verse-text">{v.text}</span>
+            </button>
+          ))}
+        </div>
+        <canvas
+          ref={canvasRef}
+          className="review-canvas"
+          onMouseDown={onMouseDown}
+          onMouseMove={onMouseMove}
+          onMouseUp={onMouseUp}
+          onMouseLeave={onMouseUp}
+          onDoubleClick={onDoubleClick}
+          onWheel={onWheel}
+        />
+      </div>
 
       <p className="review-hints">
         Arrastar nota: mover no tempo/pitch · borda direita: duração · duplo-clique/Enter: ouvir a
-        nota · setas: ajuste fino (Shift+←→: duração) · Del: excluir · roda: rolar · Ctrl+roda: zoom
-        · Espaço: tocar/pausar
+        nota · setas: ajuste fino (Shift+←→: duração · Alt+←→: frase inteira) · Del: excluir · roda:
+        rolar · Ctrl+roda: zoom · Espaço: tocar/pausar
       </p>
 
       {hasSourceInfo && (
