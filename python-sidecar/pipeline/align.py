@@ -643,6 +643,33 @@ def alignment_stats(timings: list[WordTiming]) -> dict:
     return {"total": len(timings), "by_source": counts, "interpolated_runs": runs[:5]}
 
 
+# Caches de modelo em nível de módulo: num processo de vida longa (server.py),
+# os modelos pesados do WhisperX (Whisper + wav2vec2) são carregados UMA vez e
+# reusados nas músicas seguintes - é daqui que vem o ganho de "modelos quentes"
+# da fila. Num run avulso (python main.py) o processo morre no fim e o cache
+# simplesmente não chega a ser reaproveitado - sem prejuízo. Os modelos são
+# stateless entre chamadas (transcribe/align não guardam estado da música
+# anterior), então cachear é seguro.
+_WHISPER_CACHE: dict = {}
+_ALIGN_CACHE: dict = {}
+
+
+def _get_whisper_model(size: str, device: str, compute_type: str):
+    import whisperx
+    key = (size, device, compute_type)
+    if key not in _WHISPER_CACHE:
+        _WHISPER_CACHE[key] = whisperx.load_model(size, device, compute_type=compute_type)
+    return _WHISPER_CACHE[key]
+
+
+def _get_align_model(language: str, device: str):
+    import whisperx
+    key = (language, device)
+    if key not in _ALIGN_CACHE:
+        _ALIGN_CACHE[key] = whisperx.load_align_model(language_code=language, device=device)
+    return _ALIGN_CACHE[key]
+
+
 def align_lyrics_to_audio(
     vocals_wav: Path,
     lyrics_path: Path,
@@ -668,13 +695,13 @@ def align_lyrics_to_audio(
     # 1) Transcrição LIVRE (sem substituir nada) - queremos saber o que o
     #    Whisper de fato reconheceu no áudio, com timestamps de alta
     #    confiança para o que ele acertar.
-    whisper_model = whisperx.load_model(whisper_model_size, device, compute_type=compute_type)
+    whisper_model = _get_whisper_model(whisper_model_size, device, compute_type)
     audio = whisperx.load_audio(str(vocals_wav))
     transcription = whisper_model.transcribe(audio, language=language)
 
     # 2) Alinha a transcrição PRÓPRIA do Whisper (não a letra real) - dá
     #    timestamps precisos para tudo que foi efetivamente reconhecido.
-    align_model, metadata = whisperx.load_align_model(language_code=language, device=device)
+    align_model, metadata = _get_align_model(language, device)
     aligned = whisperx.align(
         transcription["segments"], align_model, metadata, audio, device, return_char_alignments=False
     )

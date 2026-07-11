@@ -37,6 +37,20 @@ interface EnvCheck {
   gpuName: string | null;
 }
 
+type QueueStatus = "pending" | "running" | "done" | "error" | "cancelled";
+
+interface QueueItem {
+  id: number;
+  artist: string;
+  title: string;
+  // snapshot dos dados do formulário no momento em que foi enfileirada -
+  // o mesmo objeto que run_pipeline recebe.
+  input: Record<string, unknown>;
+  status: QueueStatus;
+  result?: PipelineResult;
+  error?: string;
+}
+
 const CANCELLED_MSG = "__CANCELADO__";
 const SETTINGS_KEY = "uskmaker-settings";
 const WINDOW_KEY = "uskmaker-window";
@@ -128,6 +142,12 @@ function App() {
   const [syncedLyrics, setSyncedLyrics] = useState<string | null>(null);
   const [lyricsSearching, setLyricsSearching] = useState(false);
   const [lyricsSearchMsg, setLyricsSearchMsg] = useState<{ kind: "ok" | "warn" | "err"; text: string } | null>(null);
+
+  // Fila de músicas: enfileira várias e processa em série, sem reabrir o app.
+  // O frontend é dono da fila (loop chamando run_pipeline por item); o sidecar
+  // persistente do Rust mantém os modelos quentes entre uma música e outra.
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const nextIdRef = useRef(1);
 
   const [isRunning, setIsRunning] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -326,56 +346,135 @@ function App() {
     return null;
   }
 
-  async function handleSubmit() {
+  // Snapshot dos campos do formulário no objeto que run_pipeline espera.
+  function buildInput(): Record<string, unknown> {
+    return {
+      youtubeUrl: sourceMode === "youtube" ? youtubeUrl.trim() : null,
+      filePath: sourceMode === "file" ? filePath.trim() : null,
+      lyricsText,
+      syncedLyrics,
+      title: title.trim(),
+      artist: artist.trim(),
+      language,
+      bpm: bpm.trim() ? parseFloat(bpm) : null,
+      outDir: outDir.trim(),
+      withVideo: sourceMode === "youtube" ? withVideo : false,
+      bgVideo: sourceMode === "file" ? bgVideo : false,
+      bgVideoUrl: sourceMode === "file" && bgVideo ? bgVideoUrl.trim() || null : null,
+      cleanWork,
+    };
+  }
+
+  // Limpa só os campos da MÚSICA (mantém pasta de saída, idioma e checkboxes),
+  // para digitar a próxima sem reabrir o app - usado ao enfileirar.
+  function clearSongFields() {
+    setYoutubeUrl("");
+    setFilePath("");
+    setLyricsText("");
+    setSyncedLyrics(null);
+    setLyricsSearchMsg(null);
+    setTitle("");
+    setArtist("");
+    setBpm("");
+    setBgVideoUrl("");
+  }
+
+  function makeQueueItem(): QueueItem {
+    return {
+      id: nextIdRef.current++,
+      artist: artist.trim(),
+      title: title.trim(),
+      input: buildInput(),
+      status: "pending",
+    };
+  }
+
+  function addToQueue() {
     const validationError = validate();
     if (validationError) {
       setError(validationError);
       return;
     }
-
     setError(null);
-    setResult(null);
-    setLogs([]);
-    setCurrentStep(0);
-    setElapsed(0);
-    setCancelled(false);
-    setCancelling(false);
-    setIsRunning(true);
-    startedAtRef.current = Date.now();
-    appWindow.setTitle(t("windowGenerating", { song: `${artist.trim()} - ${title.trim()}` }));
+    setQueue((q) => [...q, makeQueueItem()]);
+    clearSongFields();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
-    try {
-      const pipelineResult = await invoke<PipelineResult>("run_pipeline", {
-        input: {
-          youtubeUrl: sourceMode === "youtube" ? youtubeUrl.trim() : null,
-          filePath: sourceMode === "file" ? filePath.trim() : null,
-          lyricsText,
-          syncedLyrics,
-          title: title.trim(),
-          artist: artist.trim(),
-          language,
-          bpm: bpm.trim() ? parseFloat(bpm) : null,
-          outDir: outDir.trim(),
-          withVideo: sourceMode === "youtube" ? withVideo : false,
-          bgVideo: sourceMode === "file" ? bgVideo : false,
-          bgVideoUrl: sourceMode === "file" && bgVideo ? bgVideoUrl.trim() || null : null,
-          cleanWork,
-        },
-      });
-      setResult(pipelineResult);
-      setCurrentStep(STEP_KEYS.length + 1);
-    } catch (err) {
-      if (err === CANCELLED_MSG) {
-        setCancelled(true);
-        setCurrentStep(0);
-      } else {
-        setError(typeof err === "string" ? err : t("unknownError"));
-      }
-    } finally {
-      setIsRunning(false);
+  function patchItem(id: number, patch: Partial<QueueItem>) {
+    setQueue((q) => q.map((it) => (it.id === id ? { ...it, ...patch } : it)));
+  }
+
+  function removeFromQueue(id: number) {
+    setQueue((q) => q.filter((it) => it.id !== id));
+  }
+
+  function clearDoneFromQueue() {
+    setQueue((q) => q.filter((it) => it.status === "pending" || it.status === "running"));
+  }
+
+  // Processa em série todos os itens `pending` da lista fornecida. Cancelar
+  // interrompe a fila; um erro em uma música NÃO derruba as demais.
+  async function processQueue(list: QueueItem[]) {
+    setIsRunning(true);
+    setCancelling(false);
+    for (const item of list) {
+      if (item.status !== "pending") continue;
+      patchItem(item.id, { status: "running" });
+      setResult(null);
+      setError(null);
+      setLogs([]);
+      setCurrentStep(0);
+      setElapsed(0);
+      setCancelled(false);
       setCancelling(false);
-      appWindow.setTitle("USKMaker");
+      startedAtRef.current = Date.now();
+      appWindow.setTitle(t("windowGenerating", { song: `${item.artist} - ${item.title}` }));
+
+      try {
+        const res = await invoke<PipelineResult>("run_pipeline", { input: item.input });
+        patchItem(item.id, { status: "done", result: res });
+        setResult(res);
+        setCurrentStep(STEP_KEYS.length + 1);
+      } catch (err) {
+        if (err === CANCELLED_MSG) {
+          patchItem(item.id, { status: "cancelled" });
+          setCancelled(true);
+          setCurrentStep(0);
+          break; // cancelamento interrompe a fila inteira
+        }
+        const msg = typeof err === "string" ? err : t("unknownError");
+        patchItem(item.id, { status: "error", error: msg });
+        setError(msg);
+        // segue para o próximo item (uma música ruim não trava o lote)
+      }
     }
+    setIsRunning(false);
+    setCancelling(false);
+    appWindow.setTitle("USKMaker");
+  }
+
+  async function handleGenerate() {
+    if (isRunning) return;
+    const formErr = validate();
+    const pending = queue.filter((it) => it.status === "pending");
+
+    // Se o formulário está preenchido, a música atual entra como último item.
+    let current: QueueItem | null = null;
+    if (!formErr) {
+      current = makeQueueItem();
+    } else if (pending.length === 0) {
+      setError(formErr);
+      return;
+    }
+    setError(null);
+
+    const full = current ? [...queue, current] : queue;
+    if (current) {
+      setQueue(full);
+      clearSongFields();
+    }
+    await processQueue(full);
   }
 
   async function handleCancel() {
@@ -670,10 +769,67 @@ function App() {
         </label>
       </div>
 
+      {queue.length > 0 && (
+        <div className="queue-panel">
+          <div className="queue-head">
+            <strong>{t("queueHeader", { n: queue.length })}</strong>
+            {!isRunning && queue.some((it) => it.status !== "pending") && (
+              <button className="mini-button" onClick={clearDoneFromQueue}>
+                {t("queueClearDone")}
+              </button>
+            )}
+          </div>
+          <ul className="queue-list">
+            {queue.map((it) => (
+              <li key={it.id} className={`queue-item ${it.status}`}>
+                <span className="queue-icon">
+                  {it.status === "done"
+                    ? "✓"
+                    : it.status === "running"
+                    ? <span className="spinner" />
+                    : it.status === "error"
+                    ? "✗"
+                    : it.status === "cancelled"
+                    ? "⊘"
+                    : "○"}
+                </span>
+                <span className="queue-name">
+                  {it.artist} - {it.title}
+                </span>
+                <span className={`queue-status ${it.status}`}>{t(`queueStatus${it.status.charAt(0).toUpperCase()}${it.status.slice(1)}` as StrKey)}</span>
+                <span className="queue-actions">
+                  {it.status === "done" && it.result && (
+                    <>
+                      <button className="link-button" onClick={() => setReviewDir(it.result!.outDir)}>
+                        {t("queueReview")}
+                      </button>
+                      <button className="link-button" onClick={() => invoke("open_folder", { path: it.result!.outDir })}>
+                        {t("queueOpen")}
+                      </button>
+                    </>
+                  )}
+                  {it.status === "pending" && !isRunning && (
+                    <button className="link-button danger" onClick={() => removeFromQueue(it.id)}>
+                      {t("queueRemove")}
+                    </button>
+                  )}
+                  {it.status === "error" && it.error && <span className="queue-error-msg">{it.error}</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {!isRunning ? (
         <div className="running-actions">
-          <button className="submit-button" onClick={handleSubmit}>
-            {t("generate")}
+          <button className="submit-button" onClick={handleGenerate}>
+            {queue.some((it) => it.status === "pending")
+              ? t("generateQueue", { n: queue.filter((it) => it.status === "pending").length })
+              : t("generate")}
+          </button>
+          <button className="clear-button" onClick={addToQueue} title={t("queueAdd")}>
+            {t("queueAdd")}
           </button>
           <button className="clear-button" onClick={handleClear} title={t("clearConfirm")}>
             {t("clearFields")}

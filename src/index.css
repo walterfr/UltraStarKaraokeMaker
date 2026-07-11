@@ -433,6 +433,89 @@ button.danger:hover {
 .running-actions .submit-button {
   flex: 1;
 }
+.queue-panel {
+  margin: 1rem 0 0;
+  padding: 0.8rem 1rem;
+  background: #17171f;
+  border: 1px solid #2a2a36;
+  border-radius: 8px;
+}
+.queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+.queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  background: #1b1b24;
+  font-size: 0.9rem;
+}
+.queue-item.running {
+  background: #1a2436;
+}
+.queue-item.done {
+  background: #16241a;
+}
+.queue-item.error {
+  background: #2a1418;
+}
+.queue-icon {
+  width: 1.2rem;
+  text-align: center;
+  color: #9a9aa8;
+}
+.queue-item.done .queue-icon {
+  color: #7dc98f;
+}
+.queue-item.error .queue-icon {
+  color: #ff9fa8;
+}
+.queue-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.queue-status {
+  font-size: 0.78rem;
+  color: #9a9aa8;
+}
+.queue-status.done {
+  color: #7dc98f;
+}
+.queue-status.error {
+  color: #ff9fa8;
+}
+.queue-actions {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+.link-button.danger {
+  color: #ff9fa8;
+}
+.queue-error-msg {
+  font-size: 0.78rem;
+  color: #ff9fa8;
+  max-width: 260px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .lyrics-toolbar {
   display: flex;
   align-items: center;

@@ -53,10 +53,12 @@ use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use tauri::Window;
-use tokio::process::Command;
+use tauri::{Manager, Window};
+use tokio::io::AsyncWriteExt;
+use tokio::process::{ChildStdin, Command};
 use tokio::sync::watch;
 use tokio::time::{sleep, Duration};
 use uskmaker_core::Song;
@@ -66,11 +68,26 @@ use uskmaker_core::Song;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-/// Estado compartilhado da geração em andamento - existe para o botão
-/// Cancelar da UI. Guardamos só o PID (não o Child inteiro) porque o
-/// run_pipeline precisa continuar dono do handle para dar .wait().
+/// Trait que expõe `.creation_flags()` no `std::process::Command` (o do
+/// tokio já traz o método embutido).
+#[cfg(windows)]
+use std::os::windows::process::CommandExt as _;
+
+/// Sidecar Python PERSISTENTE: fica vivo entre músicas para manter os modelos
+/// de IA quentes (ver server.py + caches em pipeline/align.py). O Rust manda
+/// cada job pela stdin e espera o arquivo de status aparecer na pasta de saída.
+struct ServerHandle {
+    child: tokio::process::Child,
+    stdin: ChildStdin,
+}
+
+/// Estado compartilhado da geração em andamento. `server` guarda o sidecar
+/// persistente (reusado entre jobs da fila); `child_pid` é o PID dele, usado
+/// pelo botão Cancelar (que mata a árvore e força um respawn frio no próximo
+/// job); `cancel_requested` distingue cancelamento de erro real.
 #[derive(Default)]
 struct PipelineState {
+    server: tokio::sync::Mutex<Option<ServerHandle>>,
     child_pid: Mutex<Option<u32>>,
     cancel_requested: AtomicBool,
 }
@@ -252,6 +269,74 @@ fn read_new_lines(path: &Path, last_pos: &mut u64, leftover: &mut String, window
     }
 }
 
+/// Garante que o sidecar persistente está vivo (spawna se necessário) e envia
+/// um job (uma linha JSON) pela stdin dele. Mantém o handle em `state.server`
+/// para reuso entre músicas da fila - é isso que preserva os modelos quentes.
+async fn ensure_server_and_send(
+    app: &tauri::AppHandle,
+    state: &tauri::State<'_, PipelineState>,
+    job_line: &str,
+) -> Result<(), String> {
+    let mut guard = state.server.lock().await;
+
+    // (re)spawn se não há servidor ou se o anterior já morreu (cancelamento,
+    // crash) - o primeiro job após um respawn paga de novo o load dos modelos.
+    let alive = match guard.as_mut() {
+        Some(h) => matches!(h.child.try_wait(), Ok(None)),
+        None => false,
+    };
+    if !alive {
+        let (code_dir, python_exe) = resolve_sidecar(app)?;
+        // stdout/stderr do servidor vão para um log de SESSÃO (só diagnóstico);
+        // a saída de cada job é capturada pelo próprio Python no log do job.
+        let session_log = code_dir.join("_server_session.log");
+        let (out, err) = match File::create(&session_log) {
+            Ok(f) => {
+                let e = f.try_clone().ok();
+                (Stdio::from(f), e.map(Stdio::from).unwrap_or_else(Stdio::null))
+            }
+            Err(_) => (Stdio::null(), Stdio::null()),
+        };
+        let mut cmd = Command::new(&python_exe);
+        cmd.current_dir(&code_dir)
+            .env("PYTHONUTF8", "1")
+            .arg("-u") // sem buffer: jobs pela stdin chegam na hora
+            .arg("server.py")
+            .stdin(Stdio::piped())
+            .stdout(out)
+            .stderr(err);
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("Erro ao iniciar o sidecar persistente: {}", e))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "Não consegui obter a stdin do sidecar.".to_string())?;
+        *state.child_pid.lock().unwrap() = child.id();
+        *guard = Some(ServerHandle { child, stdin });
+    }
+
+    let handle = guard.as_mut().unwrap();
+    handle
+        .stdin
+        .write_all(job_line.as_bytes())
+        .await
+        .map_err(|e| format!("Erro ao enviar job ao sidecar: {}", e))?;
+    handle
+        .stdin
+        .write_all(b"\n")
+        .await
+        .map_err(|e| format!("Erro ao enviar job ao sidecar: {}", e))?;
+    handle
+        .stdin
+        .flush()
+        .await
+        .map_err(|e| format!("Erro ao enviar job ao sidecar: {}", e))?;
+    Ok(())
+}
+
 #[tauri::command]
 async fn run_pipeline(
     app: tauri::AppHandle,
@@ -259,7 +344,6 @@ async fn run_pipeline(
     state: tauri::State<'_, PipelineState>,
     input: PipelineInput,
 ) -> Result<PipelineResult, String> {
-    let (sidecar_dir, python_exe) = resolve_sidecar(&app)?;
     state.cancel_requested.store(false, Ordering::SeqCst);
 
     // UX (07/2026): o pacote vai para uma SUBPASTA "Artista - Título" dentro
@@ -288,109 +372,103 @@ async fn run_pipeline(
         _ => None,
     };
 
-    // Arquivo de log combinado (stdout+stderr) que o Python escreve de
-    // forma síncrona normal - ver nota grande no topo do arquivo sobre
-    // por que isso substituiu Stdio::piped().
+    // Valida a fonte antes de tocar no sidecar (mesma checagem de sempre).
+    let url = input
+        .youtube_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let file = input
+        .file_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    if url.is_none() && file.is_none() {
+        return Err("Forneça um link do YouTube ou um arquivo de áudio local.".into());
+    }
+
+    // Log por-job que o SERVIDOR Python escreve (o Rust faz tail dele) e o
+    // arquivo-sinal de conclusão. Remove versões antigas para não confundir o
+    // tail nem ler um status de execução anterior nesta mesma pasta.
     let log_path = out_dir.join("_process_output.log");
-    let stdout_file = File::create(&log_path)
-        .map_err(|e| format!("Erro ao criar arquivo de log '{}': {}", log_path.display(), e))?;
-    let stderr_file = stdout_file
-        .try_clone()
-        .map_err(|e| format!("Erro ao clonar handle do arquivo de log: {}", e))?;
+    let status_path = out_dir.join("_job_status.json");
+    let _ = std::fs::remove_file(&log_path);
+    let _ = std::fs::remove_file(&status_path);
 
-    let mut cmd = Command::new(&python_exe);
-    cmd.current_dir(&sidecar_dir)
-        // Força o Python a escrever stdout/stderr em UTF-8 mesmo redirecionado
-        // para arquivo (sem isso o Windows usa cp1252 e o tail de log quebrava
-        // nos caracteres fora do ASCII - ver nota em read_new_lines).
-        .env("PYTHONUTF8", "1")
-        .arg("main.py")
-        .arg("--lyrics")
-        .arg(&lyrics_path)
-        .arg("--title")
-        .arg(&input.title)
-        .arg("--artist")
-        .arg(&input.artist)
-        .arg("--language")
-        .arg(&input.language)
-        .arg("--out")
-        .arg(&out_dir)
-        .stdout(stdout_file)
-        .stderr(stderr_file);
+    // Monta o job (uma linha JSON) para o sidecar persistente.
+    let job = serde_json::json!({
+        "url": url,
+        "file": file,
+        "lyrics_path": lyrics_path.to_string_lossy(),
+        "title": input.title,
+        "artist": input.artist,
+        "language": input.language,
+        "out_dir": out_dir.to_string_lossy(),
+        "bpm": input.bpm,
+        "gap_ms": 0,
+        "device": "cuda",
+        "with_video": input.with_video,
+        "bg_video": input.bg_video,
+        "bg_video_url": input.bg_video_url.as_deref().map(str::trim).filter(|s| !s.is_empty()),
+        "clean_work": input.clean_work,
+        "synced_lyrics_path": synced_path.as_ref().map(|p| p.to_string_lossy().to_string()),
+    });
+    let job_line = serde_json::to_string(&job)
+        .map_err(|e| format!("Erro ao serializar o job: {}", e))?;
 
-    if let Some(bpm) = input.bpm {
-        cmd.arg("--bpm").arg(bpm.to_string());
-    }
+    ensure_server_and_send(&app, &state, &job_line).await?;
 
-    if input.with_video {
-        cmd.arg("--with-video");
-    }
-
-    match &input.bg_video_url {
-        Some(url) if !url.trim().is_empty() => {
-            cmd.arg("--bg-video-url").arg(url.trim());
-        }
-        _ if input.bg_video => {
-            cmd.arg("--bg-video");
-        }
-        _ => {}
-    }
-
-    if input.clean_work {
-        cmd.arg("--clean-work");
-    }
-
-    if let Some(ref p) = synced_path {
-        cmd.arg("--synced-lyrics").arg(p);
-    }
-
-    match (&input.youtube_url, &input.file_path) {
-        (Some(url), _) if !url.trim().is_empty() => {
-            cmd.arg("--url").arg(url);
-        }
-        (_, Some(file)) if !file.trim().is_empty() => {
-            cmd.arg("--file").arg(file);
-        }
-        _ => {
-            return Err("Forneça um link do YouTube ou um arquivo de áudio local.".into());
-        }
-    }
-
-    #[cfg(windows)]
-    cmd.creation_flags(CREATE_NO_WINDOW);
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Erro ao iniciar o processo Python: {}", e))?;
-
-    // registra o PID para o botão Cancelar da UI
-    *state.child_pid.lock().unwrap() = child.id();
-
+    // tail do log do job (reusa o mecanismo à prova de balas de sempre)
     let (stop_tx, stop_rx) = watch::channel(false);
-    let tail_window = window.clone();
-    let tail_log_path = log_path.clone();
-    let tail_task = tokio::spawn(tail_file_and_emit(tail_window, tail_log_path, stop_rx));
+    let tail_task = tokio::spawn(tail_file_and_emit(window.clone(), log_path.clone(), stop_rx));
 
-    let status = child
-        .wait()
-        .await
-        .map_err(|e| format!("Erro ao aguardar o processo Python: {}", e))?;
-
-    *state.child_pid.lock().unwrap() = None;
+    // Espera o sidecar sinalizar a conclusão do job (arquivo de status),
+    // observando também cancelamento e morte inesperada do servidor.
+    let job_status = loop {
+        if let Ok(txt) = std::fs::read_to_string(&status_path) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
+                break v;
+            }
+        }
+        if state.cancel_requested.load(Ordering::SeqCst) {
+            let _ = stop_tx.send(true);
+            let _ = tail_task.await;
+            return Err(CANCELLED_MSG.to_string());
+        }
+        // se o servidor morreu sozinho (crash) e não deixou status, aborta
+        {
+            let mut guard = state.server.lock().await;
+            let dead = match guard.as_mut() {
+                Some(h) => matches!(h.child.try_wait(), Ok(Some(_)) | Err(_)),
+                None => true,
+            };
+            if dead && !status_path.exists() {
+                *guard = None;
+                let _ = stop_tx.send(true);
+                let _ = tail_task.await;
+                if state.cancel_requested.load(Ordering::SeqCst) {
+                    return Err(CANCELLED_MSG.to_string());
+                }
+                return Err(format!(
+                    "O sidecar encerrou inesperadamente antes de concluir. Veja o log em '{}'.",
+                    log_path.display()
+                ));
+            }
+        }
+        sleep(Duration::from_millis(150)).await;
+    };
 
     let _ = stop_tx.send(true);
     let _ = tail_task.await;
 
-    if !status.success() {
-        // cancelamento pedido pela UI não é erro - devolve a sentinela para
-        // o frontend mostrar um aviso neutro em vez de caixa vermelha
-        if state.cancel_requested.load(Ordering::SeqCst) {
-            return Err(CANCELLED_MSG.to_string());
-        }
+    if job_status.get("status").and_then(|s| s.as_str()) != Some("ok") {
+        let msg = job_status
+            .get("message")
+            .and_then(|m| m.as_str())
+            .unwrap_or("erro desconhecido no sidecar");
         return Err(format!(
-            "Pipeline Python terminou com erro (código {:?}). Veja o log acima para detalhes \
-             (também salvo em '{}' e em 'pipeline_debug.log' na pasta de saída).",
-            status.code(),
+            "Falha ao gerar o pacote: {}\n(log completo em '{}' e em 'pipeline_debug.log').",
+            msg,
             log_path.display()
         ));
     }
@@ -441,13 +519,18 @@ async fn run_pipeline(
 }
 
 /// Cancela a geração em andamento: mata a ÁRVORE de processos do sidecar
-/// (taskkill /T) - só matar o python.exe deixaria ffmpeg/yt-dlp filhos
-/// órfãos rodando. O run_pipeline percebe a morte no .wait() e devolve a
+/// persistente (taskkill /T) - além do python.exe do servidor, derruba os
+/// filhos (Demucs/ffmpeg/yt-dlp) do job atual. O servidor morre junto, então
+/// limpamos o handle: o próximo job da fila respawna um servidor novo (frio).
+/// O run_pipeline percebe cancel_requested no laço de espera e devolve a
 /// sentinela CANCELLED_MSG em vez de erro.
 #[tauri::command]
 async fn cancel_pipeline(state: tauri::State<'_, PipelineState>) -> Result<(), String> {
     state.cancel_requested.store(true, Ordering::SeqCst);
     let pid = *state.child_pid.lock().unwrap();
+    // esquece o handle do servidor (foi morto) para forçar respawn no próximo job
+    *state.server.lock().await = None;
+    *state.child_pid.lock().unwrap() = None;
     let Some(pid) = pid else {
         return Ok(()); // nada rodando - cancelamento vira no-op
     };
@@ -622,7 +705,7 @@ fn open_folder(path: String) -> Result<(), String> {
 }
 
 fn main() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .manage(PipelineState::default())
         .invoke_handler(tauri::generate_handler![
             run_pipeline,
@@ -632,6 +715,22 @@ fn main() {
             cancel_pipeline,
             check_environment
         ])
-        .run(tauri::generate_context!())
-        .expect("erro ao rodar a aplicação Tauri");
+        .build(tauri::generate_context!())
+        .expect("erro ao construir a aplicação Tauri");
+
+    app.run(|app_handle, event| {
+        // Ao fechar o app, mata o sidecar persistente para não deixar um
+        // Python órfão segurando ~GBs de VRAM com os modelos carregados.
+        if let tauri::RunEvent::ExitRequested { .. } = event {
+            let state = app_handle.state::<PipelineState>();
+            let pid = state.child_pid.lock().ok().and_then(|g| *g);
+            if let Some(pid) = pid {
+                let mut kill = std::process::Command::new("taskkill");
+                kill.args(["/PID", &pid.to_string(), "/T", "/F"]);
+                #[cfg(windows)]
+                kill.creation_flags(CREATE_NO_WINDOW);
+                let _ = kill.output();
+            }
+        }
+    });
 }

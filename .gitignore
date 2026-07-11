@@ -15,6 +15,9 @@ hf_token.txt
 # --- Dados de trabalho / saída de testes (pesados, não versionar) ---
 python-sidecar/work/
 python-sidecar/output_test/
+python-sidecar/output_raimundos/
+# log de sessão do sidecar persistente (server.py), gerado em runtime
+python-sidecar/_server_session.log
 *.wav
 *.mp3
 *.webm
