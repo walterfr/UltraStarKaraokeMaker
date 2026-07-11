@@ -1,5 +1,7 @@
 # USKMaker — UltraStar Karaoke Maker
 
+**🇬🇧 [English version](README.en.md)**
+
 Gerador de pacotes de karaokê **UltraStar** a partir de um link do YouTube ou de um arquivo de áudio local, com sincronização de letra, extração de pitch, detecção de BPM e metadados (capa, ano, gênero) automáticos.
 
 O diferencial em relação a ferramentas como o UltraSinger é que o USKMaker parte da **letra que o usuário já fornece**. O problema passa a ser de *forced alignment* (alinhar uma letra conhecida ao áudio), não de transcrição do zero — o que resulta em sincronização bem mais precisa, especialmente em português.
