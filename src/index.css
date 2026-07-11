@@ -433,6 +433,21 @@ button.danger:hover {
 .running-actions .submit-button {
   flex: 1;
 }
+.clear-button {
+  background: #262632;
+  border: 1px solid #33333f;
+  color: #b9b9c4;
+  border-radius: 8px;
+  padding: 0 1.4rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+  margin-top: 1rem;
+  white-space: nowrap;
+}
+.clear-button:hover {
+  border-color: #4f8ef7;
+  color: #e8e8ec;
+}
 .cancel-button {
   background: #2a1418;
   border: 1px solid #5c2028;

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/tauri";
 import { listen } from "@tauri-apps/api/event";
-import { open as openDialog } from "@tauri-apps/api/dialog";
+import { open as openDialog, ask } from "@tauri-apps/api/dialog";
 import { appWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
 import ReviewScreen from "./review/ReviewScreen";
@@ -312,6 +312,34 @@ function App() {
     }
   }
 
+  // Limpa os campos da música (preferências como pasta de saída e idioma ficam)
+  // para emendar a próxima geração sem reabrir o app.
+  function resetForm() {
+    setYoutubeUrl("");
+    setFilePath("");
+    setLyricsText("");
+    setTitle("");
+    setArtist("");
+    setBpm("");
+    setBgVideoUrl("");
+    setResult(null);
+    setError(null);
+    setLogs([]);
+    setCurrentStep(0);
+    setElapsed(0);
+    setCancelled(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function handleClear() {
+    // sem pacote gerado, a letra digitada ainda não foi usada — confirma antes de descartar
+    if (!result && lyricsText.trim()) {
+      const ok = await ask(t("clearConfirm"), { title: "USKMaker" });
+      if (!ok) return;
+    }
+    resetForm();
+  }
+
   async function openOutputFolder() {
     if (!result) return;
     await invoke("open_folder", { path: result.outDir });
@@ -558,9 +586,14 @@ function App() {
       </div>
 
       {!isRunning ? (
-        <button className="submit-button" onClick={handleSubmit}>
-          {t("generate")}
-        </button>
+        <div className="running-actions">
+          <button className="submit-button" onClick={handleSubmit}>
+            {t("generate")}
+          </button>
+          <button className="clear-button" onClick={handleClear} title={t("clearConfirm")}>
+            {t("clearFields")}
+          </button>
+        </div>
       ) : (
         <div className="running-actions">
           <button className="submit-button" disabled>
@@ -638,6 +671,9 @@ function App() {
               </button>
               <button className="secondary" onClick={openOutputFolder}>
                 {t("resultOpenFolder")}
+              </button>
+              <button className="secondary" onClick={resetForm}>
+                {t("resultNewSong")}
               </button>
             </div>
           </div>

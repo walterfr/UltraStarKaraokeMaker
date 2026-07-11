@@ -79,6 +79,8 @@ const STRINGS = {
 
     // ---- execução ----
     generate: "Gerar pacote UltraStar",
+    clearFields: "Limpar campos",
+    clearConfirm: "Limpar todos os campos? A letra digitada será perdida.",
     generating: "Gerando... ({time})",
     cancel: "Cancelar",
     cancelling: "Cancelando...",
@@ -106,6 +108,7 @@ const STRINGS = {
     resultNotesEstimated: " · {n} estimadas — vale revisar",
     resultReview: "Revisar alinhamento",
     resultOpenFolder: "Abrir pasta",
+    resultNewSong: "Nova música",
 
     // ---- revisão ----
     revTitle: "Revisão",
@@ -218,6 +221,8 @@ const STRINGS = {
     valNeedOutDir: "Choose the output folder.",
 
     generate: "Generate UltraStar package",
+    clearFields: "Clear fields",
+    clearConfirm: "Clear all fields? The lyrics you typed will be lost.",
     generating: "Generating... ({time})",
     cancel: "Cancel",
     cancelling: "Cancelling...",
@@ -244,6 +249,7 @@ const STRINGS = {
     resultNotesEstimated: " · {n} estimated — worth reviewing",
     resultReview: "Review alignment",
     resultOpenFolder: "Open folder",
+    resultNewSong: "New song",
 
     revTitle: "Review",
     revLoading: "Loading package...",
