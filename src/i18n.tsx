@@ -1,0 +1,342 @@
+import { createContext, useContext, useEffect, useState } from "react";
+
+// i18n leve, sem dependências: dicionário tipado + contexto React.
+// - Idioma padrão: o do sistema (navigator.language) na primeira execução -
+//   cobre a "escolha na instalação" (o instalador NSIS já é PT-BR/EN e o
+//   Windows do usuário define o idioma inicial do app).
+// - Trocável a qualquer momento pelo seletor no cabeçalho; persiste em
+//   localStorage.
+// - Placeholders com {nome}, substituídos via o parâmetro `vars` de t().
+// Logs técnicos do pipeline Python permanecem em PT (são diagnóstico, não UI).
+
+export type Lang = "pt" | "en";
+
+const STRINGS = {
+  pt: {
+    // ---- geral / cabeçalho ----
+    subtitle: "Gere pacotes UltraStar (letra sincronizada + pitch) a partir de um link do YouTube ou arquivo local.",
+    reviewExisting: "Revisar um pacote já gerado...",
+    aboutTitle: "Sobre o USKMaker",
+    aboutTagline: "Gerador de pacotes de karaokê UltraStar com IA — sincronização de letra, pitch e BPM automáticos, processados localmente.",
+    aboutMadeWith: "Feito com ♥ em Fortaleza-CE por @prof.walterfr",
+    aboutVersion: "Versão {v}",
+    aboutClose: "Fechar",
+    infoButtonTitle: "Sobre o USKMaker",
+
+    // ---- ambiente ----
+    envAI: "Ambiente de IA",
+    envNoGpu: "⚠ sem GPU NVIDIA — processamento em CPU (lento)",
+    envGpu: "✓ GPU {name}",
+    envIncomplete: "Ambiente incompleto — a geração vai falhar até resolver:",
+    envNoFfmpeg: "ffmpeg não encontrado no PATH — instale (https://www.gyan.dev/ffmpeg/builds/) e reinicie o app.",
+    envNoVorbis: "O ffmpeg instalado não tem suporte a libvorbis (necessário para o áudio .ogg do pacote) — use um build \"full\".",
+
+    // ---- fonte ----
+    tabYoutube: "Link do YouTube",
+    tabFile: "Arquivo local",
+    youtubeLabel: "Link do YouTube",
+    withVideoLabel: "Incluir o vídeo no pacote (fundo animado no jogo — download maior e mais lento)",
+    fileLabel: "Arquivo de áudio/vídeo",
+    filePlaceholder: "Nenhum arquivo selecionado",
+    browse: "Procurar...",
+    bgVideoLabel: "Baixar videoclipe do YouTube para o fundo (o áudio continua sendo o seu arquivo; sem vídeo disponível, fica só a capa)",
+    bgVideoUrlPlaceholder: "Link do videoclipe (opcional — em branco, busca automática por artista + título)",
+    fileFilterName: "Áudio/Vídeo",
+
+    // ---- letra ----
+    lyricsLabel: "Letra da música (uma linha por frase cantada) — repita refrões por extenso, tantas vezes quanto forem cantados",
+    lyricsPlaceholder: "Cole a letra aqui...\nUma linha por frase/verso.\nRefrões repetidos devem ser colados de novo, por extenso.",
+    lyricsCount: "{lines} {lineWord} · {words} palavras",
+    lineSingular: "linha",
+    linePlural: "linhas",
+    lyricWarn2x: "Marcação \"(2x)\" encontrada — o alinhador não entende repetição implícita. Cole o trecho repetido por extenso, tantas vezes quanto ele é cantado.",
+    lyricWarnBis: "Marcação \"(bis)\" encontrada — substitua pela repetição escrita por extenso.",
+    lyricWarnSection: "Linha de seção como \"[Refrão]\"/\"[Verse]\" encontrada — remova; o arquivo deve conter apenas o texto cantado.",
+    lyricWarnLrc: "Timestamps de arquivo .lrc encontrados (\"[00:12]\") — cole a letra pura, sem marcações de tempo; a sincronização é feita pelo próprio USKMaker.",
+
+    // ---- campos ----
+    titleLabel: "Título",
+    artistLabel: "Artista",
+    languageLabel: "Idioma da música",
+    langPt: "Português",
+    langEn: "Inglês",
+    langEs: "Espanhol",
+    bpmLabel: "BPM manual (opcional)",
+    bpmPlaceholder: "Deixe em branco para detectar automaticamente",
+    outDirLabel: "Pasta de saída",
+    outDirPlaceholder: "Nenhuma pasta selecionada",
+    outDirPick: "Escolher pasta...",
+    outDirHint: "O pacote será criado numa subpasta \"Artista - Título\" dentro da pasta escolhida.",
+    cleanWorkLabel: "Remover arquivos intermediários ao final (economiza espaço; deixe desmarcado para reprocessar mais rápido)",
+
+    // ---- validação ----
+    valNeedYoutube: "Informe o link do YouTube.",
+    valNeedFile: "Selecione um arquivo de áudio/vídeo local.",
+    valNeedLyrics: "Cole a letra da música.",
+    valNeedTitle: "Informe o título.",
+    valNeedArtist: "Informe o artista.",
+    valNeedOutDir: "Escolha a pasta de saída.",
+
+    // ---- execução ----
+    generate: "Gerar pacote UltraStar",
+    generating: "Gerando... ({time})",
+    cancel: "Cancelar",
+    cancelling: "Cancelando...",
+    cancelledInfo: "Geração cancelada. Os arquivos parciais ficaram na pasta de saída e serão reaproveitados se você gerar de novo com a mesma pasta.",
+    windowGenerating: "USKMaker — Gerando: {song}",
+    step1: "Obter áudio",
+    step1Hint: "segundos (arquivo) · ~1 min (YouTube)",
+    step2: "Separar vocal do instrumental",
+    step2Hint: "~1–3 min na GPU, o passo mais longo",
+    step3: "Detectar BPM",
+    step3Hint: "segundos",
+    step4: "Alinhar letra ao áudio",
+    step4Hint: "~1–2 min",
+    step5: "Buscar capa, ano e gênero",
+    step5Hint: "segundos",
+    step6: "Extrair pitch e montar o pacote",
+    step6Hint: "~1 min",
+    logDetails: "Detalhes técnicos ({n} linhas de log)",
+    errorPrefix: "Erro:",
+    unknownError: "Erro desconhecido ao rodar o pipeline.",
+
+    // ---- resultado ----
+    resultSuccess: "Pacote gerado com sucesso!",
+    resultNotesMeasured: "{n} notas medidas no áudio",
+    resultNotesEstimated: " · {n} estimadas — vale revisar",
+    resultReview: "Revisar alinhamento",
+    resultOpenFolder: "Abrir pasta",
+
+    // ---- revisão ----
+    revTitle: "Revisão",
+    revLoading: "Carregando pacote...",
+    revBack: "Voltar",
+    revClose: "Fechar",
+    revSave: "Salvar (.txt + JSON)",
+    revSaving: "Salvando...",
+    revPlay: "▶ Tocar",
+    revPause: "⏸ Pausar",
+    revToStart: "Voltar ao início",
+    revListenMix: "Ouvir: mix completo",
+    revListenVocals: "Ouvir: só o vocal",
+    revListenTitle: "Qual áudio ouvir durante a revisão",
+    revGap: "GAP (ms)",
+    revGapStepTitle: "Desloca a música inteira no tempo",
+    revUndo: "↶ Desfazer",
+    revRedo: "↷ Refazer",
+    revNextEstimated: "⚠ Próxima estimada ({n})",
+    revNextEstimatedTitle: "Seleciona e centraliza a próxima nota com timing estimado (não medido no áudio)",
+    revMinimapTitle: "Visão geral da música — clique para navegar; riscos laranja = notas estimadas",
+    revHints: "Arrastar nota: mover no tempo/pitch · borda direita: duração · duplo-clique/Enter: ouvir a nota · setas: ajuste fino (Shift+←→: duração · Alt+←→: frase inteira) · Del: excluir · roda: rolar · Ctrl+roda: zoom · Espaço: tocar/pausar",
+    revLegendTiming: "Timing:",
+    revLegendAnchor: "medido (exato)",
+    revLegendFuzzy: "medido (grafia≈)",
+    revLegendRealign: "medido (2º passe)",
+    revLegendInterp: "estimado — conferir",
+    revLegendGolden: "golden",
+    revLegendFreestyle: "freestyle",
+    revSyllable: "Sílaba",
+    revStartBeat: "Início (beat)",
+    revDuration: "Duração (beats)",
+    revPitch: "Pitch",
+    revType: "Tipo",
+    revTypeNormal: "Normal",
+    revTypeGolden: "Golden",
+    revTypeFreestyle: "Freestyle",
+    revPhraseBreak: "Quebra de frase após esta nota",
+    revNoteTime: "{start}s · {dur}s de duração",
+    revDeleteNote: "Excluir nota",
+    revSourceAnchor: "medida (match exato)",
+    revSourceFuzzy: "medida (grafia aproximada)",
+    revSourceRealign: "medida (2º passe na janela)",
+    revSourceInterp: "ESTIMADA (interpolada) — conferir",
+    revSaved: "Salvo: {path}",
+    revWarnings: "Avisos de validação:",
+    revNoAudio: "O arquivo de áudio do pacote não foi encontrado — a timeline funciona, mas sem playback.",
+    revLoadError: "Erro ao carregar o pacote.",
+    revSaveError: "Erro ao salvar.",
+    revConfirmDiscard: "Há alterações não salvas. Sair mesmo assim e descartá-las?",
+    revNoText: "(sem texto)",
+  },
+  en: {
+    subtitle: "Create UltraStar packages (synced lyrics + pitch) from a YouTube link or a local file.",
+    reviewExisting: "Review an existing package...",
+    aboutTitle: "About USKMaker",
+    aboutTagline: "AI-powered UltraStar karaoke package maker — automatic lyric syncing, pitch and BPM detection, all processed locally.",
+    aboutMadeWith: "Made with ♥ in Fortaleza-CE, Brazil by @prof.walterfr",
+    aboutVersion: "Version {v}",
+    aboutClose: "Close",
+    infoButtonTitle: "About USKMaker",
+
+    envAI: "AI environment",
+    envNoGpu: "⚠ no NVIDIA GPU — CPU processing (slow)",
+    envGpu: "✓ GPU {name}",
+    envIncomplete: "Incomplete environment — generation will fail until fixed:",
+    envNoFfmpeg: "ffmpeg not found on PATH — install it (https://www.gyan.dev/ffmpeg/builds/) and restart the app.",
+    envNoVorbis: "The installed ffmpeg lacks libvorbis support (needed for the package's .ogg audio) — use a \"full\" build.",
+
+    tabYoutube: "YouTube link",
+    tabFile: "Local file",
+    youtubeLabel: "YouTube link",
+    withVideoLabel: "Include the video in the package (animated background in game — bigger, slower download)",
+    fileLabel: "Audio/video file",
+    filePlaceholder: "No file selected",
+    browse: "Browse...",
+    bgVideoLabel: "Download a YouTube music video for the background (your file remains the audio; if no video is found, the cover is used)",
+    bgVideoUrlPlaceholder: "Music video link (optional — leave blank for automatic search by artist + title)",
+    fileFilterName: "Audio/Video",
+
+    lyricsLabel: "Song lyrics (one line per sung phrase) — write repeated choruses out in full, as many times as they are sung",
+    lyricsPlaceholder: "Paste the lyrics here...\nOne line per phrase/verse.\nRepeated choruses must be pasted again, in full.",
+    lyricsCount: "{lines} {lineWord} · {words} words",
+    lineSingular: "line",
+    linePlural: "lines",
+    lyricWarn2x: "\"(2x)\" marker found — the aligner doesn't understand implicit repetition. Paste the repeated section in full, as many times as it is sung.",
+    lyricWarnBis: "\"(bis)\" marker found — replace it with the repetition written out in full.",
+    lyricWarnSection: "Section line like \"[Chorus]\"/\"[Verse]\" found — remove it; the lyrics should contain only the sung text.",
+    lyricWarnLrc: ".lrc timestamps found (\"[00:12]\") — paste plain lyrics without timing marks; USKMaker does the syncing itself.",
+
+    titleLabel: "Title",
+    artistLabel: "Artist",
+    languageLabel: "Song language",
+    langPt: "Portuguese",
+    langEn: "English",
+    langEs: "Spanish",
+    bpmLabel: "Manual BPM (optional)",
+    bpmPlaceholder: "Leave blank to detect automatically",
+    outDirLabel: "Output folder",
+    outDirPlaceholder: "No folder selected",
+    outDirPick: "Choose folder...",
+    outDirHint: "The package will be created in an \"Artist - Title\" subfolder inside the chosen folder.",
+    cleanWorkLabel: "Remove intermediate files when done (saves space; leave unchecked to reprocess faster)",
+
+    valNeedYoutube: "Enter the YouTube link.",
+    valNeedFile: "Select a local audio/video file.",
+    valNeedLyrics: "Paste the song lyrics.",
+    valNeedTitle: "Enter the title.",
+    valNeedArtist: "Enter the artist.",
+    valNeedOutDir: "Choose the output folder.",
+
+    generate: "Generate UltraStar package",
+    generating: "Generating... ({time})",
+    cancel: "Cancel",
+    cancelling: "Cancelling...",
+    cancelledInfo: "Generation cancelled. Partial files were kept in the output folder and will be reused if you generate again with the same folder.",
+    windowGenerating: "USKMaker — Generating: {song}",
+    step1: "Get audio",
+    step1Hint: "seconds (file) · ~1 min (YouTube)",
+    step2: "Separate vocals from instrumental",
+    step2Hint: "~1–3 min on GPU, the longest step",
+    step3: "Detect BPM",
+    step3Hint: "seconds",
+    step4: "Align lyrics to audio",
+    step4Hint: "~1–2 min",
+    step5: "Fetch cover, year and genre",
+    step5Hint: "seconds",
+    step6: "Extract pitch and build the package",
+    step6Hint: "~1 min",
+    logDetails: "Technical details ({n} log lines)",
+    errorPrefix: "Error:",
+    unknownError: "Unknown error while running the pipeline.",
+
+    resultSuccess: "Package generated successfully!",
+    resultNotesMeasured: "{n} notes measured from audio",
+    resultNotesEstimated: " · {n} estimated — worth reviewing",
+    resultReview: "Review alignment",
+    resultOpenFolder: "Open folder",
+
+    revTitle: "Review",
+    revLoading: "Loading package...",
+    revBack: "Back",
+    revClose: "Close",
+    revSave: "Save (.txt + JSON)",
+    revSaving: "Saving...",
+    revPlay: "▶ Play",
+    revPause: "⏸ Pause",
+    revToStart: "Back to start",
+    revListenMix: "Listen: full mix",
+    revListenVocals: "Listen: vocals only",
+    revListenTitle: "Which audio to hear while reviewing",
+    revGap: "GAP (ms)",
+    revGapStepTitle: "Shifts the whole song in time",
+    revUndo: "↶ Undo",
+    revRedo: "↷ Redo",
+    revNextEstimated: "⚠ Next estimated ({n})",
+    revNextEstimatedTitle: "Selects and centers the next note with estimated timing (not measured from audio)",
+    revMinimapTitle: "Song overview — click to navigate; orange ticks = estimated notes",
+    revHints: "Drag note: move in time/pitch · right edge: duration · double-click/Enter: play the note · arrows: fine-tune (Shift+←→: duration · Alt+←→: whole phrase) · Del: delete · wheel: scroll · Ctrl+wheel: zoom · Space: play/pause",
+    revLegendTiming: "Timing:",
+    revLegendAnchor: "measured (exact)",
+    revLegendFuzzy: "measured (spelling≈)",
+    revLegendRealign: "measured (2nd pass)",
+    revLegendInterp: "estimated — check",
+    revLegendGolden: "golden",
+    revLegendFreestyle: "freestyle",
+    revSyllable: "Syllable",
+    revStartBeat: "Start (beat)",
+    revDuration: "Duration (beats)",
+    revPitch: "Pitch",
+    revType: "Type",
+    revTypeNormal: "Normal",
+    revTypeGolden: "Golden",
+    revTypeFreestyle: "Freestyle",
+    revPhraseBreak: "Phrase break after this note",
+    revNoteTime: "{start}s · {dur}s long",
+    revDeleteNote: "Delete note",
+    revSourceAnchor: "measured (exact match)",
+    revSourceFuzzy: "measured (approximate spelling)",
+    revSourceRealign: "measured (2nd pass in window)",
+    revSourceInterp: "ESTIMATED (interpolated) — check",
+    revSaved: "Saved: {path}",
+    revWarnings: "Validation warnings:",
+    revNoAudio: "The package's audio file was not found — the timeline works, but without playback.",
+    revLoadError: "Error loading the package.",
+    revSaveError: "Error while saving.",
+    revConfirmDiscard: "There are unsaved changes. Leave anyway and discard them?",
+    revNoText: "(no text)",
+  },
+} as const;
+
+export type StrKey = keyof (typeof STRINGS)["pt"];
+
+const LANG_KEY = "uskmaker-ui-lang";
+
+function detectLang(): Lang {
+  const saved = localStorage.getItem(LANG_KEY);
+  if (saved === "pt" || saved === "en") return saved;
+  return navigator.language?.toLowerCase().startsWith("pt") ? "pt" : "en";
+}
+
+interface I18nValue {
+  lang: Lang;
+  setLang: (l: Lang) => void;
+  t: (key: StrKey, vars?: Record<string, string | number>) => string;
+}
+
+const I18nContext = createContext<I18nValue | null>(null);
+
+export function I18nProvider({ children }: { children: React.ReactNode }) {
+  const [lang, setLangState] = useState<Lang>(detectLang);
+
+  useEffect(() => {
+    localStorage.setItem(LANG_KEY, lang);
+  }, [lang]);
+
+  const t = (key: StrKey, vars?: Record<string, string | number>): string => {
+    let s: string = STRINGS[lang][key] ?? STRINGS.pt[key] ?? key;
+    if (vars) {
+      for (const [k, v] of Object.entries(vars)) {
+        s = s.split(`{${k}}`).join(String(v));
+      }
+    }
+    return s;
+  };
+
+  return <I18nContext.Provider value={{ lang, setLang: setLangState, t }}>{children}</I18nContext.Provider>;
+}
+
+export function useI18n(): I18nValue {
+  const ctx = useContext(I18nContext);
+  if (!ctx) throw new Error("useI18n fora do I18nProvider");
+  return ctx;
+}

@@ -3,22 +3,17 @@ import { invoke, convertFileSrc } from "@tauri-apps/api/tauri";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/api/dialog";
 import { appWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
+import { getVersion } from "@tauri-apps/api/app";
 import ReviewScreen from "./review/ReviewScreen";
+import { useI18n, StrKey } from "./i18n";
 
 // USKMaker - tela principal.
 //
-// REFORMULAÇÃO DE UX (07/2026) - princípios aplicados:
-// - PREVENIR ANTES DE GASTAR GPU: a letra é analisada em tempo real no
-//   formulário ((2x), [Refrão], timestamps LRC...) - avisos que antes só
-//   apareciam depois de minutos de processamento agora aparecem ao digitar.
-//   A checagem de ambiente (sidecar/ffmpeg/GPU) roda na abertura do app.
-// - A ESPERA É A UX: gerar leva minutos. A barra genérica virou uma lista
-//   de etapas com estado individual (feita/rodando/pendente), duração
-//   típica e cronômetro; o log cru fica colapsado ("detalhes técnicos") e
-//   só abre sozinho quando há erro. Cancelar de verdade (mata a árvore de
-//   processos) em vez de fechar o app.
-// - MEMÓRIA: preferências do formulário (pasta de saída, idioma, flags) e
-//   tamanho/posição da janela persistem entre sessões (localStorage).
+// UX (07/2026): prevenção antes de gastar GPU (validação de letra ao digitar,
+// checagem de ambiente na abertura), espera legível (lista de etapas com
+// estado + cronômetro + cancelar de verdade), memória entre sessões
+// (preferências e janela) e resultado rico. Interface bilíngue PT/EN
+// (ver i18n.tsx) com splash e página "Sobre".
 
 type SourceMode = "youtube" | "file";
 
@@ -41,10 +36,7 @@ interface EnvCheck {
   gpuName: string | null;
 }
 
-// Sentinela que o Rust devolve quando a geração foi cancelada pela UI -
-// distingue "cancelado" (aviso neutro) de erro real (caixa vermelha).
 const CANCELLED_MSG = "__CANCELADO__";
-
 const SETTINGS_KEY = "uskmaker-settings";
 const WINDOW_KEY = "uskmaker-window";
 
@@ -65,48 +57,38 @@ function loadSettings(): Partial<PersistedSettings> {
   }
 }
 
-// As 6 etapas do pipeline Python, com a duração típica que o usuário deve
-// esperar - transforma "travou?" em "está no prazo". Os índices casam com
-// as linhas "Etapa X/6" do log.
-const PIPELINE_STEPS = [
-  { label: "Obter áudio", hint: "segundos (arquivo) · ~1 min (YouTube)" },
-  { label: "Separar vocal do instrumental", hint: "~1–3 min na GPU, o passo mais longo" },
-  { label: "Detectar BPM", hint: "segundos" },
-  { label: "Alinhar letra ao áudio", hint: "~1–2 min" },
-  { label: "Buscar capa, ano e gênero", hint: "segundos" },
-  { label: "Extrair pitch e montar o pacote", hint: "~1 min" },
-];
-
 // Padrões na letra que historicamente causam pacote ruim - detectados AO
-// DIGITAR, antes de gastar minutos de GPU. Cada um tem uma explicação
-// acionável (o que fazer, não só "está errado").
-const LYRIC_CHECKS: { pattern: RegExp; msg: string }[] = [
-  {
-    pattern: /\(\s*\d+\s*[xX]\s*\)|\(\s*[xX]\s*\d+\s*\)/,
-    msg: "Marcação \"(2x)\" encontrada — o alinhador não entende repetição implícita. Cole o trecho repetido por extenso, tantas vezes quanto ele é cantado.",
-  },
-  {
-    pattern: /\(\s*bis\s*\)/i,
-    msg: "Marcação \"(bis)\" encontrada — substitua pela repetição escrita por extenso.",
-  },
-  {
-    pattern: /^\s*\[[^\]]+\]\s*$/m,
-    msg: "Linha de seção como \"[Refrão]\"/\"[Verse]\" encontrada — remova; o arquivo deve conter apenas o texto cantado.",
-  },
-  {
-    pattern: /\[\d{1,2}:\d{2}/,
-    msg: "Timestamps de arquivo .lrc encontrados (\"[00:12]\") — cole a letra pura, sem marcações de tempo; a sincronização é feita pelo próprio USKMaker.",
-  },
+// DIGITAR, antes de gastar minutos de GPU (mensagens em i18n.tsx).
+const LYRIC_CHECKS: { pattern: RegExp; key: StrKey }[] = [
+  { pattern: /\(\s*\d+\s*[xX]\s*\)|\(\s*[xX]\s*\d+\s*\)/, key: "lyricWarn2x" },
+  { pattern: /\(\s*bis\s*\)/i, key: "lyricWarnBis" },
+  { pattern: /^\s*\[[^\]]+\]\s*$/m, key: "lyricWarnSection" },
+  { pattern: /\[\d{1,2}:\d{2}/, key: "lyricWarnLrc" },
 ];
 
-function analyzeLyrics(text: string): { lines: number; words: number; warnings: string[] } {
-  const lines = text.split("\n").filter((l) => l.trim()).length;
-  const words = text.split(/\s+/).filter(Boolean).length;
-  const warnings = LYRIC_CHECKS.filter((c) => c.pattern.test(text)).map((c) => c.msg);
-  return { lines, words, warnings };
+const STEP_KEYS: { label: StrKey; hint: StrKey }[] = [
+  { label: "step1", hint: "step1Hint" },
+  { label: "step2", hint: "step2Hint" },
+  { label: "step3", hint: "step3Hint" },
+  { label: "step4", hint: "step4Hint" },
+  { label: "step5", hint: "step5Hint" },
+  { label: "step6", hint: "step6Hint" },
+];
+
+function LogoMark({ size = 40 }: { size?: number }) {
+  // marca simples e própria: microfone estilizado + estrela (UltraStar)
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" fill="none" aria-hidden="true">
+      <rect x="18" y="6" width="12" height="20" rx="6" fill="#4f8ef7" />
+      <path d="M12 22v2a12 12 0 0 0 24 0v-2" stroke="#7fabf9" strokeWidth="3" strokeLinecap="round" />
+      <line x1="24" y1="38" x2="24" y2="43" stroke="#7fabf9" strokeWidth="3" strokeLinecap="round" />
+      <path d="M37 8l1.6 3.4L42 13l-3.4 1.6L37 18l-1.6-3.4L32 13l3.4-1.6L37 8z" fill="#c9a227" />
+    </svg>
+  );
 }
 
 function App() {
+  const { t, lang, setLang } = useI18n();
   const saved = useMemo(loadSettings, []);
   const [sourceMode, setSourceMode] = useState<SourceMode>(saved.sourceMode ?? "youtube");
   const [youtubeUrl, setYoutubeUrl] = useState("");
@@ -133,10 +115,34 @@ function App() {
   const [env, setEnv] = useState<EnvCheck | null>(null);
   const [reviewDir, setReviewDir] = useState<string | null>(null);
 
+  // splash: visível na abertura, some com fade (leve - overlay, sem janela extra)
+  const [splashState, setSplashState] = useState<"show" | "fade" | "gone">("show");
+  const [showAbout, setShowAbout] = useState(false);
+  const [appVersion, setAppVersion] = useState("");
+
   const logEndRef = useRef<HTMLDivElement>(null);
   const startedAtRef = useRef(0);
 
-  const lyricsInfo = useMemo(() => analyzeLyrics(lyricsText), [lyricsText]);
+  const lyricsInfo = useMemo(() => {
+    const lines = lyricsText.split("\n").filter((l) => l.trim()).length;
+    const words = lyricsText.split(/\s+/).filter(Boolean).length;
+    const warnings = LYRIC_CHECKS.filter((c) => c.pattern.test(lyricsText)).map((c) => t(c.key));
+    return { lines, words, warnings };
+  }, [lyricsText, t]);
+
+  // ------------------------------------------------------------- splash
+  useEffect(() => {
+    const fadeTimer = setTimeout(() => setSplashState("fade"), 1300);
+    const goneTimer = setTimeout(() => setSplashState("gone"), 1850);
+    return () => {
+      clearTimeout(fadeTimer);
+      clearTimeout(goneTimer);
+    };
+  }, []);
+
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => setAppVersion(""));
+  }, []);
 
   // ------------------------------------------------ persistência leve
   useEffect(() => {
@@ -144,7 +150,6 @@ function App() {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   }, [sourceMode, language, outDir, withVideo, bgVideo, cleanWork]);
 
-  // tamanho/posição da janela entre sessões
   useEffect(() => {
     (async () => {
       try {
@@ -190,7 +195,7 @@ function App() {
   useEffect(() => {
     invoke<EnvCheck>("check_environment")
       .then(setEnv)
-      .catch(() => setEnv(null)); // sem checagem não é fatal - só não mostra o cartão
+      .catch(() => setEnv(null));
   }, []);
 
   // ------------------------------------------------------ log + passos
@@ -212,7 +217,6 @@ function App() {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs]);
 
-  // cronômetro da geração
   useEffect(() => {
     if (!isRunning) return;
     const id = setInterval(() => {
@@ -224,7 +228,7 @@ function App() {
   async function pickFile() {
     const selected = await openDialog({
       multiple: false,
-      filters: [{ name: "Áudio/Vídeo", extensions: ["mp3", "wav", "mp4", "m4a", "flac"] }],
+      filters: [{ name: t("fileFilterName"), extensions: ["mp3", "wav", "mp4", "m4a", "flac"] }],
     });
     if (typeof selected === "string") {
       setFilePath(selected);
@@ -239,16 +243,12 @@ function App() {
   }
 
   function validate(): string | null {
-    if (sourceMode === "youtube" && !youtubeUrl.trim()) {
-      return "Informe o link do YouTube.";
-    }
-    if (sourceMode === "file" && !filePath.trim()) {
-      return "Selecione um arquivo de áudio/vídeo local.";
-    }
-    if (!lyricsText.trim()) return "Cole a letra da música.";
-    if (!title.trim()) return "Informe o título.";
-    if (!artist.trim()) return "Informe o artista.";
-    if (!outDir.trim()) return "Escolha a pasta de saída.";
+    if (sourceMode === "youtube" && !youtubeUrl.trim()) return t("valNeedYoutube");
+    if (sourceMode === "file" && !filePath.trim()) return t("valNeedFile");
+    if (!lyricsText.trim()) return t("valNeedLyrics");
+    if (!title.trim()) return t("valNeedTitle");
+    if (!artist.trim()) return t("valNeedArtist");
+    if (!outDir.trim()) return t("valNeedOutDir");
     return null;
   }
 
@@ -268,7 +268,7 @@ function App() {
     setCancelling(false);
     setIsRunning(true);
     startedAtRef.current = Date.now();
-    appWindow.setTitle(`USKMaker — Gerando: ${artist.trim()} - ${title.trim()}`);
+    appWindow.setTitle(t("windowGenerating", { song: `${artist.trim()} - ${title.trim()}` }));
 
     try {
       const pipelineResult = await invoke<PipelineResult>("run_pipeline", {
@@ -288,13 +288,13 @@ function App() {
         },
       });
       setResult(pipelineResult);
-      setCurrentStep(PIPELINE_STEPS.length + 1);
+      setCurrentStep(STEP_KEYS.length + 1);
     } catch (err) {
       if (err === CANCELLED_MSG) {
         setCancelled(true);
         setCurrentStep(0);
       } else {
-        setError(typeof err === "string" ? err : "Erro desconhecido ao rodar o pipeline.");
+        setError(typeof err === "string" ? err : t("unknownError"));
       }
     } finally {
       setIsRunning(false);
@@ -308,7 +308,7 @@ function App() {
     try {
       await invoke("cancel_pipeline");
     } catch {
-      setCancelling(false); // falhou ao matar - deixa tentar de novo
+      setCancelling(false);
     }
   }
 
@@ -331,14 +331,8 @@ function App() {
   const envProblems: string[] = [];
   if (env) {
     if (!env.sidecarOk) envProblems.push(env.sidecarMsg);
-    if (!env.ffmpegOk)
-      envProblems.push(
-        "ffmpeg não encontrado no PATH — instale (https://www.gyan.dev/ffmpeg/builds/) e reinicie o app."
-      );
-    else if (!env.vorbisOk)
-      envProblems.push(
-        "O ffmpeg instalado não tem suporte a libvorbis (necessário para o áudio .ogg do pacote) — use um build \"full\"."
-      );
+    if (!env.ffmpegOk) envProblems.push(t("envNoFfmpeg"));
+    else if (!env.vorbisOk) envProblems.push(t("envNoVorbis"));
   }
 
   const minutes = Math.floor(elapsed / 60);
@@ -346,23 +340,70 @@ function App() {
 
   return (
     <div>
-      <h1>USKMaker</h1>
+      {splashState !== "gone" && (
+        <div className={`splash ${splashState === "fade" ? "fade" : ""}`}>
+          <LogoMark size={72} />
+          <h1 className="splash-title">USKMaker</h1>
+          <p className="splash-tagline">UltraStar Karaoke Maker</p>
+        </div>
+      )}
+
+      {showAbout && (
+        <div className="about-overlay" onClick={() => setShowAbout(false)}>
+          <div className="about-box" onClick={(e) => e.stopPropagation()}>
+            <LogoMark size={56} />
+            <h2>{t("aboutTitle")}</h2>
+            {appVersion && <p className="about-version">{t("aboutVersion", { v: appVersion })}</p>}
+            <p className="about-tagline">{t("aboutTagline")}</p>
+            <p className="about-heart">{t("aboutMadeWith")}</p>
+            <p className="about-links">
+              <a href="https://github.com/walterfr/UltraStarKaraokeMaker" target="_blank" rel="noreferrer">
+                GitHub
+              </a>
+              {" · "}
+              <a href="https://www.instagram.com/prof.walterfr" target="_blank" rel="noreferrer">
+                @prof.walterfr
+              </a>
+            </p>
+            <button className="secondary" onClick={() => setShowAbout(false)}>
+              {t("aboutClose")}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="app-header">
+        <h1>USKMaker</h1>
+        <div className="header-actions">
+          <div className="lang-toggle" role="group" aria-label="Idioma / Language">
+            <button className={lang === "pt" ? "active" : ""} onClick={() => setLang("pt")}>
+              PT
+            </button>
+            <button className={lang === "en" ? "active" : ""} onClick={() => setLang("en")}>
+              EN
+            </button>
+          </div>
+          <button className="info-button" title={t("infoButtonTitle")} onClick={() => setShowAbout(true)}>
+            i
+          </button>
+        </div>
+      </div>
       <p className="subtitle">
-        Gere pacotes UltraStar (letra sincronizada + pitch) a partir de um link do YouTube ou arquivo local.{" "}
+        {t("subtitle")}{" "}
         <button className="link-button" onClick={pickPackageToReview} disabled={isRunning}>
-          Revisar um pacote já gerado...
+          {t("reviewExisting")}
         </button>
       </p>
 
       {env && envProblems.length === 0 && (
         <p className="env-strip ok">
-          ✓ Ambiente de IA &nbsp;·&nbsp; ✓ ffmpeg{env.vorbisOk ? " (vorbis)" : ""} &nbsp;·&nbsp;{" "}
-          {env.gpuName ? `✓ GPU ${env.gpuName}` : "⚠ sem GPU NVIDIA — processamento em CPU (lento)"}
+          ✓ {t("envAI")} &nbsp;·&nbsp; ✓ ffmpeg{env.vorbisOk ? " (vorbis)" : ""} &nbsp;·&nbsp;{" "}
+          {env.gpuName ? t("envGpu", { name: env.gpuName }) : t("envNoGpu")}
         </p>
       )}
       {envProblems.length > 0 && (
         <div className="error-box env-problems">
-          <strong>Ambiente incompleto — a geração vai falhar até resolver:</strong>
+          <strong>{t("envIncomplete")}</strong>
           <ul>
             {envProblems.map((p, i) => (
               <li key={i}>{p}</li>
@@ -377,20 +418,20 @@ function App() {
           onClick={() => setSourceMode("youtube")}
           disabled={isRunning}
         >
-          Link do YouTube
+          {t("tabYoutube")}
         </button>
         <button
           className={sourceMode === "file" ? "active" : ""}
           onClick={() => setSourceMode("file")}
           disabled={isRunning}
         >
-          Arquivo local
+          {t("tabFile")}
         </button>
       </div>
 
       {sourceMode === "youtube" ? (
         <div className="field-group">
-          <label>Link do YouTube</label>
+          <label>{t("youtubeLabel")}</label>
           <input
             type="text"
             value={youtubeUrl}
@@ -405,16 +446,16 @@ function App() {
               onChange={(e) => setWithVideo(e.target.checked)}
               disabled={isRunning}
             />
-            Incluir o vídeo no pacote (fundo animado no jogo — download maior e mais lento)
+            {t("withVideoLabel")}
           </label>
         </div>
       ) : (
         <div className="field-group">
-          <label>Arquivo de áudio/vídeo</label>
+          <label>{t("fileLabel")}</label>
           <div className="file-picker">
-            <input type="text" value={filePath} readOnly placeholder="Nenhum arquivo selecionado" />
+            <input type="text" value={filePath} readOnly placeholder={t("filePlaceholder")} />
             <button onClick={pickFile} disabled={isRunning}>
-              Procurar...
+              {t("browse")}
             </button>
           </div>
           <label className="checkbox-line">
@@ -424,15 +465,14 @@ function App() {
               onChange={(e) => setBgVideo(e.target.checked)}
               disabled={isRunning}
             />
-            Baixar videoclipe do YouTube para o fundo (o áudio continua sendo o seu arquivo; sem
-            vídeo disponível, fica só a capa)
+            {t("bgVideoLabel")}
           </label>
           {bgVideo && (
             <input
               type="text"
               value={bgVideoUrl}
               onChange={(e) => setBgVideoUrl(e.target.value)}
-              placeholder="Link do videoclipe (opcional — em branco, busca automática por artista + título)"
+              placeholder={t("bgVideoUrlPlaceholder")}
               disabled={isRunning}
             />
           )}
@@ -441,19 +481,21 @@ function App() {
 
       <div className="field-group">
         <label>
-          Letra da música (uma linha por frase cantada) — repita refrões por extenso, tantas vezes
-          quanto forem cantados
+          {t("lyricsLabel")}
           {lyricsInfo.lines > 0 && (
             <span className="lyrics-count">
-              {lyricsInfo.lines} {lyricsInfo.lines === 1 ? "linha" : "linhas"} · {lyricsInfo.words}{" "}
-              palavras
+              {t("lyricsCount", {
+                lines: lyricsInfo.lines,
+                lineWord: lyricsInfo.lines === 1 ? t("lineSingular") : t("linePlural"),
+                words: lyricsInfo.words,
+              })}
             </span>
           )}
         </label>
         <textarea
           value={lyricsText}
           onChange={(e) => setLyricsText(e.target.value)}
-          placeholder={"Cole a letra aqui...\nUma linha por frase/verso.\nRefrões repetidos devem ser colados de novo, por extenso."}
+          placeholder={t("lyricsPlaceholder")}
           disabled={isRunning}
         />
         {lyricsInfo.warnings.map((w, i) => (
@@ -465,44 +507,45 @@ function App() {
 
       <div className="row">
         <div className="field-group">
-          <label>Título</label>
+          <label>{t("titleLabel")}</label>
           <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} disabled={isRunning} />
         </div>
         <div className="field-group">
-          <label>Artista</label>
+          <label>{t("artistLabel")}</label>
           <input type="text" value={artist} onChange={(e) => setArtist(e.target.value)} disabled={isRunning} />
         </div>
       </div>
 
       <div className="row">
         <div className="field-group">
-          <label>Idioma</label>
+          <label>{t("languageLabel")}</label>
           <select value={language} onChange={(e) => setLanguage(e.target.value)} disabled={isRunning}>
-            <option value="pt">Português</option>
-            <option value="en">Inglês</option>
-            <option value="es">Espanhol</option>
+            <option value="pt">{t("langPt")}</option>
+            <option value="en">{t("langEn")}</option>
+            <option value="es">{t("langEs")}</option>
           </select>
         </div>
         <div className="field-group">
-          <label>BPM manual (opcional)</label>
+          <label>{t("bpmLabel")}</label>
           <input
             type="number"
             value={bpm}
             onChange={(e) => setBpm(e.target.value)}
-            placeholder="Deixe em branco para detectar automaticamente"
+            placeholder={t("bpmPlaceholder")}
             disabled={isRunning}
           />
         </div>
       </div>
 
       <div className="field-group">
-        <label>Pasta de saída</label>
+        <label>{t("outDirLabel")}</label>
         <div className="file-picker">
-          <input type="text" value={outDir} readOnly placeholder="Nenhuma pasta selecionada" />
+          <input type="text" value={outDir} readOnly placeholder={t("outDirPlaceholder")} />
           <button onClick={pickOutDir} disabled={isRunning}>
-            Escolher pasta...
+            {t("outDirPick")}
           </button>
         </div>
+        <p className="field-hint">{t("outDirHint")}</p>
         <label className="checkbox-line">
           <input
             type="checkbox"
@@ -510,28 +553,28 @@ function App() {
             onChange={(e) => setCleanWork(e.target.checked)}
             disabled={isRunning}
           />
-          Remover arquivos intermediários ao final (economiza espaço; deixe desmarcado para reprocessar mais rápido)
+          {t("cleanWorkLabel")}
         </label>
       </div>
 
       {!isRunning ? (
         <button className="submit-button" onClick={handleSubmit}>
-          Gerar pacote UltraStar
+          {t("generate")}
         </button>
       ) : (
         <div className="running-actions">
           <button className="submit-button" disabled>
-            Gerando... ({minutes}:{seconds})
+            {t("generating", { time: `${minutes}:${seconds}` })}
           </button>
           <button className="cancel-button" onClick={handleCancel} disabled={cancelling}>
-            {cancelling ? "Cancelando..." : "Cancelar"}
+            {cancelling ? t("cancelling") : t("cancel")}
           </button>
         </div>
       )}
 
       {(isRunning || (currentStep > 0 && !result)) && (
         <ol className="steps-list">
-          {PIPELINE_STEPS.map((step, i) => {
+          {STEP_KEYS.map((step, i) => {
             const n = i + 1;
             const state = n < currentStep ? "done" : n === currentStep && isRunning ? "running" : "pending";
             return (
@@ -539,24 +582,19 @@ function App() {
                 <span className="step-icon">
                   {state === "done" ? "✓" : state === "running" ? <span className="spinner" /> : "○"}
                 </span>
-                <span className="step-label">{step.label}</span>
-                <span className="step-hint">{state === "running" ? step.hint : ""}</span>
+                <span className="step-label">{t(step.label)}</span>
+                <span className="step-hint">{state === "running" ? t(step.hint) : ""}</span>
               </li>
             );
           })}
         </ol>
       )}
 
-      {cancelled && (
-        <div className="info-box">
-          Geração cancelada. Os arquivos parciais ficaram na pasta de saída e serão reaproveitados
-          se você gerar de novo com a mesma pasta.
-        </div>
-      )}
+      {cancelled && <div className="info-box">{t("cancelledInfo")}</div>}
 
       {logs.length > 0 && (
         <details className="log-details" open={!!error}>
-          <summary>Detalhes técnicos ({logs.length} linhas de log)</summary>
+          <summary>{t("logDetails", { n: logs.length })}</summary>
           <div className="log-console">
             {logs.map((line, i) => (
               <div key={i}>{line}</div>
@@ -568,25 +606,24 @@ function App() {
 
       {error && (
         <div className="error-box">
-          <strong>Erro:</strong> {error}
+          <strong>{t("errorPrefix")}</strong> {error}
         </div>
       )}
 
       {result && (
         <div className="result-box rich">
           {result.coverPath && (
-            <img className="result-cover" src={convertFileSrc(result.coverPath)} alt="Capa do álbum" />
+            <img className="result-cover" src={convertFileSrc(result.coverPath)} alt="" />
           )}
           <div className="result-body">
-            <h3>Pacote gerado com sucesso!</h3>
+            <h3>{t("resultSuccess")}</h3>
             <p className="metadata-summary">
               {result.year ? `${result.year} · ` : ""}
               {result.genre ? `${result.genre} · ` : ""}
-              {result.notesTotal - result.notesEstimated} notas medidas no áudio
+              {t("resultNotesMeasured", { n: result.notesTotal - result.notesEstimated })}
               {result.notesEstimated > 0 && (
                 <strong className="estimated-badge">
-                  {" "}
-                  · {result.notesEstimated} estimadas — vale revisar
+                  {t("resultNotesEstimated", { n: result.notesEstimated })}
                 </strong>
               )}
             </p>
@@ -597,10 +634,10 @@ function App() {
             </p>
             <div className="result-actions">
               <button className="submit-button compact" onClick={() => setReviewDir(result.outDir)}>
-                Revisar alinhamento
+                {t("resultReview")}
               </button>
               <button className="secondary" onClick={openOutputFolder}>
-                Abrir pasta
+                {t("resultOpenFolder")}
               </button>
             </div>
           </div>

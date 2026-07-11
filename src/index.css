@@ -626,3 +626,137 @@ button:focus-visible {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
+
+/* ---------------------------------------------------------------------------
+   Splash, Sobre, cabeçalho com idioma e ícone de informação (07/2026)
+   --------------------------------------------------------------------------- */
+
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #121218;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  opacity: 1;
+  transition: opacity 0.5s ease;
+}
+.splash.fade {
+  opacity: 0;
+  pointer-events: none;
+}
+.splash-title {
+  font-size: 2rem;
+  margin: 0.6rem 0 0;
+  letter-spacing: 0.04em;
+}
+.splash-tagline {
+  color: #77778a;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.app-header h1 {
+  margin-bottom: 0.25rem;
+}
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.lang-toggle {
+  display: flex;
+  border: 1px solid #33333f;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.lang-toggle button {
+  background: #1b1b24;
+  border: none;
+  color: #77778a;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.3rem 0.55rem;
+  cursor: pointer;
+}
+.lang-toggle button.active {
+  background: #2a3f66;
+  color: #e8e8ec;
+}
+.info-button {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid #33333f;
+  background: #1b1b24;
+  color: #9a9aa8;
+  font-family: Georgia, serif;
+  font-style: italic;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  line-height: 1;
+}
+.info-button:hover {
+  border-color: #4f8ef7;
+  color: #e8e8ec;
+}
+
+.about-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(10, 10, 14, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.about-box {
+  background: #17171f;
+  border: 1px solid #33333f;
+  border-radius: 12px;
+  padding: 2rem 2.4rem;
+  max-width: 420px;
+  text-align: center;
+}
+.about-box h2 {
+  margin: 0.8rem 0 0.2rem;
+  font-size: 1.2rem;
+}
+.about-version {
+  color: #77778a;
+  font-size: 0.78rem;
+  margin: 0 0 0.8rem;
+}
+.about-tagline {
+  color: #b8b8c4;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+.about-heart {
+  color: #e8e8ec;
+  font-size: 0.9rem;
+  margin: 1rem 0 0.4rem;
+}
+.about-links {
+  font-size: 0.82rem;
+  margin-bottom: 1.2rem;
+}
+.about-links a {
+  color: #4f8ef7;
+}
+
+.field-hint {
+  color: #77778a;
+  font-size: 0.75rem;
+  margin: 0.25rem 0 0.4rem;
+}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/tauri";
 import { ask } from "@tauri-apps/api/dialog";
+import { useI18n } from "../i18n";
 
 // USKMaker - Fase 4: tela de revisão manual do alinhamento (estilo Yass).
 //
@@ -131,7 +132,7 @@ interface Verse {
   time: number; // segundos do início do verso
 }
 
-function deriveVerses(song: USSong): Verse[] {
+function deriveVerses(song: USSong, noTextFallback: string): Verse[] {
   const breaks = new Set(song.phrase_breaks_after_index);
   const verses: Verse[] = [];
   let start = 0;
@@ -145,7 +146,7 @@ function deriveVerses(song: USSong): Verse[] {
         .trim();
       verses.push({
         firstNote: start,
-        text: text || "(sem texto)",
+        text: text || noTextFallback,
         time: beatToSec(song, song.notes[start].start_beat),
       });
       start = i + 1;
@@ -162,6 +163,7 @@ type DragMode =
   | { kind: "resize"; noteIdx: number; startX: number; dur0: number };
 
 export default function ReviewScreen({ outDir, onClose }: Props) {
+  const { t } = useI18n();
   const [song, setSong] = useState<USSong | null>(null);
   const [audioPath, setAudioPath] = useState<string | null>(null);
   const [vocalsPath, setVocalsPath] = useState<string | null>(null);
@@ -211,7 +213,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
           viewRef.current.start = Math.max(0, beatToSec(data.song, data.song.notes[0].start_beat) - 1);
         }
       } catch (err) {
-        if (!cancelled) setError(typeof err === "string" ? err : "Erro ao carregar o pacote.");
+        if (!cancelled) setError(typeof err === "string" ? err : t("revLoadError"));
       }
     })();
     return () => {
@@ -538,7 +540,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
   }, []);
 
   // versos derivados (painel lateral de navegação)
-  const verses = useMemo(() => (song ? deriveVerses(song) : []), [song]);
+  const verses = useMemo(() => (song ? deriveVerses(song, t("revNoText")) : []), [song, t]);
   const versesRef = useRef<Verse[]>([]);
   versesRef.current = verses;
 
@@ -955,9 +957,9 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
       const result = await invoke<SaveResult>("save_song", { outDir, song: s });
       setWarnings(result.warnings);
       setDirty(false);
-      setStatusMsg(`Salvo: ${result.txtPath}`);
+      setStatusMsg(t("revSaved", { path: result.txtPath }));
     } catch (err) {
-      setError(typeof err === "string" ? err : "Erro ao salvar.");
+      setError(typeof err === "string" ? err : t("revSaveError"));
     } finally {
       setSaving(false);
     }
@@ -965,10 +967,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
 
   async function handleClose() {
     if (dirty) {
-      const leave = await ask(
-        "Há alterações não salvas. Sair mesmo assim e descartá-las?",
-        { title: "USKMaker", type: "warning" }
-      );
+      const leave = await ask(t("revConfirmDiscard"), { title: "USKMaker", type: "warning" });
       if (!leave) return;
     }
     audioRef.current?.pause();
@@ -980,10 +979,10 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
     return (
       <div className="review-screen">
         <div className="error-box">
-          <strong>Erro:</strong> {error}
+          <strong>{t("errorPrefix")}</strong> {error}
         </div>
         <button className="secondary" onClick={onClose}>
-          Voltar
+          {t("revBack")}
         </button>
       </div>
     );
@@ -992,7 +991,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
   if (!song) {
     return (
       <div className="review-screen">
-        <p className="subtitle">Carregando pacote...</p>
+        <p className="subtitle">{t("revLoading")}</p>
       </div>
     );
   }
@@ -1023,49 +1022,49 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
   }
 
   const sourceLabels: Record<string, string> = {
-    anchor: "medida (match exato)",
-    fuzzy: "medida (grafia aproximada)",
-    realign: "medida (2º passe na janela)",
-    interpolated: "ESTIMADA (interpolada) — conferir",
+    anchor: t("revSourceAnchor"),
+    fuzzy: t("revSourceFuzzy"),
+    realign: t("revSourceRealign"),
+    interpolated: t("revSourceInterp"),
   };
 
   return (
     <div className="review-screen">
       <div className="review-header">
         <h2>
-          Revisão: {song.artist} — {song.title}
+          {t("revTitle")}: {song.artist} — {song.title}
           {dirty ? " *" : ""}
         </h2>
         <div className="review-header-actions">
           <button className="secondary" onClick={handleClose}>
-            Fechar
+            {t("revClose")}
           </button>
           <button className="submit-button compact" onClick={handleSave} disabled={saving || !dirty}>
-            {saving ? "Salvando..." : "Salvar (.txt + JSON)"}
+            {saving ? t("revSaving") : t("revSave")}
           </button>
         </div>
       </div>
 
       <div className="review-toolbar">
-        <button onClick={togglePlay} title="Espaço">
-          {playing ? "⏸ Pausar" : "▶ Tocar"}
+        <button onClick={togglePlay} title="Space">
+          {playing ? t("revPause") : t("revPlay")}
         </button>
-        <button onClick={() => seekTo(0)} title="Voltar ao início">
+        <button onClick={() => seekTo(0)} title={t("revToStart")}>
           ⏮
         </button>
         {vocalsPath && audioPath && (
           <select
             value={audioChoice}
             onChange={(e) => setAudioChoice(e.target.value as "mix" | "vocals")}
-            title="Qual áudio ouvir durante a revisão"
+            title={t("revListenTitle")}
           >
-            <option value="mix">Ouvir: mix completo</option>
-            <option value="vocals">Ouvir: só o vocal</option>
+            <option value="mix">{t("revListenMix")}</option>
+            <option value="vocals">{t("revListenVocals")}</option>
           </select>
         )}
         <span className="toolbar-sep" />
         <label className="inline-label">
-          GAP (ms)
+          {t("revGap")}
           <input
             type="number"
             className="gap-input"
@@ -1080,7 +1079,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
           <button
             key={step}
             className="gap-step"
-            title="Desloca a música inteira no tempo"
+            title={t("revGapStepTitle")}
             onClick={() => mutate((d) => void (d.gap_ms += step))}
           >
             {step > 0 ? `+${step}` : step}
@@ -1088,10 +1087,10 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
         ))}
         <span className="toolbar-sep" />
         <button onClick={undo} title="Ctrl+Z">
-          ↶ Desfazer
+          {t("revUndo")}
         </button>
         <button onClick={redo} title="Ctrl+Y">
-          ↷ Refazer
+          {t("revRedo")}
         </button>
         {hasSourceInfo && interpolatedCount > 0 && (
           <>
@@ -1099,9 +1098,9 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
             <button
               className="jump-interpolated"
               onClick={jumpToNextInterpolated}
-              title="Seleciona e centraliza a próxima nota com timing estimado (não medido no áudio)"
+              title={t("revNextEstimatedTitle")}
             >
-              ⚠ Próxima estimada ({interpolatedCount})
+              {t("revNextEstimated", { n: interpolatedCount })}
             </button>
           </>
         )}
@@ -1110,7 +1109,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
       <canvas
         ref={minimapRef}
         className="review-minimap"
-        title="Visão geral da música — clique para navegar; riscos laranja = notas estimadas"
+        title={t("revMinimapTitle")}
         onMouseDown={(e) => onMinimapSeek(e, false)}
         onMouseMove={(e) => onMinimapSeek(e, true)}
       />
@@ -1143,31 +1142,28 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
         />
       </div>
 
-      <p className="review-hints">
-        Arrastar nota: mover no tempo/pitch · borda direita: duração · duplo-clique/Enter: ouvir a
-        nota · setas: ajuste fino (Shift+←→: duração · Alt+←→: frase inteira) · Del: excluir · roda:
-        rolar · Ctrl+roda: zoom · Espaço: tocar/pausar
-      </p>
+      <p className="review-hints">{t("revHints")}</p>
 
       {hasSourceInfo && (
         <p className="review-legend">
-          Timing:{" "}
-          <span className="legend-chip" style={{ background: SOURCE_COLORS.anchor }} /> medido
-          (exato){" "}
-          <span className="legend-chip" style={{ background: SOURCE_COLORS.fuzzy }} /> medido
-          (grafia≈){" "}
-          <span className="legend-chip" style={{ background: SOURCE_COLORS.realign }} /> medido (2º
-          passe){" "}
+          {t("revLegendTiming")}{" "}
+          <span className="legend-chip" style={{ background: SOURCE_COLORS.anchor }} />{" "}
+          {t("revLegendAnchor")}{" "}
+          <span className="legend-chip" style={{ background: SOURCE_COLORS.fuzzy }} />{" "}
+          {t("revLegendFuzzy")}{" "}
+          <span className="legend-chip" style={{ background: SOURCE_COLORS.realign }} />{" "}
+          {t("revLegendRealign")}{" "}
           <span className="legend-chip" style={{ background: SOURCE_COLORS.interpolated }} />{" "}
-          estimado — conferir · <span className="legend-chip" style={{ background: "#c9a227" }} />{" "}
-          golden · <span className="legend-chip" style={{ background: "#4a4a58" }} /> freestyle
+          {t("revLegendInterp")} · <span className="legend-chip" style={{ background: "#c9a227" }} />{" "}
+          {t("revLegendGolden")} · <span className="legend-chip" style={{ background: "#4a4a58" }} />{" "}
+          {t("revLegendFreestyle")}
         </p>
       )}
 
       {sel !== null && selected !== null && (
         <div className="note-inspector">
           <div className="field-group">
-            <label>Sílaba</label>
+            <label>{t("revSyllable")}</label>
             <input
               type="text"
               value={sel.text}
@@ -1175,7 +1171,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
             />
           </div>
           <div className="field-group">
-            <label>Início (beat)</label>
+            <label>{t("revStartBeat")}</label>
             <input
               type="number"
               value={sel.start_beat}
@@ -1186,7 +1182,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
             />
           </div>
           <div className="field-group">
-            <label>Duração (beats)</label>
+            <label>{t("revDuration")}</label>
             <input
               type="number"
               min={1}
@@ -1199,7 +1195,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
             />
           </div>
           <div className="field-group">
-            <label>Pitch</label>
+            <label>{t("revPitch")}</label>
             <input
               type="number"
               value={sel.pitch}
@@ -1210,14 +1206,14 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
             />
           </div>
           <div className="field-group">
-            <label>Tipo</label>
+            <label>{t("revType")}</label>
             <select
               value={sel.note_type}
               onChange={(e) => mutate((d) => void (d.notes[selected].note_type = e.target.value))}
             >
-              <option value=":">Normal</option>
-              <option value="*">Golden</option>
-              <option value="F">Freestyle</option>
+              <option value=":">{t("revTypeNormal")}</option>
+              <option value="*">{t("revTypeGolden")}</option>
+              <option value="F">{t("revTypeFreestyle")}</option>
             </select>
           </div>
           <div className="field-group inspector-side">
@@ -1227,11 +1223,13 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
                 checked={song.phrase_breaks_after_index.includes(selected)}
                 onChange={() => togglePhraseBreak(selected)}
               />
-              Quebra de frase após esta nota
+              {t("revPhraseBreak")}
             </label>
             <span className="note-time">
-              {beatToSec(song, sel.start_beat).toFixed(2)}s ·{" "}
-              {(sel.duration_beats * beatDuration(song)).toFixed(2)}s de duração
+              {t("revNoteTime", {
+                start: beatToSec(song, sel.start_beat).toFixed(2),
+                dur: (sel.duration_beats * beatDuration(song)).toFixed(2),
+              })}
             </span>
             {sel.source != null && (
               <span
@@ -1242,7 +1240,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
               </span>
             )}
             <button className="danger" onClick={() => deleteNote(selected)}>
-              Excluir nota
+              {t("revDeleteNote")}
             </button>
           </div>
         </div>
@@ -1251,7 +1249,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
       {statusMsg && <div className="result-box slim">{statusMsg}</div>}
       {warnings.length > 0 && (
         <div className="error-box">
-          <strong>Avisos de validação:</strong>
+          <strong>{t("revWarnings")}</strong>
           <ul>
             {warnings.map((wr, i) => (
               <li key={i}>{wr}</li>
@@ -1259,11 +1257,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
           </ul>
         </div>
       )}
-      {!currentAudioFile && (
-        <div className="error-box">
-          O arquivo de áudio do pacote não foi encontrado — a timeline funciona, mas sem playback.
-        </div>
-      )}
+      {!currentAudioFile && <div className="error-box">{t("revNoAudio")}</div>}
 
       <audio
         ref={audioRef}

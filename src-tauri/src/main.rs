@@ -79,6 +79,21 @@ struct PipelineState {
 /// usuário" (informativo, azul) de erro real (vermelho).
 const CANCELLED_MSG: &str = "__CANCELADO__";
 
+/// Remove caracteres inválidos em nomes de pasta/arquivo do Windows
+/// (< > : " / \ | ? *), além de espaços e pontos nas bordas (pastas
+/// terminadas em ponto/espaço são problemáticas no Explorer).
+fn sanitize_path_component(s: &str) -> String {
+    let cleaned: String = s
+        .chars()
+        .map(|c| match c {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
+            c if (c as u32) < 0x20 => '_',
+            c => c,
+        })
+        .collect();
+    cleaned.trim().trim_end_matches('.').trim().to_string()
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PipelineInput {
@@ -243,7 +258,12 @@ async fn run_pipeline(
     let (sidecar_dir, python_exe) = resolve_sidecar(&app)?;
     state.cancel_requested.store(false, Ordering::SeqCst);
 
-    let out_dir = PathBuf::from(&input.out_dir);
+    // UX (07/2026): o pacote vai para uma SUBPASTA "Artista - Título" dentro
+    // da pasta escolhida - padrão das coleções UltraStar (uma pasta por
+    // música dentro do diretório Songs do jogo). Reprocessar a mesma música
+    // cai na mesma subpasta e reaproveita os intermediários.
+    let package_folder = sanitize_path_component(&format!("{} - {}", input.artist, input.title));
+    let out_dir = PathBuf::from(&input.out_dir).join(package_folder);
     std::fs::create_dir_all(&out_dir)
         .map_err(|e| format!("Erro ao criar pasta de saída '{}': {}", out_dir.display(), e))?;
 
