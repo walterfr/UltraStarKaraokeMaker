@@ -100,6 +100,10 @@ struct PipelineInput {
     youtube_url: Option<String>,
     file_path: Option<String>,
     lyrics_text: String,
+    /// Letra sincronizada .lrc (LRCLIB), opcional. Quando presente, o sidecar
+    /// usa os tempos de início de linha como âncoras no alinhamento.
+    #[serde(default)]
+    synced_lyrics: Option<String>,
     title: String,
     artist: String,
     language: String,
@@ -271,6 +275,19 @@ async fn run_pipeline(
     std::fs::write(&lyrics_path, &input.lyrics_text)
         .map_err(|e| format!("Erro ao gravar arquivo de letra: {}", e))?;
 
+    // Letra sincronizada (.lrc) opcional, vinda do LRCLIB. Só grava se veio
+    // conteúdo de fato - assim o sidecar só recebe --synced-lyrics quando há
+    // algo para semear.
+    let synced_path = match input.synced_lyrics.as_deref().map(str::trim) {
+        Some(lrc) if !lrc.is_empty() => {
+            let p = out_dir.join("_synced_lyrics.lrc");
+            std::fs::write(&p, lrc)
+                .map_err(|e| format!("Erro ao gravar letra sincronizada: {}", e))?;
+            Some(p)
+        }
+        _ => None,
+    };
+
     // Arquivo de log combinado (stdout+stderr) que o Python escreve de
     // forma síncrona normal - ver nota grande no topo do arquivo sobre
     // por que isso substituiu Stdio::piped().
@@ -321,6 +338,10 @@ async fn run_pipeline(
 
     if input.clean_work {
         cmd.arg("--clean-work");
+    }
+
+    if let Some(ref p) = synced_path {
+        cmd.arg("--synced-lyrics").arg(p);
     }
 
     match (&input.youtube_url, &input.file_path) {

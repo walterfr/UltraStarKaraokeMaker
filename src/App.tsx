@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/tauri";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog, ask } from "@tauri-apps/api/dialog";
+import { fetch as httpFetch, ResponseType } from "@tauri-apps/api/http";
 import { appWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
 import ReviewScreen from "./review/ReviewScreen";
@@ -39,6 +40,23 @@ interface EnvCheck {
 const CANCELLED_MSG = "__CANCELADO__";
 const SETTINGS_KEY = "uskmaker-settings";
 const WINDOW_KEY = "uskmaker-window";
+
+/// Resposta do LRCLIB (https://lrclib.net/docs) - API aberta, sem chave.
+interface LrclibTrack {
+  plainLyrics: string | null;
+  syncedLyrics: string | null;
+  instrumental?: boolean;
+}
+
+/// Converte um .lrc em letra "plana" (uma linha por frase, sem timestamps) -
+/// usado quando o LRCLIB só devolve a versão sincronizada.
+function lrcToPlain(lrc: string): string {
+  return lrc
+    .split("\n")
+    .map((l) => l.replace(/\[[^\]]*\]/g, "").trim())
+    .filter(Boolean)
+    .join("\n");
+}
 
 interface PersistedSettings {
   sourceMode: SourceMode;
@@ -103,6 +121,13 @@ function App() {
   const [bgVideoUrl, setBgVideoUrl] = useState("");
   const [cleanWork, setCleanWork] = useState(saved.cleanWork ?? true);
   const [outDir, setOutDir] = useState(saved.outDir ?? "");
+
+  // Letra sincronizada (.lrc) do LRCLIB: guardada crua e enviada ao pipeline,
+  // onde os tempos de início de linha viram âncoras do alinhamento. Editar a
+  // letra depois da busca é seguro: linhas divergentes simplesmente não casam.
+  const [syncedLyrics, setSyncedLyrics] = useState<string | null>(null);
+  const [lyricsSearching, setLyricsSearching] = useState(false);
+  const [lyricsSearchMsg, setLyricsSearchMsg] = useState<{ kind: "ok" | "warn" | "err"; text: string } | null>(null);
 
   const [isRunning, setIsRunning] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -242,6 +267,55 @@ function App() {
     }
   }
 
+  async function searchLyrics() {
+    if (!artist.trim() || !title.trim()) {
+      setLyricsSearchMsg({ kind: "err", text: t("lyricsNeedArtistTitle") });
+      return;
+    }
+    if (lyricsText.trim()) {
+      const ok = await ask(t("lyricsOverwriteConfirm"), { title: "USKMaker" });
+      if (!ok) return;
+    }
+    setLyricsSearching(true);
+    setLyricsSearchMsg(null);
+    try {
+      const resp = await httpFetch<LrclibTrack>("https://lrclib.net/api/get", {
+        method: "GET",
+        timeout: 20,
+        responseType: ResponseType.JSON,
+        query: { artist_name: artist.trim(), track_name: title.trim() },
+        // o LRCLIB pede que clientes se identifiquem
+        headers: { "Lrclib-Client": "USKMaker/0.1.0 (https://github.com/walterfr/UltraStarKaraokeMaker)" },
+      });
+      if (!resp.ok) {
+        if (resp.status === 404) {
+          setLyricsSearchMsg({ kind: "warn", text: t("lyricsNotFound") });
+        } else {
+          setLyricsSearchMsg({ kind: "err", text: t("lyricsSearchError", { msg: `HTTP ${resp.status}` }) });
+        }
+        return;
+      }
+      const synced = resp.data.syncedLyrics?.trim() || null;
+      const plain = resp.data.plainLyrics?.trim() || (synced ? lrcToPlain(synced) : "");
+      if (!plain) {
+        // inclui o caso instrumental=true (faixa sem letra)
+        setLyricsSearchMsg({ kind: "warn", text: t("lyricsNotFound") });
+        return;
+      }
+      setLyricsText(plain);
+      setSyncedLyrics(synced);
+      setLyricsSearchMsg(
+        synced
+          ? { kind: "ok", text: t("lyricsFoundSynced") }
+          : { kind: "warn", text: t("lyricsFoundPlain") }
+      );
+    } catch (err) {
+      setLyricsSearchMsg({ kind: "err", text: t("lyricsSearchError", { msg: String(err) }) });
+    } finally {
+      setLyricsSearching(false);
+    }
+  }
+
   function validate(): string | null {
     if (sourceMode === "youtube" && !youtubeUrl.trim()) return t("valNeedYoutube");
     if (sourceMode === "file" && !filePath.trim()) return t("valNeedFile");
@@ -276,6 +350,7 @@ function App() {
           youtubeUrl: sourceMode === "youtube" ? youtubeUrl.trim() : null,
           filePath: sourceMode === "file" ? filePath.trim() : null,
           lyricsText,
+          syncedLyrics,
           title: title.trim(),
           artist: artist.trim(),
           language,
@@ -318,6 +393,8 @@ function App() {
     setYoutubeUrl("");
     setFilePath("");
     setLyricsText("");
+    setSyncedLyrics(null);
+    setLyricsSearchMsg(null);
     setTitle("");
     setArtist("");
     setBpm("");
@@ -520,6 +597,14 @@ function App() {
             </span>
           )}
         </label>
+        <div className="lyrics-toolbar">
+          <button className="mini-button" onClick={searchLyrics} disabled={isRunning || lyricsSearching}>
+            {lyricsSearching ? t("searchingLyrics") : t("searchLyrics")}
+          </button>
+          {lyricsSearchMsg && (
+            <span className={`lyrics-status ${lyricsSearchMsg.kind}`}>{lyricsSearchMsg.text}</span>
+          )}
+        </div>
         <textarea
           value={lyricsText}
           onChange={(e) => setLyricsText(e.target.value)}

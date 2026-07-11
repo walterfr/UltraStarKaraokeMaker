@@ -433,6 +433,44 @@ button.danger:hover {
 .running-actions .submit-button {
   flex: 1;
 }
+.lyrics-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.35rem 0;
+  flex-wrap: wrap;
+}
+.mini-button {
+  background: #262632;
+  border: 1px solid #33333f;
+  color: #b9b9c4;
+  border-radius: 6px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mini-button:hover:not(:disabled) {
+  border-color: #4f8ef7;
+  color: #e8e8ec;
+}
+.mini-button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.lyrics-status {
+  font-size: 0.82rem;
+}
+.lyrics-status.ok {
+  color: #7dc98f;
+}
+.lyrics-status.warn {
+  color: #d6b02f;
+}
+.lyrics-status.err {
+  color: #ff9fa8;
+}
+
 .clear-button {
   background: #262632;
   border: 1px solid #33333f;

@@ -15,6 +15,11 @@
       "protocol": {
         "asset": true,
         "assetScope": ["**"]
+      },
+      "http": {
+        "all": true,
+        "request": true,
+        "scope": ["https://lrclib.net/api/*"]
       }
     },
     "bundle": {

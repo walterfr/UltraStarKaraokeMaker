@@ -108,6 +108,7 @@ def run_pipeline(
     bg_video: bool = False,
     bg_video_url: str | None = None,
     clean_work: bool = False,
+    synced_lyrics_path: str | None = None,
 ):
     global _debug_log_path
 
@@ -173,7 +174,8 @@ def run_pipeline(
     console.rule("[bold cyan]Etapa 4/6 — Alinhando letra ao áudio (WhisperX, âncora+interpolação)")
     debug_log("ETAPA 4 - iniciando align_lyrics_to_audio")
     word_timings = align_lyrics_to_audio(
-        stems.vocals, Path(lyrics_path), language=language, device=device
+        stems.vocals, Path(lyrics_path), language=language, device=device,
+        synced_lyrics_path=Path(synced_lyrics_path) if synced_lyrics_path else None,
     )
     debug_log(f"ETAPA 4 - concluída. {len(word_timings)} palavras")
 
@@ -184,6 +186,7 @@ def run_pipeline(
     console.print(
         f"    [dim]{by_source['anchor']} âncora exata / {by_source['fuzzy']} fuzzy / "
         f"{by_source['realign']} realinhadas no 2º passe / "
+        f"{by_source['lrc']} início de linha (.lrc) / "
         f"{interpolated_count} interpoladas (estimadas)[/dim]"
     )
     if interpolated_count:
@@ -328,6 +331,11 @@ if __name__ == "__main__":
         help="URL específica do videoclipe de fundo (implica --bg-video)",
     )
     parser.add_argument("--clean-work", action="store_true", help="Remover a pasta _work (intermediários) ao final")
+    parser.add_argument(
+        "--synced-lyrics",
+        default=None,
+        help="Arquivo .lrc (letra sincronizada, ex.: LRCLIB) para semear âncoras de início de linha",
+    )
     args = parser.parse_args()
 
     try:
@@ -346,6 +354,7 @@ if __name__ == "__main__":
             bg_video=args.bg_video,
             bg_video_url=args.bg_video_url,
             clean_work=args.clean_work,
+            synced_lyrics_path=args.synced_lyrics,
         )
     except Exception:
         debug_log("EXCEÇÃO NÃO TRATADA:\n" + traceback.format_exc())

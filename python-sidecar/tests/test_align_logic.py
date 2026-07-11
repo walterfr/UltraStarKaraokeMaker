@@ -16,8 +16,12 @@ from pipeline.align import (
     SOURCE_ANCHOR,
     SOURCE_FUZZY,
     SOURCE_INTERPOLATED,
+    SOURCE_LRC,
     anchor_and_interpolate,
     compute_anchors,
+    match_lrc_to_lines,
+    parse_lrc,
+    seed_line_anchors,
     _fuzzy_pairs,
     _syllable_weight,
 )
@@ -148,6 +152,82 @@ def test_monotonic_output_full_mix():
     timings = anchor_and_interpolate(whisper, real)
     starts = [t.start for t in timings]
     assert starts == sorted(starts), f"timestamps fora de ordem: {starts}"
+
+
+# --------------------------------------------------------------------------
+# LRCLIB: parse do .lrc, casamento de linhas e seeding de âncoras de linha
+# --------------------------------------------------------------------------
+
+def test_parse_lrc_basic():
+    lrc = "[00:12.34]primeira frase\n[00:20.50]segunda frase\n[01:05.00]terceira"
+    parsed = parse_lrc(lrc)
+    assert parsed == [(12.34, "primeira frase"), (20.5, "segunda frase"), (65.0, "terceira")]
+
+
+def test_parse_lrc_skips_metadata_and_empty():
+    lrc = "[ar:Artista]\n[ti:Titulo]\n[length:03:20]\n[00:05.00]\n[00:10.00]canta"
+    parsed = parse_lrc(lrc)
+    # linhas de metadado (tag alfabética) e a linha só-timestamp são ignoradas
+    assert parsed == [(10.0, "canta")]
+
+
+def test_parse_lrc_multiple_stamps_same_line():
+    # refrão repetido: um texto com dois timestamps vira duas entradas ordenadas
+    lrc = "[00:30.00][01:30.00]refrão que volta"
+    parsed = parse_lrc(lrc)
+    assert parsed == [(30.0, "refrão que volta"), (90.0, "refrão que volta")]
+
+
+def test_match_lrc_to_lines_sequential():
+    lyric = ["hoje o sol", "brilha no céu", "e vai raiar"]
+    lrc = [(1.0, "Hoje o sol"), (5.0, "Brilha no céu!"), (9.0, "E vai raiar")]
+    matched = match_lrc_to_lines(lyric, lrc)
+    assert matched == {0: 1.0, 1: 5.0, 2: 9.0}
+
+
+def test_match_lrc_ignores_divergent_lines():
+    # a linha do meio da letra não existe no .lrc -> só as pontas casam
+    lyric = ["primeira linha", "linha extra do usuario", "ultima linha"]
+    lrc = [(1.0, "primeira linha"), (8.0, "ultima linha")]
+    matched = match_lrc_to_lines(lyric, lrc)
+    assert 0 in matched and matched[0] == 1.0
+    assert 2 in matched and matched[2] == 8.0
+    assert 1 not in matched
+
+
+def test_seed_fills_whisper_gap():
+    # 2 linhas, 4 palavras; nada medido pelo Whisper (tudo None). O início de
+    # cada linha (índices 0 e 2) recebe âncora do .lrc.
+    anchors = [None, None, None, None]
+    lyric_lines = [("hoje o", 0), ("sol nasce", 2)]
+    lrc = [(2.0, "hoje o"), (6.0, "sol nasce")]
+    seeded = seed_line_anchors(anchors, lyric_lines, lrc)
+    assert seeded == 2
+    assert anchors[0] is not None and anchors[0][0] == 2.0 and anchors[0][3] == SOURCE_LRC
+    assert anchors[2] is not None and anchors[2][0] == 6.0
+    assert anchors[1] is None and anchors[3] is None  # só a 1ª palavra da linha
+
+
+def test_seed_does_not_overwrite_whisper_anchor():
+    # se a 1ª palavra da linha já foi medida pelo Whisper, o .lrc não a toca
+    anchors = [(1.5, 1.9, 0.9, SOURCE_ANCHOR), None]
+    lyric_lines = [("hoje o", 0)]
+    lrc = [(2.0, "hoje o")]
+    seeded = seed_line_anchors(anchors, lyric_lines, lrc)
+    assert seeded == 0
+    assert anchors[0][3] == SOURCE_ANCHOR
+
+
+def test_seed_skips_when_out_of_order():
+    # o .lrc diz que a linha 2 começa em 3.0, mas já há uma âncora medida em
+    # 8.0 antes dela: seria não-monotônico, então o seeding pula.
+    anchors = [(8.0, 8.4, 0.9, SOURCE_ANCHOR), None]
+    lyric_lines = [("primeira", 0), ("segunda linha", 1)]
+    lrc = [(1.0, "primeira"), (3.0, "segunda linha")]
+    seeded = seed_line_anchors(anchors, lyric_lines, lrc)
+    # índice 0 já ancorado; índice 1 (t=3.0) viola monotonicidade (prev end 8.4)
+    assert anchors[1] is None
+    assert seeded == 0
 
 
 if __name__ == "__main__":

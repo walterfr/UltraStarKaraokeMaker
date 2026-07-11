@@ -42,6 +42,7 @@ const SOURCE_COLORS: Record<string, string> = {
   anchor: "#3d6fd6", // medido: match exato com a transcrição
   fuzzy: "#2f9e8f", // medido: match aproximado de grafia
   realign: "#7a5cd6", // medido: 2º passe de forced alignment na janela
+  lrc: "#c05a9e", // semi-medido: início de linha da letra sincronizada (LRCLIB)
   interpolated: "#d6802f", // ESTIMADO: interpolação entre vizinhas - revisar!
 };
 const DEFAULT_NOTE_COLOR = "#3d6fd6";
@@ -1025,6 +1026,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
     anchor: t("revSourceAnchor"),
     fuzzy: t("revSourceFuzzy"),
     realign: t("revSourceRealign"),
+    lrc: t("revSourceLrc"),
     interpolated: t("revSourceInterp"),
   };
 
@@ -1153,6 +1155,8 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
           {t("revLegendFuzzy")}{" "}
           <span className="legend-chip" style={{ background: SOURCE_COLORS.realign }} />{" "}
           {t("revLegendRealign")}{" "}
+          <span className="legend-chip" style={{ background: SOURCE_COLORS.lrc }} />{" "}
+          {t("revLegendLrc")}{" "}
           <span className="legend-chip" style={{ background: SOURCE_COLORS.interpolated }} />{" "}
           {t("revLegendInterp")} · <span className="legend-chip" style={{ background: "#c9a227" }} />{" "}
           {t("revLegendGolden")} · <span className="legend-chip" style={{ background: "#4a4a58" }} />{" "}

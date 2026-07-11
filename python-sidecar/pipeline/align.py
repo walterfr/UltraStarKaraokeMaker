@@ -82,6 +82,7 @@ from pathlib import Path
 SOURCE_ANCHOR = "anchor"          # match exato com a transcrição livre (medido)
 SOURCE_FUZZY = "fuzzy"            # match aproximado de grafia (medido)
 SOURCE_REALIGN = "realign"        # 2º passe de forced alignment na janela (medido)
+SOURCE_LRC = "lrc"                # início de linha do .lrc (LRCLIB) - semi-medido
 SOURCE_INTERPOLATED = "interpolated"  # estimado entre vizinhos (NÃO medido)
 
 
@@ -124,6 +125,143 @@ def _load_lyrics_words_with_line_ends(lyrics_path: Path) -> tuple[list[str], lis
             line_ends.append(i == len(line_words) - 1)
 
     return words, line_ends
+
+
+_LRC_TS_RE = re.compile(r"\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]")
+
+
+def parse_lrc(text: str) -> list[tuple[float, str]]:
+    """
+    Faz o parse de uma letra sincronizada .lrc (formato LRCLIB) numa lista
+    ordenada de (segundos, texto_da_linha). Ignora linhas de metadado
+    ([ar:], [ti:], [length:] etc. - o "tag" ali dentro é alfabético, não um
+    timestamp) e linhas sem texto (só o timestamp). Uma mesma linha pode ter
+    vários timestamps (refrão repetido) - cada um vira uma entrada.
+    """
+    out: list[tuple[float, str]] = []
+    for raw in text.splitlines():
+        stamps = list(_LRC_TS_RE.finditer(raw))
+        if not stamps:
+            continue
+        # o texto é o que vem depois do último timestamp da linha
+        content = raw[stamps[-1].end():].strip()
+        if not content:
+            continue
+        for m in stamps:
+            minutes = int(m.group(1))
+            seconds = int(m.group(2))
+            frac_raw = m.group(3) or "0"
+            # normaliza a fração para milissegundos (2 dígitos = centésimos)
+            frac = float(f"0.{frac_raw}")
+            out.append((minutes * 60 + seconds + frac, content))
+    out.sort(key=lambda p: p[0])
+    return out
+
+
+def _lyric_lines_with_start_index(lyrics_path: Path) -> list[tuple[str, int]]:
+    """
+    Retorna, para cada linha NÃO vazia da letra, o par (texto_da_linha,
+    índice da PRIMEIRA palavra da linha na lista global de palavras). Usa
+    exatamente a mesma segmentação de _load_lyrics_words_with_line_ends
+    (strip + split), então os índices batem com aquela lista de palavras.
+    """
+    text = lyrics_path.read_text(encoding="utf-8")
+    lines: list[tuple[str, int]] = []
+    word_idx = 0
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        line_words = line.split()
+        if line_words:
+            lines.append((line, word_idx))
+            word_idx += len(line_words)
+    return lines
+
+
+def _normalize_line(text: str) -> str:
+    """Normaliza uma LINHA inteira para comparar letra real x linha do .lrc."""
+    return re.sub(r"[^\wÀ-ÿ]+", " ", text.lower()).strip()
+
+
+def match_lrc_to_lines(
+    lyric_lines: list[str],
+    lrc_lines: list[tuple[float, str]],
+) -> dict[int, float]:
+    """
+    Casa as linhas da letra real com as linhas do .lrc (na ordem), devolvendo
+    um dicionário {índice_da_linha_da_letra: tempo_de_início_em_s}.
+
+    Usa difflib sobre o texto normalizado das linhas e aproveita só os blocos
+    "equal" (correspondência confiável 1:1) - assim linhas de metadado,
+    refrões escritos de forma diferente ou pequenas divergências simplesmente
+    não recebem âncora, em vez de casar errado.
+    """
+    if not lyric_lines or not lrc_lines:
+        return {}
+    a = [_normalize_line(t) for t in lyric_lines]
+    b = [_normalize_line(t) for _, t in lrc_lines]
+    matcher = difflib.SequenceMatcher(None, a, b, autojunk=False)
+    result: dict[int, float] = {}
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag != "equal":
+            continue
+        for off in range(i2 - i1):
+            result[i1 + off] = lrc_lines[j1 + off][0]
+    return result
+
+
+def seed_line_anchors(
+    anchors: list[Anchor | None],
+    lyric_lines: list[tuple[str, int]],
+    lrc_lines: list[tuple[float, str]],
+    tolerance: float = 0.6,
+) -> int:
+    """
+    Semeia âncoras de linha (LRCLIB) na PRIMEIRA palavra de cada linha da
+    letra que ainda não tem timestamp medido, respeitando monotonicidade em
+    relação às âncoras vizinhas já existentes. Muta `anchors` in-place e
+    retorna quantas âncoras foram semeadas.
+
+    Só entra onde o Whisper NÃO mediu nada (anchors[i] is None) - as âncoras
+    exatas/fuzzy do áudio são mais precisas que o início de linha do .lrc e
+    têm prioridade. O valor do .lrc brilha justamente nos vãos que o Whisper
+    deixou (trechos mal transcritos, sem match), encurtando as janelas de
+    interpolação e dando limites corretos ao realinhamento acústico (passe 3).
+    """
+    line_texts = [t for t, _ in lyric_lines]
+    matched = match_lrc_to_lines(line_texts, lrc_lines)
+    if not matched:
+        return 0
+
+    n = len(anchors)
+    seeded = 0
+    for line_idx, (_, start_word) in enumerate(lyric_lines):
+        t = matched.get(line_idx)
+        if t is None or start_word >= n or anchors[start_word] is not None:
+            continue
+        # âncora medida imediatamente anterior/posterior (não-None)
+        prev_end = None
+        for k in range(start_word - 1, -1, -1):
+            if anchors[k] is not None:
+                prev_end = anchors[k][1]
+                break
+        next_start = None
+        for k in range(start_word + 1, n):
+            if anchors[k] is not None:
+                next_start = anchors[k][0]
+                break
+        # monotonicidade: o tempo do .lrc precisa caber entre os vizinhos
+        if prev_end is not None and t < prev_end - tolerance:
+            continue
+        if next_start is not None and t > next_start + tolerance:
+            continue
+        end = t + 0.25
+        if next_start is not None:
+            end = min(end, max(t + 0.02, next_start - 0.02))
+        anchors[start_word] = (t, end, 0.0, SOURCE_LRC)
+        seeded += 1
+    return seeded
 
 
 def _normalize_word(word: str) -> str:
@@ -486,7 +624,7 @@ def realign_gap_windows(
 
 def alignment_stats(timings: list[WordTiming]) -> dict:
     """Resumo por fonte + maiores runs ainda interpoladas (diagnóstico)."""
-    counts = {s: 0 for s in (SOURCE_ANCHOR, SOURCE_FUZZY, SOURCE_REALIGN, SOURCE_INTERPOLATED)}
+    counts = {s: 0 for s in (SOURCE_ANCHOR, SOURCE_FUZZY, SOURCE_REALIGN, SOURCE_LRC, SOURCE_INTERPOLATED)}
     for t in timings:
         counts[t.source] = counts.get(t.source, 0) + 1
 
@@ -512,10 +650,16 @@ def align_lyrics_to_audio(
     device: str = "cuda",
     whisper_model_size: str = "medium",
     realign_gaps: bool = True,
+    synced_lyrics_path: Path | None = None,
 ) -> list[WordTiming]:
     """
     Retorna uma lista de WordTiming na ordem da letra fornecida, usando a
     estratégia de 4 passes (ver docstring do módulo).
+
+    Se `synced_lyrics_path` apontar para uma letra sincronizada .lrc (vinda do
+    LRCLIB), os tempos de início de cada linha são semeados como âncoras nos
+    vãos que o Whisper não mediu - encurta a interpolação e dá limites melhores
+    ao realinhamento acústico.
     """
     import whisperx
 
@@ -540,9 +684,20 @@ def align_lyrics_to_audio(
         for w in seg.get("words", []):
             whisper_words.append(w)
 
-    # 3) Âncoras exatas + fuzzy sobre a letra real; interpolação preliminar.
+    # 3) Âncoras exatas + fuzzy sobre a letra real.
     real_words, line_end_flags = _load_lyrics_words_with_line_ends(lyrics_path)
-    word_timings = anchor_and_interpolate(whisper_words, real_words)
+    anchors = compute_anchors(whisper_words, real_words)
+
+    # 3b) Âncoras de linha do .lrc (LRCLIB), se houver: preenchem os vãos que
+    #     o Whisper não mediu, antes da interpolação e do realinhamento.
+    if synced_lyrics_path is not None and Path(synced_lyrics_path).exists():
+        lrc_lines = parse_lrc(Path(synced_lyrics_path).read_text(encoding="utf-8"))
+        lyric_lines = _lyric_lines_with_start_index(lyrics_path)
+        seeded = seed_line_anchors(anchors, lyric_lines, lrc_lines)
+        if seeded:
+            print(f"[INFO] Âncoras de linha do .lrc: {seeded} inícios de linha semeados.")
+
+    word_timings = timings_from_anchors(anchors, real_words)
 
     # 4) Realinhamento acústico das janelas ainda interpoladas (reusa o
     #    modelo wav2vec2 já carregado).
