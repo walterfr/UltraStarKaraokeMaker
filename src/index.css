@@ -908,6 +908,20 @@ button:focus-visible {
 .about-links a {
   color: #4f8ef7;
 }
+.about-support {
+  font-size: 0.78rem;
+  color: #77778a;
+  margin-bottom: 1.2rem;
+}
+.about-support a,
+.about-support .link-button {
+  color: #9a9aa8;
+  font-size: 0.78rem;
+}
+.about-support a:hover,
+.about-support .link-button:hover {
+  color: #4f8ef7;
+}
 
 .field-hint {
   color: #77778a;

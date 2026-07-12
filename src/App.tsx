@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/tauri";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog, ask } from "@tauri-apps/api/dialog";
+import { writeText } from "@tauri-apps/api/clipboard";
 import { fetch as httpFetch, ResponseType } from "@tauri-apps/api/http";
 import { appWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
@@ -52,6 +53,9 @@ interface QueueItem {
 }
 
 const CANCELLED_MSG = "__CANCELADO__";
+// Chave Pix "copia e cola" (BR Code, CRC16 validado) para apoio via a página Sobre.
+const PIX_PAYLOAD =
+  "00020101021126400014br.gov.bcb.pix0118walterfr@gmail.com5204000053039865802BR5915WALTER REBOUCAS6009FORTALEZA62070503***63045603";
 const SETTINGS_KEY = "uskmaker-settings";
 const WINDOW_KEY = "uskmaker-window";
 
@@ -170,6 +174,17 @@ function App() {
   const [splashState, setSplashState] = useState<"show" | "fade" | "gone">("show");
   const [showAbout, setShowAbout] = useState(false);
   const [appVersion, setAppVersion] = useState("");
+  const [pixCopied, setPixCopied] = useState(false);
+
+  async function copyPix() {
+    try {
+      await writeText(PIX_PAYLOAD);
+      setPixCopied(true);
+      setTimeout(() => setPixCopied(false), 2500);
+    } catch {
+      /* clipboard indisponível - silencioso */
+    }
+  }
 
   const logEndRef = useRef<HTMLDivElement>(null);
   const startedAtRef = useRef(0);
@@ -602,6 +617,24 @@ function App() {
               <a href="https://www.instagram.com/prof.walterfr" target="_blank" rel="noreferrer">
                 @prof.walterfr
               </a>
+            </p>
+            <p className="about-support">
+              {t("aboutSupport")}{" "}
+              <a href="https://github.com/sponsors/walterfr" target="_blank" rel="noreferrer">
+                GitHub Sponsors
+              </a>
+              {" · "}
+              <a href="https://ko-fi.com/walterfr" target="_blank" rel="noreferrer">
+                Ko-fi
+              </a>
+              {" · "}
+              <a href="https://buymeacoffee.com/walterfr" target="_blank" rel="noreferrer">
+                Buy Me a Coffee
+              </a>
+              {" · "}
+              <button className="link-button" onClick={copyPix}>
+                {pixCopied ? t("aboutPixCopied") : t("aboutPixCopy")}
+              </button>
             </p>
             <button className="secondary" onClick={() => setShowAbout(false)}>
               {t("aboutClose")}
