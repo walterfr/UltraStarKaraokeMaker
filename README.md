@@ -100,6 +100,16 @@ O USKMaker é gratuito e de código aberto. Se ele te ajudou, considere apoiar o
 - ☕ [Ko-fi](https://ko-fi.com/walterfr)
 - ☕ [Buy Me a Coffee](https://buymeacoffee.com/walterfr)
 
+### Pix (Brasil)
+
+Escaneie o QR code no app do seu banco, ou use a chave **copia e cola** abaixo:
+
+<img src="docs/pix-qr.png" alt="QR Code Pix" width="200" />
+
+```
+00020101021126400014br.gov.bcb.pix0118walterfr@gmail.com5204000053039865802BR5915WALTER REBOUCAS6009FORTALEZA62070503***63045603
+```
+
 ## Licença
 
 MIT. Veja o arquivo [LICENSE](LICENSE).

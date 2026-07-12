@@ -100,6 +100,16 @@ USKMaker is free and open source. If it helped you, consider supporting developm
 - ☕ [Ko-fi](https://ko-fi.com/walterfr)
 - ☕ [Buy Me a Coffee](https://buymeacoffee.com/walterfr)
 
+### Pix (Brazil)
+
+Brazilian users can scan the QR code in their bank app, or use the **copy-and-paste** key below:
+
+<img src="docs/pix-qr.png" alt="Pix QR Code" width="200" />
+
+```
+00020101021126400014br.gov.bcb.pix0118walterfr@gmail.com5204000053039865802BR5915WALTER REBOUCAS6009FORTALEZA62070503***63045603
+```
+
 ## License
 
 MIT. See the [LICENSE](LICENSE) file.
