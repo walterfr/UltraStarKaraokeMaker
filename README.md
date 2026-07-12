@@ -38,11 +38,12 @@ O pipeline tem seis etapas:
 ### Opção A — Instalador (recomendado para uso)
 
 1. Baixe o instalador (`USKMaker_x.y.z_x64-setup.exe`) na página de [Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases) e instale normalmente.
-2. Instale o [Python 3.12](https://www.python.org/downloads/) (marque "Add python.exe to PATH").
-3. Na pasta de instalação do USKMaker, execute **uma única vez** o script `setup-sidecar.ps1` (clique-direito → "Executar com PowerShell"). Ele detecta sua GPU, cria o ambiente de IA em `%LOCALAPPDATA%\USKMaker`, **baixa um ffmpeg embutido (com libvorbis)** e instala as dependências (≈ 10 min, requer internet).
-4. Abra o USKMaker e use. Na primeira música, os modelos de IA são baixados automaticamente (~2 GB, só na primeira vez).
+2. Abra o USKMaker e clique em **"Configurar ambiente de IA"**. Ele baixa o Python 3.12 (via `uv`), um ffmpeg embutido (com libvorbis) e as bibliotecas de IA automaticamente, com progresso ao vivo (≈ 10–15 min na primeira vez, ~2 GB, requer internet).
+3. Pronto, é só usar. Na primeira música, os modelos de IA são baixados automaticamente (~2 GB, só na primeira vez).
 
-Requisitos: Windows 10/11 e (opcional, mas muito recomendado) GPU NVIDIA — sem ela o processamento roda em CPU, ~10 min por música. O ffmpeg é instalado automaticamente pelo `setup-sidecar.ps1` (não precisa mais pô-lo no PATH manualmente).
+Requisitos: Windows 10/11 e (opcional, mas muito recomendado) GPU NVIDIA — sem ela o processamento roda em CPU, ~10 min por música. **Python e ffmpeg não precisam ser instalados à mão** — o botão cuida disso.
+
+> **Usuários avançados (setup manual):** o botão não é obrigatório. Você pode configurar o ambiente você mesmo de duas formas: (a) rodar o `setup-sidecar.ps1` da pasta de instalação diretamente (clique-direito → "Executar com PowerShell" — faz o mesmo que o botão, pelo terminal); ou (b) montar tudo à mão com o seu próprio Python, como na **Opção B** abaixo (crie o venv em `%LOCALAPPDATA%\USKMaker\venv`). O app também respeita um `ffmpeg` já presente no PATH e um venv que você tenha criado manualmente.
 
 ### Opção B — Ambiente de desenvolvimento
 

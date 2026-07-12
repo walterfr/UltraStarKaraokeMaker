@@ -38,11 +38,12 @@ The pipeline has six steps:
 ### Option A — Installer (recommended for regular use)
 
 1. Download the installer (`USKMaker_x.y.z_x64-setup.exe`) from the [Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases) page and install it normally.
-2. Install [Python 3.12](https://www.python.org/downloads/) (check "Add python.exe to PATH").
-3. In the USKMaker installation folder, run the `setup-sidecar.ps1` script **once** (right-click → "Run with PowerShell"). It detects your GPU, creates the AI environment in `%LOCALAPPDATA%\USKMaker`, **downloads a bundled ffmpeg (with libvorbis)** and installs the dependencies (≈ 10 min, requires internet).
-4. Open USKMaker and use it. On the first song, the AI models are downloaded automatically (~2 GB, first time only).
+2. Open USKMaker and click **"Set up AI environment"**. It downloads Python 3.12 (via `uv`), a bundled ffmpeg (with libvorbis) and the AI libraries automatically, with a live progress bar (≈ 10–15 min the first time, ~2 GB, requires internet).
+3. That's it. On the first song, the AI models are downloaded automatically (~2 GB, first time only).
 
-Requirements: Windows 10/11 and (optional but highly recommended) an NVIDIA GPU — without one, processing runs on CPU, ~10 min per song. ffmpeg is installed automatically by `setup-sidecar.ps1` (you no longer need to put it on your PATH manually).
+Requirements: Windows 10/11 and (optional but highly recommended) an NVIDIA GPU — without one, processing runs on CPU, ~10 min per song. **Python and ffmpeg don't need to be installed by hand** — the button handles it.
+
+> **Advanced users (manual setup):** the button is optional. You can set up the environment yourself in two ways: (a) run the `setup-sidecar.ps1` script from the install folder directly (right-click → "Run with PowerShell" — same as the button, from the terminal); or (b) build everything by hand with your own Python, as in **Option B** below (create the venv at `%LOCALAPPDATA%\USKMaker\venv`). The app also honors an `ffmpeg` already on your PATH and a venv you created manually.
 
 ### Option B — Development environment
 
