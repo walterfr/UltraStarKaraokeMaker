@@ -31,7 +31,7 @@ The pipeline has six steps:
 - **Python 3.12** (tested with 3.12.10)
 - **NVIDIA GPU with CUDA** — developed and tested on an RTX 4060 (8 GB VRAM). It runs on CPU, but vocal separation and alignment get much slower.
 - **Node.js** and **Rust** (stable toolchain), for the Tauri part.
-- **ffmpeg** on the system PATH, with `libvorbis` support (to produce `.ogg`).
+- **ffmpeg** with `libvorbis` support (to produce `.ogg`). With the installer (Option A) it is **downloaded automatically** by `setup-sidecar.ps1`; in development mode, have it on your PATH.
 
 ## Installation
 
@@ -39,10 +39,10 @@ The pipeline has six steps:
 
 1. Download the installer (`USKMaker_x.y.z_x64-setup.exe`) from the [Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases) page and install it normally.
 2. Install [Python 3.12](https://www.python.org/downloads/) (check "Add python.exe to PATH").
-3. In the USKMaker installation folder, run the `setup-sidecar.ps1` script **once** (right-click → "Run with PowerShell"). It detects your GPU, creates the AI environment in `%LOCALAPPDATA%\USKMaker` and installs the dependencies (≈ 10 min, requires internet).
+3. In the USKMaker installation folder, run the `setup-sidecar.ps1` script **once** (right-click → "Run with PowerShell"). It detects your GPU, creates the AI environment in `%LOCALAPPDATA%\USKMaker`, **downloads a bundled ffmpeg (with libvorbis)** and installs the dependencies (≈ 10 min, requires internet).
 4. Open USKMaker and use it. On the first song, the AI models are downloaded automatically (~2 GB, first time only).
 
-Requirements: Windows 10/11, [ffmpeg](https://www.gyan.dev/ffmpeg/builds/) on PATH with `libvorbis`, and (optional but highly recommended) an NVIDIA GPU — without one, processing runs on CPU, ~10 min per song.
+Requirements: Windows 10/11 and (optional but highly recommended) an NVIDIA GPU — without one, processing runs on CPU, ~10 min per song. ffmpeg is installed automatically by `setup-sidecar.ps1` (you no longer need to put it on your PATH manually).
 
 ### Option B — Development environment
 

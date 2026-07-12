@@ -31,7 +31,7 @@ O pipeline tem seis etapas:
 - **Python 3.12** (testado com 3.12.10)
 - **GPU NVIDIA com CUDA** — desenvolvido e testado numa RTX 4060 (8 GB VRAM). Roda em CPU, mas a separação vocal e o alinhamento ficam bem mais lentos.
 - **Node.js** e **Rust** (toolchain estável), para a parte Tauri.
-- **ffmpeg** no PATH do sistema, com suporte a `libvorbis` (para gerar `.ogg`).
+- **ffmpeg** com suporte a `libvorbis` (para gerar `.ogg`). Pelo instalador (Opção A) ele é **baixado automaticamente** pelo `setup-sidecar.ps1`; no modo desenvolvimento, tenha-o no PATH.
 
 ## Instalação
 
@@ -39,10 +39,10 @@ O pipeline tem seis etapas:
 
 1. Baixe o instalador (`USKMaker_x.y.z_x64-setup.exe`) na página de [Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases) e instale normalmente.
 2. Instale o [Python 3.12](https://www.python.org/downloads/) (marque "Add python.exe to PATH").
-3. Na pasta de instalação do USKMaker, execute **uma única vez** o script `setup-sidecar.ps1` (clique-direito → "Executar com PowerShell"). Ele detecta sua GPU, cria o ambiente de IA em `%LOCALAPPDATA%\USKMaker` e instala as dependências (≈ 10 min, requer internet).
+3. Na pasta de instalação do USKMaker, execute **uma única vez** o script `setup-sidecar.ps1` (clique-direito → "Executar com PowerShell"). Ele detecta sua GPU, cria o ambiente de IA em `%LOCALAPPDATA%\USKMaker`, **baixa um ffmpeg embutido (com libvorbis)** e instala as dependências (≈ 10 min, requer internet).
 4. Abra o USKMaker e use. Na primeira música, os modelos de IA são baixados automaticamente (~2 GB, só na primeira vez).
 
-Requisitos: Windows 10/11, [ffmpeg](https://www.gyan.dev/ffmpeg/builds/) no PATH com `libvorbis`, e (opcional, mas muito recomendado) GPU NVIDIA — sem ela o processamento roda em CPU, ~10 min por música.
+Requisitos: Windows 10/11 e (opcional, mas muito recomendado) GPU NVIDIA — sem ela o processamento roda em CPU, ~10 min por música. O ffmpeg é instalado automaticamente pelo `setup-sidecar.ps1` (não precisa mais pô-lo no PATH manualmente).
 
 ### Opção B — Ambiente de desenvolvimento
 

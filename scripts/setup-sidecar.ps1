@@ -4,8 +4,10 @@
 #   1. Verifica se o Python 3.12 esta instalado (orienta a instalacao se nao)
 #   2. Detecta GPU NVIDIA (via nvidia-smi) para escolher o build certo do torch
 #   3. Cria um ambiente virtual em %LOCALAPPDATA%\USKMaker\venv
-#   4. Instala todas as dependencias do pipeline de IA
-#   5. Valida a instalacao (incluindo CUDA, se aplicavel)
+#   4. Baixa um ffmpeg embutido (com libvorbis) para %LOCALAPPDATA%\USKMaker\bin
+#      - assim o usuario NAO precisa mais por o ffmpeg no PATH manualmente
+#   5. Instala todas as dependencias do pipeline de IA
+#   6. Valida a instalacao (incluindo CUDA, se aplicavel)
 #
 # Uso:  clique-direito > "Executar com PowerShell", ou:
 #   powershell -ExecutionPolicy Bypass -File .\setup-sidecar.ps1
@@ -107,6 +109,45 @@ if (Test-Path (Join-Path $venvDir "Scripts\python.exe")) {
     Write-Ok "venv criado em: $venvDir"
 }
 $venvPython = Join-Path $venvDir "Scripts\python.exe"
+
+# ---------------------------------------------------------------------------
+# 4b. ffmpeg embutido (com libvorbis) em %LOCALAPPDATA%\USKMaker\bin
+#     Remove a exigencia de ter o ffmpeg no PATH do sistema. O app aponta para
+#     este binario via a env var USKMAKER_FFMPEG (ver resolve_ffmpeg no Rust).
+# ---------------------------------------------------------------------------
+Write-Step "Configurando o ffmpeg embutido"
+
+$binDir    = Join-Path $env:LOCALAPPDATA "USKMaker\bin"
+$ffmpegExe = Join-Path $binDir "ffmpeg.exe"
+
+if (Test-Path $ffmpegExe) {
+    Write-Ok "ffmpeg embutido ja existe em $binDir"
+} else {
+    try {
+        New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+        # Build estatico "essentials" do gyan.dev - inclui libvorbis (para .ogg).
+        $zipUrl     = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+        $zipPath    = Join-Path $env:TEMP "uskmaker-ffmpeg.zip"
+        $extractDir = Join-Path $env:TEMP "uskmaker-ffmpeg-extract"
+        Write-Host "    Baixando ffmpeg (~90 MB)..."
+        Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
+        if (Test-Path $extractDir) { Remove-Item -Recurse -Force $extractDir }
+        Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+        # O zip traz ffmpeg-*-essentials_build\bin\{ffmpeg,ffprobe}.exe
+        $srcFfmpeg = Get-ChildItem -Path $extractDir -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1
+        if (-not $srcFfmpeg) { throw "ffmpeg.exe nao encontrado no zip baixado." }
+        $srcDir = $srcFfmpeg.DirectoryName
+        Copy-Item (Join-Path $srcDir "ffmpeg.exe")  $ffmpegExe -Force
+        $srcProbe = Join-Path $srcDir "ffprobe.exe"
+        if (Test-Path $srcProbe) { Copy-Item $srcProbe (Join-Path $binDir "ffprobe.exe") -Force }
+        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force $extractDir -ErrorAction SilentlyContinue
+        Write-Ok "ffmpeg embutido instalado em $binDir"
+    } catch {
+        Write-Warn2 "Falha ao baixar o ffmpeg embutido: $($_.Exception.Message)"
+        Write-Warn2 "O app ainda funciona se voce tiver o ffmpeg (com libvorbis) no PATH do sistema."
+    }
+}
 
 # ---------------------------------------------------------------------------
 # 5. Instalar dependencias (o passo demorado - downloads grandes)

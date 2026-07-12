@@ -18,12 +18,13 @@ Uso isolado (teste manual):
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from .proc_utils import run_subprocess
+from .proc_utils import ffmpeg_exe, run_subprocess
 
 
 @dataclass
@@ -44,7 +45,15 @@ def _yt_dlp_base_cmd() -> list[str]:
     # executável "yt-dlp" não está no PATH, mas o módulo yt_dlp está
     # instalado no venv e é encontrado por sys.executable. Nome do módulo
     # usa underscore (yt_dlp), o comando usa hífen (yt-dlp).
-    return [sys.executable, "-m", "yt_dlp"]
+    base = [sys.executable, "-m", "yt_dlp"]
+    # Aponta o yt-dlp para o ffmpeg EMBUTIDO do USKMaker quando houver (o
+    # yt-dlp usa ffmpeg para extrair áudio e mesclar vídeo+áudio). Sem a var,
+    # ele procura no PATH como antes. --ffmpeg-location aceita o caminho do
+    # binário ou da pasta.
+    ff = os.environ.get("USKMAKER_FFMPEG")
+    if ff:
+        base += ["--ffmpeg-location", ff]
+    return base
 
 
 def download_from_youtube(url: str, out_dir: Path) -> Path:
@@ -117,7 +126,7 @@ def download_from_youtube_with_video(url: str, out_dir: Path) -> SourceAudio:
     # Extrai o áudio do vídeo já baixado (sem nova transferência de rede),
     # para .wav, mantendo consistência com o resto da pipeline.
     audio_wav = out_dir / (video_path.stem + ".wav")
-    cmd_extract = ["ffmpeg", "-y", "-i", str(video_path), "-vn", str(audio_wav)]
+    cmd_extract = [ffmpeg_exe(), "-y", "-i", str(video_path), "-vn", str(audio_wav)]
     run_subprocess(cmd_extract)
 
     if not audio_wav.exists():
@@ -195,7 +204,7 @@ def normalize_local_file(file_path: Path, out_dir: Path) -> Path:
     # módulo Python), instalado no PATH global do Windows - por isso ele
     # continua funcionando via Tauri mesmo sem o venv ativado, e não precisa
     # do mesmo tratamento "sys.executable -m ..." que aplicamos ao yt-dlp.
-    cmd = ["ffmpeg", "-y", "-i", str(file_path), str(dest_wav)]
+    cmd = [ffmpeg_exe(), "-y", "-i", str(file_path), str(dest_wav)]
     run_subprocess(cmd)
     return dest_wav
 

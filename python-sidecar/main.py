@@ -47,7 +47,7 @@ from pipeline.beatgrid import detect_bpm
 from pipeline.build_song import build_song
 from pipeline.download import download_background_video, get_source_audio
 from pipeline.metadata import fetch_metadata
-from pipeline.proc_utils import run_subprocess
+from pipeline.proc_utils import ffmpeg_exe, run_subprocess
 from pipeline.separate import separate_vocals
 
 # Quando o stdout/stderr do Python não está conectado a um terminal real (é
@@ -107,7 +107,7 @@ def convert_to_ogg(source_wav: Path, dest_ogg: Path, quality: int = 6) -> None:
     Ambos UltraStar Deluxe e Play leem Ogg Vorbis nativamente.
     """
     cmd = [
-        "ffmpeg", "-y",
+        ffmpeg_exe(), "-y",
         "-i", str(source_wav),
         "-c:a", "libvorbis",
         "-q:a", str(quality),

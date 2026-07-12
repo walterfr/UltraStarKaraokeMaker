@@ -199,6 +199,19 @@ struct PipelineResult {
     notes_estimated: usize,
 }
 
+/// Caminho do ffmpeg EMBUTIDO do USKMaker (`%LOCALAPPDATA%\USKMaker\bin\ffmpeg.exe`),
+/// obtido pelo setup. `None` = não existe → o pipeline cai para o ffmpeg do
+/// PATH (compatível com instalações antigas). Passado ao sidecar via env
+/// `USKMAKER_FFMPEG`, removendo a exigência de ffmpeg no PATH do sistema.
+fn resolve_ffmpeg() -> Option<PathBuf> {
+    let local_app_data = std::env::var("LOCALAPPDATA").ok()?;
+    let p = Path::new(&local_app_data)
+        .join("USKMaker")
+        .join("bin")
+        .join("ffmpeg.exe");
+    p.exists().then_some(p)
+}
+
 /// Resolução em cascata do sidecar (ver nota DISTRIBUIÇÃO no topo).
 /// Retorna (pasta do código python, caminho do python.exe do venv).
 fn resolve_sidecar(app: &tauri::AppHandle, lang: &str) -> Result<(PathBuf, PathBuf), String> {
@@ -338,6 +351,11 @@ async fn ensure_server_and_send(
             .stdin(Stdio::piped())
             .stdout(out)
             .stderr(err);
+        // ffmpeg embutido (se houver): o sidecar e seus filhos (ffmpeg/yt-dlp)
+        // herdam esta env e deixam de depender do ffmpeg no PATH.
+        if let Some(ff) = resolve_ffmpeg() {
+            cmd.env("USKMAKER_FFMPEG", &ff);
+        }
         #[cfg(windows)]
         cmd.creation_flags(CREATE_NO_WINDOW);
         let mut child = cmd
@@ -607,7 +625,9 @@ async fn check_environment(app: tauri::AppHandle, lang: String) -> Result<EnvChe
         Err(e) => (false, e),
     };
 
-    let mut ffmpeg_cmd = Command::new("ffmpeg");
+    // Prefere o ffmpeg embutido; cai para o do PATH se não houver.
+    let ffmpeg_bin = resolve_ffmpeg().unwrap_or_else(|| PathBuf::from("ffmpeg"));
+    let mut ffmpeg_cmd = Command::new(&ffmpeg_bin);
     ffmpeg_cmd.arg("-version");
     #[cfg(windows)]
     ffmpeg_cmd.creation_flags(CREATE_NO_WINDOW);

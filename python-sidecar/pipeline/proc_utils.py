@@ -29,7 +29,20 @@ nunca esbarrar nesse limite do Windows.
 
 from __future__ import annotations
 
+import os
 import subprocess
+
+
+def ffmpeg_exe() -> str:
+    """
+    Caminho do ffmpeg a usar. Prefere o ffmpeg EMBUTIDO do USKMaker (env var
+    USKMAKER_FFMPEG, apontando para o ffmpeg.exe em
+    %LOCALAPPDATA%\\USKMaker\\bin, obtido pelo setup), e cai para "ffmpeg" do
+    PATH quando a variável não está definida. Isso remove a exigência de ter
+    o ffmpeg no PATH do sistema, mantendo compatibilidade com instalações
+    antigas que dependiam dele.
+    """
+    return os.environ.get("USKMAKER_FFMPEG") or "ffmpeg"
 
 
 def _print_captured(text: str) -> None:
