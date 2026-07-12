@@ -92,6 +92,14 @@ Fully functional end to end through the GUI. All scoped milestones are complete:
 - **Distribution** — NSIS installer + assisted AI environment setup (`setup-sidecar.ps1`).
 - **Manual review** — integrated Yass-style editor: waveform timeline, playback (mix or vocals only), note editing by drag/keyboard, phrase breaks, global GAP and undo/redo; saving rewrites `song_data.json` and regenerates the `.txt` through the Rust core.
 
+## Support the project
+
+USKMaker is free and open source. If it helped you, consider supporting development — every bit helps keep the project maintained and improving:
+
+- ❤️ [GitHub Sponsors](https://github.com/sponsors/walterfr)
+- ☕ [Ko-fi](https://ko-fi.com/walterfr)
+- ☕ [Buy Me a Coffee](https://buymeacoffee.com/walterfr)
+
 ## License
 
 MIT. See the [LICENSE](LICENSE) file.

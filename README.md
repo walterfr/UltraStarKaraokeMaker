@@ -92,6 +92,14 @@ Funcional de ponta a ponta pela interface gráfica. Todas as etapas de escopo es
 - **Distribuição** — instalador NSIS + setup assistido do ambiente de IA (`setup-sidecar.ps1`).
 - **Revisão manual** — editor estilo Yass integrado: timeline com waveform, playback (mix ou só vocal), ajuste de notas por arrastar/teclado, quebras de frase, GAP global e undo/redo; salvar regrava o `song_data.json` e regenera o `.txt` pelo núcleo Rust.
 
+## Apoie o projeto
+
+O USKMaker é gratuito e de código aberto. Se ele te ajudou, considere apoiar o desenvolvimento — qualquer contribuição ajuda a manter e melhorar o projeto:
+
+- ❤️ [GitHub Sponsors](https://github.com/sponsors/walterfr)
+- ☕ [Ko-fi](https://ko-fi.com/walterfr)
+- ☕ [Buy Me a Coffee](https://buymeacoffee.com/walterfr)
+
 ## Licença
 
 MIT. Veja o arquivo [LICENSE](LICENSE).
