@@ -160,6 +160,12 @@ function App() {
   const [env, setEnv] = useState<EnvCheck | null>(null);
   const [reviewDir, setReviewDir] = useState<string | null>(null);
 
+  // Setup in-app do ambiente de IA (uv + ffmpeg + libs), quando não configurado.
+  const [settingUp, setSettingUp] = useState(false);
+  const [setupLog, setSetupLog] = useState<string[]>([]);
+  const [setupDone, setSetupDone] = useState(false);
+  const [setupError, setSetupError] = useState<string | null>(null);
+
   // splash: visível na abertura, some com fade (leve - overlay, sem janela extra)
   const [splashState, setSplashState] = useState<"show" | "fade" | "gone">("show");
   const [showAbout, setShowAbout] = useState(false);
@@ -258,6 +264,33 @@ function App() {
       unlistenPromise.then((unlisten) => unlisten());
     };
   }, []);
+
+  // progresso do setup in-app (evento separado do log da pipeline)
+  useEffect(() => {
+    const unlistenPromise = listen<string>("setup-log", (event) => {
+      setSetupLog((prev) => [...prev, event.payload]);
+    });
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
+
+  async function handleSetup() {
+    setSettingUp(true);
+    setSetupLog([]);
+    setSetupError(null);
+    setSetupDone(false);
+    try {
+      await invoke("setup_environment", { lang });
+      const e = await invoke<EnvCheck>("check_environment", { lang });
+      setEnv(e);
+      if (e.sidecarOk) setSetupDone(true);
+    } catch (err) {
+      setSetupError(typeof err === "string" ? err : t("unknownError"));
+    } finally {
+      setSettingUp(false);
+    }
+  }
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -614,8 +647,33 @@ function App() {
               <li key={i}>{p}</li>
             ))}
           </ul>
+          {!settingUp ? (
+            <>
+              <button className="submit-button compact" onClick={handleSetup}>
+                {t("setupButton")}
+              </button>
+              <p className="field-hint">{t("setupHint")}</p>
+            </>
+          ) : (
+            <div className="setup-progress">
+              <p>
+                <span className="spinner" /> {t("setupRunning")}
+              </p>
+              <div className="setup-log">
+                {setupLog.slice(-14).map((l, i) => (
+                  <div key={i}>{l}</div>
+                ))}
+              </div>
+            </div>
+          )}
+          {setupError && (
+            <p className="lyrics-warning">
+              ⚠ {t("setupErrorPrefix")} {setupError}
+            </p>
+          )}
         </div>
       )}
+      {setupDone && env?.sidecarOk && <div className="info-box">{t("setupDone")}</div>}
 
       <div className="source-toggle">
         <button

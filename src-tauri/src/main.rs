@@ -126,6 +126,8 @@ fn tr(lang: &str, key: &str) -> &'static str {
         "write_file" => if en { "Error writing '{path}': {err}" } else { "Erro ao gravar '{path}': {err}" },
         "write_txt_path" => if en { "Error writing '{path}': {err}" } else { "Erro ao escrever '{path}': {err}" },
         "open_folder" => if en { "Error opening the folder: {err}" } else { "Erro ao abrir a pasta: {err}" },
+        "setup_spawn" => if en { "Error starting the setup: {err}" } else { "Erro ao iniciar o setup: {err}" },
+        "setup_failed" => if en { "Setup failed. See the log at '{log}'." } else { "O setup falhou. Veja o log em '{log}'." },
         _ => "",
     }
 }
@@ -253,18 +255,48 @@ fn resolve_sidecar(app: &tauri::AppHandle, lang: &str) -> Result<(PathBuf, PathB
     Ok((code_dir, venv_python))
 }
 
+/// Localiza o script de setup (setup-sidecar.ps1), tanto em dev quanto no app
+/// instalado (resources do Tauri, sob `_up_/scripts`).
+fn resolve_setup_script(app: &tauri::AppHandle, lang: &str) -> Result<PathBuf, String> {
+    let dev = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("scripts")
+        .join("setup-sidecar.ps1");
+    if dev.exists() {
+        return Ok(dev);
+    }
+    let resource_dir = app
+        .path_resolver()
+        .resource_dir()
+        .ok_or_else(|| tr(lang, "res_dir").to_string())?;
+    let candidates = [
+        resource_dir.join("_up_").join("scripts").join("setup-sidecar.ps1"),
+        resource_dir.join("scripts").join("setup-sidecar.ps1"),
+    ];
+    candidates
+        .iter()
+        .find(|p| p.exists())
+        .cloned()
+        .ok_or_else(|| tr(lang, "code_missing").to_string())
+}
+
 /// Acompanha um arquivo de log que está sendo escrito por outro processo
 /// (como um `tail -f`), emitindo cada linha nova via evento `pipeline-log`
 /// assim que aparece. Para quando `stop_rx` sinaliza (processo terminou),
 /// mas ainda faz uma última leitura antes de sair, para não perder
 /// nenhuma linha final que tenha sido escrita entre o último poll e o
 /// processo terminar.
-async fn tail_file_and_emit(window: Window, path: PathBuf, mut stop_rx: watch::Receiver<bool>) {
+async fn tail_file_and_emit(
+    window: Window,
+    path: PathBuf,
+    mut stop_rx: watch::Receiver<bool>,
+    event: &'static str,
+) {
     let mut last_pos: u64 = 0;
     let mut leftover = String::new();
 
     loop {
-        read_new_lines(&path, &mut last_pos, &mut leftover, &window);
+        read_new_lines(&path, &mut last_pos, &mut leftover, &window, event);
 
         if *stop_rx.borrow() {
             break;
@@ -278,13 +310,19 @@ async fn tail_file_and_emit(window: Window, path: PathBuf, mut stop_rx: watch::R
 
     // uma última leitura, para pegar qualquer coisa escrita entre o
     // último poll e o processo terminar
-    read_new_lines(&path, &mut last_pos, &mut leftover, &window);
+    read_new_lines(&path, &mut last_pos, &mut leftover, &window, event);
     if !leftover.trim().is_empty() {
-        let _ = window.emit("pipeline-log", leftover.trim_end().to_string());
+        let _ = window.emit(event, leftover.trim_end().to_string());
     }
 }
 
-fn read_new_lines(path: &Path, last_pos: &mut u64, leftover: &mut String, window: &Window) {
+fn read_new_lines(
+    path: &Path,
+    last_pos: &mut u64,
+    leftover: &mut String,
+    window: &Window,
+    event: &'static str,
+) {
     let Ok(mut file) = File::open(path) else {
         return; // arquivo pode não existir ainda no primeiro poll - tudo bem
     };
@@ -310,7 +348,7 @@ fn read_new_lines(path: &Path, last_pos: &mut u64, leftover: &mut String, window
     while let Some(idx) = leftover.find('\n') {
         let line: String = leftover.drain(..=idx).collect();
         let line = line.trim_end_matches(['\r', '\n']);
-        let _ = window.emit("pipeline-log", line.to_string());
+        let _ = window.emit(event, line.to_string());
     }
 }
 
@@ -478,7 +516,7 @@ async fn run_pipeline(
 
     // tail do log do job (reusa o mecanismo à prova de balas de sempre)
     let (stop_tx, stop_rx) = watch::channel(false);
-    let tail_task = tokio::spawn(tail_file_and_emit(window.clone(), log_path.clone(), stop_rx));
+    let tail_task = tokio::spawn(tail_file_and_emit(window.clone(), log_path.clone(), stop_rx, "pipeline-log"));
 
     // Espera o sidecar sinalizar a conclusão do job (arquivo de status),
     // observando também cancelamento e morte inesperada do servidor.
@@ -660,6 +698,56 @@ async fn check_environment(app: tauri::AppHandle, lang: String) -> Result<EnvChe
     })
 }
 
+/// Setup in-app do ambiente de IA: roda o setup-sidecar.ps1 em modo NÃO
+/// interativo (-Unattended) e transmite o progresso para a UI via evento
+/// "setup-log". Substitui o passo manual de "clicar com o direito no .ps1"
+/// (que segue disponível como fallback). O script baixa o uv, cria o venv com
+/// Python 3.12, baixa o ffmpeg embutido e instala as dependências.
+#[tauri::command]
+async fn setup_environment(app: tauri::AppHandle, window: Window, lang: String) -> Result<(), String> {
+    let script = resolve_setup_script(&app, &lang)?;
+
+    let local_app_data =
+        std::env::var("LOCALAPPDATA").map_err(|_| tr(&lang, "localappdata").to_string())?;
+    let usk_dir = Path::new(&local_app_data).join("USKMaker");
+    std::fs::create_dir_all(&usk_dir).map_err(|e| tr_err(&lang, "setup_spawn", &e))?;
+    let log_path = usk_dir.join("setup.log");
+    let _ = std::fs::remove_file(&log_path);
+    let stdout_file = File::create(&log_path).map_err(|e| tr_err(&lang, "setup_spawn", &e))?;
+    let stderr_file = stdout_file.try_clone().map_err(|e| tr_err(&lang, "setup_spawn", &e))?;
+
+    // `-Command` com `*>&1` faz TODA a saída do PowerShell (inclusive o
+    // Write-Host, que é o stream de Information) ir para o stdout capturado no
+    // arquivo tailado - senão as linhas coloridas de progresso se perderiam.
+    let ps_cmd = format!("& '{}' -Unattended *>&1", script.display());
+    let mut cmd = Command::new("powershell");
+    cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"])
+        .arg(&ps_cmd)
+        .stdout(stdout_file)
+        .stderr(stderr_file);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let mut child = cmd.spawn().map_err(|e| tr_err(&lang, "setup_spawn", &e))?;
+
+    let (stop_tx, stop_rx) = watch::channel(false);
+    let tail = tokio::spawn(tail_file_and_emit(
+        window.clone(),
+        log_path.clone(),
+        stop_rx,
+        "setup-log",
+    ));
+
+    let status = child.wait().await.map_err(|e| tr_err(&lang, "setup_spawn", &e))?;
+    let _ = stop_tx.send(true);
+    let _ = tail.await;
+
+    if !status.success() {
+        return Err(tr(&lang, "setup_failed").replace("{log}", &log_path.display().to_string()));
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Tela de revisão manual (estilo Yass) - Fase 4.
 //
@@ -777,7 +865,8 @@ fn main() {
             load_song,
             save_song,
             cancel_pipeline,
-            check_environment
+            check_environment,
+            setup_environment
         ])
         .build(tauri::generate_context!())
         .expect("erro ao construir a aplicação Tauri");

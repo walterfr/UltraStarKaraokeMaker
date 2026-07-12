@@ -1,31 +1,40 @@
-# USKMaker - setup do sidecar Python (executar uma unica vez apos instalar o app)
+# USKMaker - setup do ambiente de IA (rode uma vez apos instalar o app)
 #
-# O que este script faz:
-#   1. Verifica se o Python 3.12 esta instalado (orienta a instalacao se nao)
-#   2. Detecta GPU NVIDIA (via nvidia-smi) para escolher o build certo do torch
-#   3. Cria um ambiente virtual em %LOCALAPPDATA%\USKMaker\venv
+# Pode ser disparado de duas formas:
+#   - pelo BOTAO "Configurar ambiente de IA" dentro do app (passa -Unattended);
+#   - manualmente: clique-direito > "Executar com PowerShell", ou
+#     powershell -ExecutionPolicy Bypass -File .\setup-sidecar.ps1
+#
+# O que faz (NAO exige Python instalado - o uv cuida disso):
+#   1. Baixa o uv (gerenciador de Python/pacotes da Astral) para o bin
+#   2. Detecta GPU NVIDIA (via nvidia-smi) para escolher o build do torch
+#   3. Cria o venv em %LOCALAPPDATA%\USKMaker\venv com Python 3.12 (o uv baixa
+#      um Python gerenciado se nao houver 3.12 na maquina)
 #   4. Baixa um ffmpeg embutido (com libvorbis) para %LOCALAPPDATA%\USKMaker\bin
-#      - assim o usuario NAO precisa mais por o ffmpeg no PATH manualmente
-#   5. Instala todas as dependencias do pipeline de IA
-#   6. Valida a instalacao (incluindo CUDA, se aplicavel)
+#   5. Instala as dependencias do pipeline (torch + requirements) via uv
+#   6. Valida a instalacao
 #
-# Uso:  clique-direito > "Executar com PowerShell", ou:
-#   powershell -ExecutionPolicy Bypass -File .\setup-sidecar.ps1
-#
-# O venv fica em LOCALAPPDATA (nao em Program Files) porque a pasta de
-# instalacao do app e somente-leitura para usuarios comuns - o venv precisa
-# de escrita (pip, cache de modelos, etc).
+# Tudo fica em %LOCALAPPDATA%\USKMaker (fora de Program Files, que e
+# somente-leitura para usuarios comuns).
+
+param([switch]$Unattended)
 
 $ErrorActionPreference = "Stop"
 
 function Write-Step($msg)  { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 function Write-Ok($msg)    { Write-Host "    [OK] $msg" -ForegroundColor Green }
 function Write-Warn2($msg) { Write-Host "    [AVISO] $msg" -ForegroundColor Yellow }
-function Fail($msg)        { Write-Host "`n[ERRO] $msg" -ForegroundColor Red; Read-Host "Pressione Enter para sair"; exit 1 }
+function Pause-IfInteractive { if (-not $Unattended) { Read-Host "`nPressione Enter para sair" } }
+function Fail($msg)        { Write-Host "`n[ERRO] $msg" -ForegroundColor Red; Pause-IfInteractive; exit 1 }
 
 Write-Host "=============================================" -ForegroundColor Cyan
 Write-Host " USKMaker - configuracao do ambiente de IA " -ForegroundColor Cyan
 Write-Host "=============================================" -ForegroundColor Cyan
+
+$uskDir = Join-Path $env:LOCALAPPDATA "USKMaker"
+$binDir = Join-Path $uskDir "bin"
+$venvDir = Join-Path $uskDir "venv"
+$venvPython = Join-Path $venvDir "Scripts\python.exe"
 
 # ---------------------------------------------------------------------------
 # 1. Localizar o codigo do sidecar (instalado junto com o app, como resource)
@@ -42,7 +51,6 @@ $candidatesLocal = @(
 $sidecarDir = $candidatesLocal | Where-Object { Test-Path (Join-Path $_ "requirements.txt") } | Select-Object -First 1
 
 if (-not $sidecarDir) {
-    # fallback: procurar na pasta de instalacao padrao do app
     $candidates = @(
         (Join-Path $env:LOCALAPPDATA "Programs\uskmaker\python-sidecar"),
         (Join-Path ${env:ProgramFiles} "uskmaker\python-sidecar")
@@ -54,29 +62,38 @@ if (-not $sidecarDir) {
 }
 Write-Ok "Sidecar em: $sidecarDir"
 
-# ---------------------------------------------------------------------------
-# 2. Verificar Python 3.12
-# ---------------------------------------------------------------------------
-Write-Step "Verificando Python 3.12"
+New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 
-$pythonExe = $null
-foreach ($cand in @("py -3.12", "python")) {
+# ---------------------------------------------------------------------------
+# 2. Baixar o uv (nao exige Python previo - ele mesmo instala o Python 3.12)
+# ---------------------------------------------------------------------------
+Write-Step "Configurando o uv (gerenciador de Python/pacotes)"
+
+$uvExe = Join-Path $binDir "uv.exe"
+if (Test-Path $uvExe) {
+    Write-Ok "uv ja existe em $binDir"
+} else {
     try {
-        $ver = Invoke-Expression "$cand --version 2>&1"
-        if ($ver -match "Python 3\.12\.") { $pythonExe = $cand; break }
-    } catch { }
+        $uvZipUrl   = "https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip"
+        $uvZip      = Join-Path $env:TEMP "uskmaker-uv.zip"
+        $uvExtract  = Join-Path $env:TEMP "uskmaker-uv-extract"
+        Write-Host "    Baixando uv..."
+        Invoke-WebRequest -Uri $uvZipUrl -OutFile $uvZip -UseBasicParsing
+        if (Test-Path $uvExtract) { Remove-Item -Recurse -Force $uvExtract }
+        Expand-Archive -Path $uvZip -DestinationPath $uvExtract -Force
+        $srcUv = Get-ChildItem -Path $uvExtract -Recurse -Filter "uv.exe" | Select-Object -First 1
+        if (-not $srcUv) { throw "uv.exe nao encontrado no zip baixado." }
+        Copy-Item $srcUv.FullName $uvExe -Force
+        Remove-Item $uvZip -Force -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force $uvExtract -ErrorAction SilentlyContinue
+        Write-Ok "uv instalado em $binDir"
+    } catch {
+        Fail "Falha ao baixar o uv: $($_.Exception.Message)"
+    }
 }
-
-if (-not $pythonExe) {
-    Write-Warn2 "Python 3.12 nao encontrado."
-    Write-Host  "    Baixe e instale em: https://www.python.org/downloads/"
-    Write-Host  "    (marque 'Add python.exe to PATH' na instalacao)"
-    Fail "Instale o Python 3.12 e rode este script novamente."
-}
-Write-Ok "Python 3.12 encontrado ($pythonExe)"
 
 # ---------------------------------------------------------------------------
-# 3. Detectar GPU NVIDIA
+# 3. Detectar GPU NVIDIA (escolhe o build do torch: CUDA cu126 ou CPU)
 # ---------------------------------------------------------------------------
 Write-Step "Detectando GPU NVIDIA"
 
@@ -87,45 +104,37 @@ try {
 } catch { }
 
 if ($hasNvidia) {
-    Write-Ok "GPU NVIDIA detectada - sera instalado o torch com CUDA (cu126)."
+    Write-Ok "GPU NVIDIA detectada - torch com CUDA (cu126)."
     $torchIndex = "https://download.pytorch.org/whl/cu126"
 } else {
-    Write-Warn2 "Nenhuma GPU NVIDIA detectada - sera instalado o torch CPU."
-    Write-Warn2 "O processamento funciona, mas e bem mais lento (~10 min por musica)."
+    Write-Warn2 "Nenhuma GPU NVIDIA detectada - torch CPU (funciona, mas ~10 min por musica)."
     $torchIndex = "https://download.pytorch.org/whl/cpu"
 }
 
 # ---------------------------------------------------------------------------
-# 4. Criar venv em %LOCALAPPDATA%\USKMaker\venv
+# 4. Criar o venv com Python 3.12 (o uv baixa o Python se necessario)
 # ---------------------------------------------------------------------------
-Write-Step "Criando ambiente virtual"
+Write-Step "Criando o ambiente virtual (Python 3.12 via uv)"
 
-$venvDir = Join-Path $env:LOCALAPPDATA "USKMaker\venv"
-if (Test-Path (Join-Path $venvDir "Scripts\python.exe")) {
+if (Test-Path $venvPython) {
     Write-Warn2 "Ja existe um venv em $venvDir - sera reutilizado."
 } else {
-    New-Item -ItemType Directory -Force -Path (Split-Path $venvDir) | Out-Null
-    Invoke-Expression "$pythonExe -m venv `"$venvDir`""
+    & $uvExe venv --python 3.12 "$venvDir"
+    if ($LASTEXITCODE -ne 0) { Fail "Falha ao criar o venv com uv." }
     Write-Ok "venv criado em: $venvDir"
 }
-$venvPython = Join-Path $venvDir "Scripts\python.exe"
 
 # ---------------------------------------------------------------------------
-# 4b. ffmpeg embutido (com libvorbis) em %LOCALAPPDATA%\USKMaker\bin
-#     Remove a exigencia de ter o ffmpeg no PATH do sistema. O app aponta para
-#     este binario via a env var USKMAKER_FFMPEG (ver resolve_ffmpeg no Rust).
+# 5. ffmpeg embutido (com libvorbis) em %LOCALAPPDATA%\USKMaker\bin
+#     Remove a exigencia de ter o ffmpeg no PATH do sistema.
 # ---------------------------------------------------------------------------
 Write-Step "Configurando o ffmpeg embutido"
 
-$binDir    = Join-Path $env:LOCALAPPDATA "USKMaker\bin"
 $ffmpegExe = Join-Path $binDir "ffmpeg.exe"
-
 if (Test-Path $ffmpegExe) {
     Write-Ok "ffmpeg embutido ja existe em $binDir"
 } else {
     try {
-        New-Item -ItemType Directory -Force -Path $binDir | Out-Null
-        # Build estatico "essentials" do gyan.dev - inclui libvorbis (para .ogg).
         $zipUrl     = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
         $zipPath    = Join-Path $env:TEMP "uskmaker-ffmpeg.zip"
         $extractDir = Join-Path $env:TEMP "uskmaker-ffmpeg-extract"
@@ -133,7 +142,6 @@ if (Test-Path $ffmpegExe) {
         Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
         if (Test-Path $extractDir) { Remove-Item -Recurse -Force $extractDir }
         Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
-        # O zip traz ffmpeg-*-essentials_build\bin\{ffmpeg,ffprobe}.exe
         $srcFfmpeg = Get-ChildItem -Path $extractDir -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1
         if (-not $srcFfmpeg) { throw "ffmpeg.exe nao encontrado no zip baixado." }
         $srcDir = $srcFfmpeg.DirectoryName
@@ -145,31 +153,29 @@ if (Test-Path $ffmpegExe) {
         Write-Ok "ffmpeg embutido instalado em $binDir"
     } catch {
         Write-Warn2 "Falha ao baixar o ffmpeg embutido: $($_.Exception.Message)"
-        Write-Warn2 "O app ainda funciona se voce tiver o ffmpeg (com libvorbis) no PATH do sistema."
+        Write-Warn2 "O app ainda funciona se voce tiver o ffmpeg (com libvorbis) no PATH."
     }
 }
 
 # ---------------------------------------------------------------------------
-# 5. Instalar dependencias (o passo demorado - downloads grandes)
+# 6. Instalar dependencias via uv (o passo demorado - downloads grandes)
 # ---------------------------------------------------------------------------
 Write-Step "Instalando torch ($(if ($hasNvidia) {'CUDA cu126'} else {'CPU'})) - pode demorar varios minutos"
-& $venvPython -m pip install --upgrade pip
-& $venvPython -m pip install torch torchaudio torchvision --index-url $torchIndex
+& $uvExe pip install --python "$venvPython" torch torchaudio torchvision --index-url $torchIndex
 if ($LASTEXITCODE -ne 0) { Fail "Falha ao instalar o torch." }
 
 Write-Step "Instalando as demais dependencias do pipeline"
-& $venvPython -m pip install -r (Join-Path $sidecarDir "requirements.txt")
+& $uvExe pip install --python "$venvPython" -r (Join-Path $sidecarDir "requirements.txt")
 if ($LASTEXITCODE -ne 0) { Fail "Falha ao instalar as dependencias (requirements.txt)." }
 
 # ---------------------------------------------------------------------------
-# 6. Validacao final
+# 7. Validacao final
 # ---------------------------------------------------------------------------
 Write-Step "Validando a instalacao"
 
 $cudaCheck = & $venvPython -c "import torch; print(torch.cuda.is_available())"
 if ($hasNvidia -and $cudaCheck.Trim() -ne "True") {
-    Write-Warn2 "GPU NVIDIA detectada mas o torch nao esta enxergando CUDA."
-    Write-Warn2 "Verifique se o driver NVIDIA esta atualizado (nvidia-smi deve funcionar)."
+    Write-Warn2 "GPU NVIDIA detectada mas o torch nao esta enxergando CUDA (verifique o driver)."
 } else {
     Write-Ok "torch instalado (CUDA disponivel: $($cudaCheck.Trim()))"
 }
@@ -178,12 +184,12 @@ if ($hasNvidia -and $cudaCheck.Trim() -ne "True") {
 if ($LASTEXITCODE -eq 0) {
     Write-Ok "Bibliotecas do pipeline importadas com sucesso."
 } else {
-    Write-Warn2 "Alguma biblioteca nao importou corretamente - o app pode falhar. Rode o script de novo ou abra uma issue."
+    Write-Warn2 "Alguma biblioteca nao importou - o app pode falhar. Rode o setup de novo ou abra uma issue."
 }
 
 Write-Host "`n=============================================" -ForegroundColor Green
-Write-Host " Configuracao concluida! Pode abrir o USKMaker." -ForegroundColor Green
+Write-Host " Configuracao concluida! Pode usar o USKMaker." -ForegroundColor Green
 Write-Host "=============================================" -ForegroundColor Green
 Write-Host " Na primeira musica, os modelos de IA (Demucs/Whisper)"
 Write-Host " serao baixados automaticamente (~2 GB, so na primeira vez)."
-Read-Host "`nPressione Enter para sair"
+Pause-IfInteractive

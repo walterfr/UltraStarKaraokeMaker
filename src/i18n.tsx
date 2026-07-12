@@ -30,6 +30,11 @@ const STRINGS = {
     envIncomplete: "Ambiente incompleto — a geração vai falhar até resolver:",
     envNoFfmpeg: "ffmpeg não encontrado no PATH — instale (https://www.gyan.dev/ffmpeg/builds/) e reinicie o app.",
     envNoVorbis: "O ffmpeg instalado não tem suporte a libvorbis (necessário para o áudio .ogg do pacote) — use um build \"full\".",
+    setupButton: "Configurar ambiente de IA",
+    setupHint: "Baixa o Python, o ffmpeg e as bibliotecas de IA automaticamente (~2 GB). Precisa de internet e leva alguns minutos.",
+    setupRunning: "Configurando o ambiente... (baixando ~2 GB, pode levar ~10 min)",
+    setupDone: "Ambiente configurado! Pode gerar sua primeira música.",
+    setupErrorPrefix: "Falha no setup:",
 
     // ---- fonte ----
     tabYoutube: "Link do YouTube",
@@ -198,6 +203,11 @@ const STRINGS = {
     envGpu: "✓ GPU {name}",
     envIncomplete: "Incomplete environment — generation will fail until fixed:",
     envNoFfmpeg: "ffmpeg not found on PATH — install it (https://www.gyan.dev/ffmpeg/builds/) and restart the app.",
+    setupButton: "Set up AI environment",
+    setupHint: "Downloads Python, ffmpeg and the AI libraries automatically (~2 GB). Requires internet and takes a few minutes.",
+    setupRunning: "Setting up the environment... (downloading ~2 GB, may take ~10 min)",
+    setupDone: "Environment ready! You can generate your first song.",
+    setupErrorPrefix: "Setup failed:",
     envNoVorbis: "The installed ffmpeg lacks libvorbis support (needed for the package's .ogg audio) — use a \"full\" build.",
 
     tabYoutube: "YouTube link",

@@ -433,6 +433,24 @@ button.danger:hover {
 .running-actions .submit-button {
   flex: 1;
 }
+.setup-progress {
+  margin-top: 0.6rem;
+}
+.setup-log {
+  margin-top: 0.5rem;
+  max-height: 180px;
+  overflow-y: auto;
+  background: #0f0f15;
+  border: 1px solid #2a2a36;
+  border-radius: 6px;
+  padding: 0.5rem 0.7rem;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 0.8rem;
+  color: #b9b9c4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .queue-panel {
   margin: 1rem 0 0;
   padding: 0.8rem 1rem;
