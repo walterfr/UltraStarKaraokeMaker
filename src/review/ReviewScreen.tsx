@@ -164,7 +164,7 @@ type DragMode =
   | { kind: "resize"; noteIdx: number; startX: number; dur0: number };
 
 export default function ReviewScreen({ outDir, onClose }: Props) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [song, setSong] = useState<USSong | null>(null);
   const [audioPath, setAudioPath] = useState<string | null>(null);
   const [vocalsPath, setVocalsPath] = useState<string | null>(null);
@@ -203,7 +203,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
     let cancelled = false;
     (async () => {
       try {
-        const data = await invoke<ReviewData>("load_song", { outDir });
+        const data = await invoke<ReviewData>("load_song", { outDir, lang });
         if (cancelled) return;
         setSong(data.song);
         setAudioPath(data.audioPath);
@@ -955,7 +955,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
     setSaving(true);
     setStatusMsg(null);
     try {
-      const result = await invoke<SaveResult>("save_song", { outDir, song: s });
+      const result = await invoke<SaveResult>("save_song", { outDir, song: s, lang });
       setWarnings(result.warnings);
       setDirty(false);
       setStatusMsg(t("revSaved", { path: result.txtPath }));

@@ -237,11 +237,12 @@ function App() {
   }, []);
 
   // --------------------------------------------- checagem de ambiente
+  // Refaz ao trocar de idioma para a mensagem de erro (se houver) vir traduzida.
   useEffect(() => {
-    invoke<EnvCheck>("check_environment")
+    invoke<EnvCheck>("check_environment", { lang })
       .then(setEnv)
       .catch(() => setEnv(null));
-  }, []);
+  }, [lang]);
 
   // ------------------------------------------------------ log + passos
   useEffect(() => {
@@ -432,7 +433,7 @@ function App() {
       appWindow.setTitle(t("windowGenerating", { song: `${item.artist} - ${item.title}` }));
 
       try {
-        const res = await invoke<PipelineResult>("run_pipeline", { input: item.input });
+        const res = await invoke<PipelineResult>("run_pipeline", { input: item.input, lang });
         patchItem(item.id, { status: "done", result: res });
         setResult(res);
         setCurrentStep(STEP_KEYS.length + 1);
@@ -480,7 +481,7 @@ function App() {
   async function handleCancel() {
     setCancelling(true);
     try {
-      await invoke("cancel_pipeline");
+      await invoke("cancel_pipeline", { lang });
     } catch {
       setCancelling(false);
     }
@@ -518,7 +519,7 @@ function App() {
 
   async function openOutputFolder() {
     if (!result) return;
-    await invoke("open_folder", { path: result.outDir });
+    await invoke("open_folder", { path: result.outDir, lang });
   }
 
   async function pickPackageToReview() {
@@ -803,7 +804,7 @@ function App() {
                       <button className="link-button" onClick={() => setReviewDir(it.result!.outDir)}>
                         {t("queueReview")}
                       </button>
-                      <button className="link-button" onClick={() => invoke("open_folder", { path: it.result!.outDir })}>
+                      <button className="link-button" onClick={() => invoke("open_folder", { path: it.result!.outDir, lang })}>
                         {t("queueOpen")}
                       </button>
                     </>
