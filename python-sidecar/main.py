@@ -71,6 +71,29 @@ def debug_log(message: str) -> None:
         f.flush()
 
 
+def resolve_device(requested: str) -> str:
+    """
+    Decide o device REAL de processamento. "cpu" é sempre respeitado; "cuda"
+    ou "auto" só viram "cuda" se o torch tiver CUDA de fato disponível - caso
+    contrário caem para "cpu".
+
+    Corrige o erro reportado em máquinas sem GPU NVIDIA (ex.: Intel Iris Xe):
+    o Demucs/whisperx eram chamados com "cuda" mesmo sem CUDA, estourando
+    "AssertionError: Torch not compiled with CUDA enabled". A interface já
+    avisa que o processamento roda na CPU; aqui garantimos que o pipeline
+    concorde com isso, em vez de assumir GPU cegamente.
+    """
+    if requested == "cpu":
+        return "cpu"
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return "cuda"
+    except Exception:
+        pass
+    return "cpu"
+
+
 def get_audio_duration_seconds(path: Path) -> float:
     """Lê só o cabeçalho do áudio (rápido, não carrega o arquivo inteiro)."""
     info = sf.info(str(path))
@@ -125,6 +148,17 @@ def run_pipeline(
         f"Args: url={url!r} file={file!r} title={title!r} artist={artist!r} "
         f"out={out_dir!r} with_video={with_video}"
     )
+
+    # Resolve o device de verdade (cai para CPU se não houver CUDA). Sem isso,
+    # máquinas sem GPU NVIDIA quebravam com "Torch not compiled with CUDA".
+    requested_device = device
+    device = resolve_device(device)
+    debug_log(f"Device solicitado={requested_device!r} -> efetivo={device!r}")
+    if device == "cpu" and requested_device != "cpu":
+        console.print(
+            "[yellow]AVISO[/yellow] GPU NVIDIA/CUDA não disponível — o processamento "
+            "vai rodar na CPU (funciona, mas é bem mais lento)."
+        )
 
     console.rule("[bold cyan]Etapa 1/6 — Obtendo áudio fonte")
     debug_log("ETAPA 1 - iniciando get_source_audio")
@@ -317,7 +351,8 @@ if __name__ == "__main__":
     parser.add_argument("--out", default="./output_test")
     parser.add_argument("--bpm", type=float, default=None, help="BPM manual (recomendado após 1a rodada automática)")
     parser.add_argument("--gap_ms", type=int, default=0, help="GAP manual em ms (ajustar após 1a rodada)")
-    parser.add_argument("--device", default="cuda", choices=["cuda", "cpu"])
+    parser.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"],
+                        help="auto = usa CUDA se disponível, senão CPU")
     parser.add_argument("--with-video", action="store_true", help="Baixar e incluir o vídeo do YouTube no pacote")
     parser.add_argument(
         "--bg-video",

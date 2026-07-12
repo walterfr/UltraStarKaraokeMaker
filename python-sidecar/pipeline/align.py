@@ -690,7 +690,9 @@ def align_lyrics_to_audio(
     """
     import whisperx
 
-    compute_type = "float16"  # bom para RTX 4060; usar "int8" se faltar VRAM
+    # float16 é ótimo na GPU (RTX 4060), mas o faster-whisper NÃO suporta
+    # float16 na CPU - lá o correto é int8. (Na GPU, use "int8" se faltar VRAM.)
+    compute_type = "float16" if device == "cuda" else "int8"
 
     # 1) Transcrição LIVRE (sem substituir nada) - queremos saber o que o
     #    Whisper de fato reconheceu no áudio, com timestamps de alta

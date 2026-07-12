@@ -75,7 +75,7 @@ def _run_one(job: dict) -> None:
                     out_dir=job["out_dir"],
                     manual_bpm=job.get("bpm"),
                     manual_gap_ms=job.get("gap_ms", 0),
-                    device=job.get("device", "cuda"),
+                    device=job.get("device", "auto"),
                     with_video=job.get("with_video", False),
                     bg_video=job.get("bg_video", False),
                     bg_video_url=job.get("bg_video_url"),

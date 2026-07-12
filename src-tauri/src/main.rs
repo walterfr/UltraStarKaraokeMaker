@@ -444,7 +444,9 @@ async fn run_pipeline(
         "out_dir": out_dir.to_string_lossy(),
         "bpm": input.bpm,
         "gap_ms": 0,
-        "device": "cuda",
+        // "auto": o sidecar usa CUDA se houver, senão cai para CPU (máquinas
+        // sem GPU NVIDIA quebravam com "Torch not compiled with CUDA").
+        "device": "auto",
         "with_video": input.with_video,
         "bg_video": input.bg_video,
         "bg_video_url": input.bg_video_url.as_deref().map(str::trim).filter(|s| !s.is_empty()),
