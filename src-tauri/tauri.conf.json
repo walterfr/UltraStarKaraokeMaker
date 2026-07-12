@@ -7,7 +7,7 @@
   },
   "package": {
     "productName": "USKMaker",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "tauri": {
     "allowlist": {
@@ -33,6 +33,7 @@
       ],
       "resources": [
         "../python-sidecar/main.py",
+        "../python-sidecar/server.py",
         "../python-sidecar/verify_setup.py",
         "../python-sidecar/requirements.txt",
         "../python-sidecar/pipeline/*.py",
