@@ -105,16 +105,22 @@ def build_notes(
             end_beat = grid.seconds_to_beat(syl_end, gap_ms)
             duration_beats = max(1, end_beat - start_beat)  # nunca duração zero
 
-            # CONVENÇÃO DE ESPAÇAMENTO (corrigida 05/07/2026, comparada
-            # com arquivo de referência profissional "Under The Bridge"):
-            # - Sílabas de CONTINUAÇÃO (não são a 1ª da palavra) recebem
-            #   "~" na frente, sem espaço antes (ficam "grudadas" na
-            #   sílaba anterior na tela do jogo).
-            # - A ÚLTIMA sílaba de cada palavra recebe um espaço no final,
-            #   pra separar visualmente da próxima palavra.
-            # Sem isso, a letra inteira aparecia "colada" sem espaços.
+            # CONVENÇÃO DE ESPAÇAMENTO (revista 12/07/2026):
+            # No UltraStar, as sílabas de uma mesma palavra são notas
+            # separadas cujo texto é CONCATENADO na tela; um espaço no
+            # início/fim marca a fronteira entre palavras. Basta, então,
+            # não pôr espaço entre as sílabas de uma palavra e um espaço no
+            # fim da última - "Ju"+"rei " vira "Jurei ".
+            #
+            # CORREÇÃO (12/07/2026): a versão anterior prefixava "~" em toda
+            # sílaba de continuação ("Ju"+"~rei"), o que o jogo exibe LITERAL
+            # como "Ju~rei". No formato UltraStar o "~" é reservado para
+            # MELISMA - a MESMA sílaba/vogal esticada até outra nota/pitch
+            # (ex.: "you're~") - e aparece na tela. Usá-lo como mero separador
+            # de sílabas era incorreto (a tela de revisão até removia o "~" ao
+            # exibir, o que mascarava o problema; no jogo os tis apareciam).
             is_last_syllable_of_word = (i == len(syllables) - 1)
-            text = syl if i == 0 else f"~{syl}"
+            text = syl
             if is_last_syllable_of_word:
                 text += " "
 
@@ -158,7 +164,18 @@ def build_song(
     background_filename: str | None = None,
 ) -> Song:
     pitch_extractor = PitchExtractor()
-    notes, phrase_breaks = build_notes(word_timings, vocals_wav_path, grid, gap_ms, pitch_extractor)
+
+    # GAP automático (convenção UltraStar, 12/07/2026): joga o offset real do
+    # início do canto para a tag #GAP e faz a PRIMEIRA nota começar no beat ~0.
+    # Assim, re-sincronizar com um áudio de lead-in diferente (ex.: versão de
+    # álbum vs. do clipe) é só ajustar o #GAP, sem arrastar todas as notas.
+    # Usa o MENOR início entre as palavras para garantir que nenhuma nota caia
+    # em beat negativo (o seconds_to_beat satura em 0). O gap_ms recebido (hoje
+    # sempre 0) entra como ajuste fino adicional sobre esse offset.
+    first_start = min((wt.start for wt in word_timings), default=0.0)
+    effective_gap_ms = max(0, round(first_start * 1000)) + gap_ms
+
+    notes, phrase_breaks = build_notes(word_timings, vocals_wav_path, grid, effective_gap_ms, pitch_extractor)
 
     return Song(
         title=title,
@@ -169,7 +186,7 @@ def build_song(
         # faz sozinho (ver nota detalhada em beatgrid.py). Agora usa o BPM
         # BRUTO diretamente - é isso que a tag #BPM do .txt espera.
         bpm=grid.bpm,
-        gap_ms=gap_ms,
+        gap_ms=effective_gap_ms,
         language=language,
         # Fase 3: metadados enriquecidos (todos opcionais - o Song só
         # emite a tag correspondente no .txt se o valor não for None).
