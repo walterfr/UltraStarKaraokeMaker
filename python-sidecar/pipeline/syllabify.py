@@ -41,7 +41,17 @@ def split_word_syllables(word: str) -> list[str]:
         core = core[:-1]
 
     if not core:
-        return [word]
+        # token era só pontuação (ex.: um "'" isolado por espaço na letra) -
+        # não tem conteúdo cantável, não deve virar sílaba/nota própria.
+        return []
+
+    if any(not c.isalnum() for c in core):
+        # pontuação NO MEIO da palavra (ex.: contração "It's") - a
+        # hifenização do pyphen (dicionário pt_BR) não sabe lidar com isso e
+        # tende a isolar o caractere de pontuação como se fosse uma sílaba
+        # própria. Mais seguro manter a palavra inteira como uma sílaba só
+        # do que arriscar uma hifenização sem sentido.
+        return [leading_punct + core + trailing_punct]
 
     hyphenated = _dic.inserted(core)  # ex.: "ca-ro-lin-da"
     syllables = hyphenated.split("-")

@@ -10,6 +10,8 @@ Rodar:  python -m pytest tests/ -v   (ou python tests/test_align_logic.py)
 import sys
 from pathlib import Path
 
+import numpy as np
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from pipeline.align import (
@@ -19,11 +21,13 @@ from pipeline.align import (
     SOURCE_LRC,
     anchor_and_interpolate,
     compute_anchors,
+    demote_anchors_conflicting_with_lrc,
     match_lrc_to_lines,
     parse_lrc,
     seed_line_anchors,
     _fuzzy_pairs,
     _syllable_weight,
+    _trim_silence_bounds,
 )
 
 
@@ -63,9 +67,17 @@ def test_fuzzy_pairs_are_monotonic():
     assert pairs == [(0, 0), (1, 1), (2, 2)]
 
 
-def test_fuzzy_ignores_single_char_words():
-    # similaridade de caracteres não diz nada sobre "e"/"a"/"o"
+def test_fuzzy_pairs_different_single_chars_dont_match():
+    # letras diferentes: ratio() de 2 strings de tamanho 1 só pode dar 0.0 ou
+    # 1.0 - "e" vs "a" são diferentes, então ratio=0.0 e não casa.
     assert _fuzzy_pairs(["e"], ["a"]) == []
+
+
+def test_fuzzy_pairs_recovers_identical_single_char_after_fold():
+    # "í" (Whisper) vs "i" (letra real, sem acento por variação de grafia):
+    # o passe de âncora EXATA não casa (preserva acento), mas pós dobra de
+    # acento os dois viram "i" == "i" (ratio=1.0) - deve casar.
+    assert _fuzzy_pairs(["í"], ["i"]) == [(0, 0)]
 
 
 def test_interpolation_weighted_by_syllables():
@@ -85,14 +97,15 @@ def test_interpolation_weighted_by_syllables():
 
 
 def test_suspicious_isolated_short_anchor_is_demoted():
-    # "e" casado sozinho no meio de um trecho que o Whisper inteiro errou:
-    # deve ser demovido (âncora suspeita) e virar interpolado.
+    # "e" casado sozinho no meio de um trecho que o Whisper inteiro errou,
+    # com score BAIXO (match fraco/suspeito): deve ser demovido e virar
+    # interpolado. Isolação sozinha não basta mais - ver test abaixo.
     whisper = [
         _ww("inicio", 1.0, 1.5),
         _ww("xxx", 2.0, 2.2),
         _ww("yyy", 2.3, 2.5),
         _ww("zzz", 2.6, 2.8),
-        _ww("e", 3.0, 3.1),
+        _ww("e", 3.0, 3.1, score=0.1),
         _ww("aaa", 3.2, 3.4),
         _ww("bbb", 3.5, 3.7),
         _ww("ccc", 3.8, 4.0),
@@ -101,7 +114,27 @@ def test_suspicious_isolated_short_anchor_is_demoted():
     real = ["inicio", "um", "dois", "tres", "e", "quatro", "cinco", "seis", "fim"]
     anchors = compute_anchors(whisper, real)
     assert anchors[0] is not None and anchors[8] is not None
-    assert anchors[4] is None, "âncora curta isolada num gap grande deve ser demovida"
+    assert anchors[4] is None, "âncora curta isolada num gap grande E com score baixo deve ser demovida"
+
+
+def test_isolated_short_anchor_kept_when_score_is_high():
+    # mesmo cenário do teste acima (isolada, gap grande), mas com score
+    # ALTO (match confiante) - não deve ser demovida: isolação sozinha não
+    # é suficiente, só isolação + baixa confiança juntas.
+    whisper = [
+        _ww("inicio", 1.0, 1.5),
+        _ww("xxx", 2.0, 2.2),
+        _ww("yyy", 2.3, 2.5),
+        _ww("zzz", 2.6, 2.8),
+        _ww("e", 3.0, 3.1, score=0.9),
+        _ww("aaa", 3.2, 3.4),
+        _ww("bbb", 3.5, 3.7),
+        _ww("ccc", 3.8, 4.0),
+        _ww("fim", 5.0, 5.4),
+    ]
+    real = ["inicio", "um", "dois", "tres", "e", "quatro", "cinco", "seis", "fim"]
+    anchors = compute_anchors(whisper, real)
+    assert anchors[4] is not None and anchors[4][3] == SOURCE_ANCHOR
 
 
 def test_short_anchor_kept_when_neighbors_anchored():
@@ -228,6 +261,95 @@ def test_seed_skips_when_out_of_order():
     # índice 0 já ancorado; índice 1 (t=3.0) viola monotonicidade (prev end 8.4)
     assert anchors[1] is None
     assert seeded == 0
+
+
+# --------------------------------------------------------------------------
+# _trim_silence_bounds: aparar silêncio nas pontas da janela de realinhamento
+# --------------------------------------------------------------------------
+
+def _sine(duration_s: float, sample_rate: int = 16000, freq: float = 220.0, amplitude: float = 0.5) -> np.ndarray:
+    t = np.arange(int(duration_s * sample_rate)) / sample_rate
+    return (amplitude * np.sin(2 * np.pi * freq * t)).astype(np.float64)
+
+
+def test_trim_silence_bounds_finds_onset():
+    sample_rate = 16000
+    silence = np.zeros(int(1.0 * sample_rate))
+    burst = _sine(1.0, sample_rate=sample_rate)
+    audio = np.concatenate([silence, burst])
+
+    win_start, win_end = _trim_silence_bounds(audio, 0, len(audio), sample_rate=sample_rate)
+
+    onset_s = win_start / sample_rate
+    assert 0.9 <= onset_s <= 1.05, f"onset detectado em {onset_s}s, esperado perto de 1.0s"
+    assert win_end / sample_rate >= 1.9  # a ponta com áudio não deve ser cortada
+
+
+def test_trim_silence_bounds_never_empties_window():
+    sample_rate = 16000
+    silence = np.zeros(int(0.5 * sample_rate))
+    # nenhum quadro passa do threshold -> devolve os limites originais, nunca uma janela vazia
+    assert _trim_silence_bounds(silence, 0, len(silence), sample_rate=sample_rate) == (0, len(silence))
+
+
+# --------------------------------------------------------------------------
+# demote_anchors_conflicting_with_lrc: âncora medida longe demais do .lrc
+# --------------------------------------------------------------------------
+
+def test_demote_anchors_conflicting_with_lrc_flags_implausible_mid_line_anchor():
+    # cenário real observado (coro sobrepondo o vocal principal): a palavra
+    # "en" (não é a 1ª da linha) casou ~9s cedo demais - bem fora do que a
+    # interpolação entre os 2 postes conhecidos do .lrc permite.
+    lyric_lines = [("Que me brinda luz en la oscuridad", 0), ("Fin de la cancao", 7)]
+    lrc_lines = [(100.0, "Que me brinda luz en la oscuridad"), (110.0, "Fin de la cancao")]
+    anchors = [None] * 8
+    anchors[0] = (100.0, 100.3, 0.9, SOURCE_ANCHOR)   # "Que" - bate com o .lrc
+    anchors[4] = (91.0, 91.2, 0.5, SOURCE_ANCHOR)      # "en" - implausível (esperado ~105.7)
+    anchors[7] = (110.0, 110.3, 0.9, SOURCE_ANCHOR)   # "Fin" - bate com o .lrc
+
+    demoted = demote_anchors_conflicting_with_lrc(anchors, lyric_lines, lrc_lines, tolerance=3.0)
+
+    assert demoted == 1
+    assert anchors[4] is None
+    assert anchors[0] is not None and anchors[7] is not None  # não mexe no que está plausível
+
+
+def test_demote_anchors_conflicting_with_lrc_keeps_plausible_anchor():
+    lyric_lines = [("Que me brinda luz en la oscuridad", 0), ("Fin de la cancao", 7)]
+    lrc_lines = [(100.0, "Que me brinda luz en la oscuridad"), (110.0, "Fin de la cancao")]
+    anchors = [None] * 8
+    anchors[0] = (100.0, 100.3, 0.9, SOURCE_ANCHOR)
+    anchors[4] = (106.0, 106.2, 0.5, SOURCE_ANCHOR)  # perto do esperado (~105.7) - dentro da tolerância
+    anchors[7] = (110.0, 110.3, 0.9, SOURCE_ANCHOR)
+
+    demoted = demote_anchors_conflicting_with_lrc(anchors, lyric_lines, lrc_lines, tolerance=3.0)
+
+    assert demoted == 0
+    assert anchors[4] is not None
+
+
+def test_demote_anchors_conflicting_with_lrc_catches_tail_of_last_line():
+    # ponto cego real (bug de verdade, "Ama De Mi Sol", 13/07/2026): a
+    # palavra suspeita está DENTRO da ÚLTIMA linha da letra - sem nenhuma
+    # linha seguinte pra servir de "próximo poste", a checagem simplesmente
+    # não tinha como avaliar essa palavra e a âncora errada passava batido.
+    lyric_lines = [("Que me brinda luz en la oscuridad", 0)]
+    lrc_lines = [(171.17, "Que me brinda luz en la oscuridad")]
+    anchors = [None] * 7
+    anchors[0] = (171.17, 171.4, 0.9, SOURCE_ANCHOR)  # "Que" - bate com o .lrc
+    anchors[4] = (165.3, 165.5, 0.5, SOURCE_ANCHOR)   # "en" - implausível (~9s cedo)
+
+    # sem audio_duration: só 1 linha casada = só 1 poste, não dá pra julgar nada
+    blind_anchors = list(anchors)
+    demoted_blind = demote_anchors_conflicting_with_lrc(blind_anchors, lyric_lines, lrc_lines)
+    assert demoted_blind == 0
+    assert blind_anchors[4] is not None, "ponto cego reproduzido: sem audio_duration, a âncora ruim sobrevive"
+
+    # com audio_duration (poste sintético no fim da música): fecha o ponto cego
+    demoted = demote_anchors_conflicting_with_lrc(anchors, lyric_lines, lrc_lines, audio_duration=177.0)
+    assert demoted == 1
+    assert anchors[4] is None
+    assert anchors[0] is not None  # não mexe no que está plausível
 
 
 if __name__ == "__main__":

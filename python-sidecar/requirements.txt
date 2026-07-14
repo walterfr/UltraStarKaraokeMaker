@@ -27,6 +27,15 @@ yt-dlp>=2024.4.9
 
 # --- Separação vocal ---
 demucs>=4.0.1
+# audio-separator: 2º passe de separação POR CIMA do stem de vocais do
+# Demucs, pra isolar a voz PRINCIPAL de vozes de apoio/coro (o Demucs só
+# separa vocal-do-instrumental, não lead-de-apoio). Validado com teste real
+# ("Ama De Mi Sol", 13/07/2026): sem isso, coro sobreposto ao vocal
+# principal faz o Whisper "escutar" palavras que não existem, o que
+# envenena o alinhamento ao redor. Ver pipeline/separate.py:isolate_lead_vocal.
+# Baixa modelos sob demanda (~900MB no 1º uso) - não-fatal se falhar (cai
+# pro stem combinado do Demucs, ver main.py).
+audio-separator>=0.44.0
 
 # --- Forced alignment / transcrição ---
 # whisperx traz o whisper + wav2vec2 CTC para alinhamento por palavra

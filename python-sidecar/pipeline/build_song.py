@@ -6,8 +6,12 @@ e monta o objeto Song pronto para exportar via ultrastar_writer.
 Fluxo:
     word_timings (align.py, já com is_line_end marcado por palavra)
         -> para cada palavra, quebra em sílabas (syllabify.py)
-        -> distribui o tempo da palavra proporcionalmente entre as sílabas
-        -> extrai pitch de cada sílaba (pitch.py)
+        -> extrai UM track de pitch quadro-a-quadro pra palavra inteira
+           (pitch.py) e usa ele pra decidir os limites reais das sílabas
+           por conteúdo VOZEADO (allocate_syllable_durations), não por
+           divisão igual de tempo - e pra detectar sustentação/melisma
+           dentro de cada sílaba (detect_melisma_notes), emitindo notas de
+           continuação "~" quando o pitch varia numa sílaba longa
         -> converte tempo (segundos) -> beat (beatgrid.py)
         -> monta lista de Note (com espaçamento/convenção de continuação
            correta - ver nota abaixo)
@@ -19,9 +23,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
+
 from .align import WordTiming
 from .beatgrid import BeatGrid
-from .pitch import PitchExtractor
+from .pitch import PitchExtractor, PitchTrack
 from .syllabify import split_word_syllables
 from .ultrastar_writer import Note, Song
 
@@ -64,6 +70,161 @@ def fix_rounding_overlaps(notes: list[Note]) -> list[Note]:
     return notes
 
 
+def allocate_syllable_durations(
+    track: PitchTrack,
+    num_syllables: int,
+    word_start: float,
+    word_end: float,
+    search_fraction: float = 0.4,
+) -> list[tuple[float, float]]:
+    """
+    Divide [word_start, word_end) em `num_syllables` trechos. Parte da
+    divisão IGUAL por tempo (comportamento de antes) e ajusta cada
+    fronteira INTERNA pro ponto de menor energia vocal mais perto dela,
+    dentro de uma janela de busca (`search_fraction` da duração média de
+    uma sílaba pra cada lado) - fronteira de sílaba real tende a cair numa
+    transição de baixa energia (consoante/respiração), não no meio de uma
+    vogal sustentada. É isso que deixa uma sílaba sustentada ("ra" em
+    "vulneraaaable") ficar com a fronteira seguinte empurrada pra depois
+    dela em vez de cortada ao meio pela divisão cega por tempo.
+
+    IMPORTANTE: a fronteira só é ajustada DENTRO da janela de busca - isto
+    é deliberadamente um refinamento local e limitado da divisão igual, não
+    uma tentativa de redescobrir a sílaba certa de qualquer distância (isso
+    exigiria alinhamento fonético de verdade, fora do escopo aqui).
+
+    Sem quadros utilizáveis no intervalo (silêncio total/trecho
+    instrumental), cai na divisão igual pura - comportamento de antes desta
+    função existir.
+    """
+    if num_syllables <= 1:
+        return [(word_start, word_end)]
+
+    equal_dur = (word_end - word_start) / num_syllables
+    naive_boundaries = [word_start + i * equal_dur for i in range(num_syllables + 1)]
+
+    in_word = (track.timestamps >= word_start) & (track.timestamps < word_end)
+    timestamps = track.timestamps[in_word]
+    voicing = track.voicing[in_word]
+
+    if timestamps.size == 0:
+        return [(naive_boundaries[i], naive_boundaries[i + 1]) for i in range(num_syllables)]
+
+    weights = np.where(voicing, 1.0, 0.0)  # aproximação binária de energia vocal por quadro
+    search_window = equal_dur * search_fraction
+
+    boundaries = [word_start]
+    for i in range(1, num_syllables):
+        target = naive_boundaries[i]
+        lo = max(boundaries[-1], target - search_window)
+        hi = min(word_end, target + search_window)
+        in_search = (timestamps >= lo) & (timestamps < hi)
+
+        if not np.any(in_search):
+            cut = max(target, boundaries[-1])
+        else:
+            local_ts = timestamps[in_search]
+            local_w = weights[in_search]
+            # entre pontos empatados na menor energia, prefere o mais perto
+            # do alvo original (ajuste mínimo necessário, não o mais cedo)
+            min_w = local_w.min()
+            candidates = local_ts[local_w == min_w]
+            best_ts = float(candidates[np.argmin(np.abs(candidates - target))])
+            cut = max(best_ts, boundaries[-1])
+        boundaries.append(cut)
+    boundaries.append(word_end)
+
+    return [(boundaries[i], boundaries[i + 1]) for i in range(num_syllables)]
+
+
+def detect_melisma_notes(
+    track: PitchTrack,
+    syl_start: float,
+    syl_end: float,
+    min_extension_s: float = 0.15,
+    pitch_tolerance_semitones: float = 1.0,
+    min_syllable_duration_for_melisma: float = 0.30,
+    max_voiced_gap_frames: float = 2.5,
+) -> list[tuple[float, float]]:
+    """
+    Decide se uma sílaba vira UMA nota ou uma nota + continuações "~"
+    (melisma) - a convenção real do UltraStar pra sílabas sustentadas
+    (confirmada em cartas feitas à mão: uma sílaba longa vira uma nota de
+    ataque seguida de notas "~" acompanhando o pitch enquanto ele varia).
+    Sílabas curtas demais pra plausivelmente sustentar devolvem o próprio
+    intervalo inteiro (sem melisma - comportamento de hoje).
+
+    BUG REAL CORRIGIDO (teste real, "Ama De Mi Sol", 13/07/2026): além do
+    salto de pitch, uma LACUNA na voz (trecho sem quadro vozeado no meio da
+    sílaba) também força um novo run, mesmo com pitch parecido dos dois
+    lados. Sem isso, quando o limite de PALAVRA já está errado (ex.: "ver"
+    "roubando" o tempo de "ser" por erro do alinhador), o melisma atravessa
+    a lacuna vozeada da consoante surda "s" de "ser" e decora o trecho
+    inteiro com "~" como se fosse uma sustentação legítima de "ver" -
+    piorando visualmente um bug que já existia no timing por palavra. Uma
+    lacuna de voz é sinal de possível fronteira de sílaba/palavra; "~"
+    nunca deve atravessar uma.
+    """
+    if syl_end - syl_start < min_syllable_duration_for_melisma:
+        return [(syl_start, syl_end)]
+
+    in_syl = (track.timestamps >= syl_start) & (track.timestamps < syl_end) & track.voicing
+    timestamps = track.timestamps[in_syl]
+    pitch_hz = track.pitch_hz[in_syl]
+
+    if timestamps.size < 2:
+        return [(syl_start, syl_end)]
+
+    # hop nominal do track inteiro (não só os quadros vozeados) - calibra o
+    # que conta como "lacuna grande demais" sem depender de um valor fixo
+    # de frame_ms do detector de pitch (que pode variar entre modelos).
+    all_hops = np.diff(np.sort(track.timestamps))
+    nominal_hop = float(np.median(all_hops)) if all_hops.size else 0.02
+    max_voiced_gap_s = max_voiced_gap_frames * nominal_hop
+
+    semitones = 12 * np.log2(pitch_hz / 440.0)
+
+    # agrupa quadros vozeados consecutivos que ficam dentro da tolerância de
+    # semitons da média do grupo corrente E sem lacuna de voz entre eles -
+    # salto grande de pitch OU lacuna = nota/sílaba realmente diferente, não
+    # apenas vibrato/deriva natural da sustentação.
+    runs: list[list[int]] = [[0]]
+    run_started_by_gap: list[bool] = [False]
+    run_mean = float(semitones[0])
+    for i in range(1, len(semitones)):
+        pitch_ok = abs(semitones[i] - run_mean) <= pitch_tolerance_semitones
+        gap_ok = (timestamps[i] - timestamps[i - 1]) <= max_voiced_gap_s
+        if pitch_ok and gap_ok:
+            runs[-1].append(i)
+            run_mean = float(np.mean(semitones[runs[-1]]))
+        else:
+            runs.append([i])
+            run_started_by_gap.append(not gap_ok)
+            run_mean = float(semitones[i])
+
+    spans = [(float(timestamps[r[0]]), float(timestamps[r[-1]])) for r in runs]
+
+    # funde runs curtos demais (< min_extension_s) no vizinho anterior -
+    # evita gerar um "~" de fração de segundo por ruído da leitura de pitch.
+    # NUNCA funde um run que começou por causa de uma LACUNA de voz - isso
+    # desfaria justamente a proteção de fronteira de palavra acima.
+    merged = [spans[0]]
+    for idx in range(1, len(spans)):
+        start, end = spans[idx]
+        if not run_started_by_gap[idx] and (end - start) < min_extension_s:
+            merged[-1] = (merged[-1][0], end)
+        else:
+            merged.append((start, end))
+
+    if len(merged) <= 1:
+        return [(syl_start, syl_end)]
+
+    # estica o 1º trecho pra trás até o início real da sílaba e o último
+    # pra frente até o fim real (quadros vozeados não cobrem a sílaba
+    # inteira - há ataque/consoante antes do 1º quadro vozeado)
+    return [(syl_start, merged[0][1])] + merged[1:-1] + [(merged[-1][0], syl_end)]
+
+
 def build_notes(
     word_timings: list[WordTiming],
     vocals_wav_path: Path,
@@ -87,58 +248,53 @@ def build_notes(
 
     for wt in word_timings:
         syllables = split_word_syllables(wt.word)
-        if not syllables:
-            continue
+        # sílabas 100% pontuação (ex.: um "'" isolado por espaço na letra)
+        # não têm conteúdo cantável e não devem virar nota própria.
+        syllables = [s for s in syllables if any(c.isalnum() for c in s)]
 
-        word_duration = max(0.01, wt.end - wt.start)
-        syllable_duration = word_duration / len(syllables)
+        if syllables:
+            word_start, word_end = wt.start, max(wt.start + 0.01, wt.end)
+            track = pitch_extractor.extract_word_track(str(vocals_wav_path), word_start, word_end)
+            syllable_spans = allocate_syllable_durations(track, len(syllables), word_start, word_end)
 
-        for i, syl in enumerate(syllables):
-            syl_start = wt.start + i * syllable_duration
-            syl_end = syl_start + syllable_duration
+            for i, (syl, (syl_start, syl_end)) in enumerate(zip(syllables, syllable_spans)):
+                is_last_syllable_of_word = (i == len(syllables) - 1)
+                runs = detect_melisma_notes(track, syl_start, syl_end)
 
-            pitch_result = pitch_extractor.extract_segment_pitch(
-                str(vocals_wav_path), syl_start, syl_end
-            )
+                for run_idx, (run_start, run_end) in enumerate(runs):
+                    pitch_result = pitch_extractor.summarize_track_window(track, run_start, run_end)
 
-            start_beat = grid.seconds_to_beat(syl_start, gap_ms)
-            end_beat = grid.seconds_to_beat(syl_end, gap_ms)
-            duration_beats = max(1, end_beat - start_beat)  # nunca duração zero
+                    start_beat = grid.seconds_to_beat(run_start, gap_ms)
+                    end_beat = grid.seconds_to_beat(run_end, gap_ms)
+                    duration_beats = max(1, end_beat - start_beat)  # nunca duração zero
 
-            # CONVENÇÃO DE ESPAÇAMENTO (revista 12/07/2026):
-            # No UltraStar, as sílabas de uma mesma palavra são notas
-            # separadas cujo texto é CONCATENADO na tela; um espaço no
-            # início/fim marca a fronteira entre palavras. Basta, então,
-            # não pôr espaço entre as sílabas de uma palavra e um espaço no
-            # fim da última - "Ju"+"rei " vira "Jurei ".
-            #
-            # CORREÇÃO (12/07/2026): a versão anterior prefixava "~" em toda
-            # sílaba de continuação ("Ju"+"~rei"), o que o jogo exibe LITERAL
-            # como "Ju~rei". No formato UltraStar o "~" é reservado para
-            # MELISMA - a MESMA sílaba/vogal esticada até outra nota/pitch
-            # (ex.: "you're~") - e aparece na tela. Usá-lo como mero separador
-            # de sílabas era incorreto (a tela de revisão até removia o "~" ao
-            # exibir, o que mascarava o problema; no jogo os tis apareciam).
-            is_last_syllable_of_word = (i == len(syllables) - 1)
-            text = syl
-            if is_last_syllable_of_word:
-                text += " "
+                    # CONVENÇÃO DE ESPAÇAMENTO (revista 12/07/2026): sílabas
+                    # de uma mesma palavra têm texto CONCATENADO na tela; um
+                    # espaço no início/fim marca a fronteira entre palavras.
+                    # A 1ª nota de uma sílaba carrega o texto dela; notas de
+                    # continuação (sustentação/melisma) usam "~" - convenção
+                    # real do UltraStar pra pitch variando numa nota longa.
+                    text = syl if run_idx == 0 else "~"
 
-            notes.append(
-                Note(
-                    start_beat=start_beat,
-                    duration_beats=duration_beats,
-                    pitch=pitch_result.ultrastar_pitch,
-                    text=text,
-                    note_type=":" if pitch_result.confidence >= 0.5 else "F",
-                    # nota de baixa confiança de pitch vira "F" (freestyle,
-                    # não pontua) em vez de arriscar uma nota errada -
-                    # decisão conservadora para revisar manualmente depois.
-                    source=wt.source,
-                    # proveniência do timing (herdada da palavra inteira) -
-                    # a tela de revisão usa para destacar notas estimadas.
-                )
-            )
+                    notes.append(
+                        Note(
+                            start_beat=start_beat,
+                            duration_beats=duration_beats,
+                            pitch=pitch_result.ultrastar_pitch,
+                            text=text,
+                            note_type=":" if pitch_result.confidence >= 0.5 else "F",
+                            # nota de baixa confiança de pitch vira "F" (freestyle,
+                            # não pontua) em vez de arriscar uma nota errada -
+                            # decisão conservadora para revisar manualmente depois.
+                            source=wt.source,
+                            # proveniência do timing (herdada da palavra inteira) -
+                            # a tela de revisão usa para destacar notas estimadas.
+                            score=wt.score,
+                        )
+                    )
+
+                if is_last_syllable_of_word:
+                    notes[-1].text += " "
 
         if wt.is_line_end and notes:
             phrase_breaks.append(len(notes) - 1)

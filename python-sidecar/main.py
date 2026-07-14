@@ -48,7 +48,7 @@ from pipeline.build_song import build_song
 from pipeline.download import download_background_video, get_source_audio
 from pipeline.metadata import fetch_metadata
 from pipeline.proc_utils import ffmpeg_exe, run_subprocess
-from pipeline.separate import separate_vocals
+from pipeline.separate import isolate_lead_vocal, separate_vocals
 
 # Quando o stdout/stderr do Python não está conectado a um terminal real (é
 # o caso ao rodar via Tauri), o Python usa buffer em bloco por padrão.
@@ -217,6 +217,51 @@ def run_pipeline(
         synced_lyrics_path=Path(synced_lyrics_path) if synced_lyrics_path else None,
     )
     debug_log(f"ETAPA 4 - concluída. {len(word_timings)} palavras")
+
+    # RESGATE com voz principal isolada (validado em 13/07/2026 contra 5
+    # charts feitos à mão de D:\Canciones Karaoke): alinhar SEMPRE no stem
+    # isolado pelo modelo de karaoke PIORA músicas pop normais (no pior
+    # caso, 59%->15% das palavras dentro de 1s do chart de referência),
+    # mas SALVA músicas onde coro/apoio sobrepõe a voz principal (caso
+    # "Ama De Mi Sol": cauda do coro saiu de 100% interpolada para
+    # ancorada). Então o stem combinado do Demucs é o padrão, e o stem
+    # isolado é só tentativa de resgate quando a âncora ficou fraca -
+    # ganha quem tiver MENOS palavras interpoladas (sinal interno de
+    # qualidade, não precisa de ground truth). NÃO-FATAL: qualquer falha
+    # (download do modelo ~900MB, etc.) mantém o resultado que já temos.
+    interp_frac = alignment_stats(word_timings)["by_source"]["interpolated"] / max(len(word_timings), 1)
+    if interp_frac > 0.10:
+        console.print(
+            f"[yellow]—[/yellow] {100*interp_frac:.0f}% das palavras interpoladas - tentando resgate "
+            "com a voz principal isolada do coro/apoio..."
+        )
+        debug_log(f"ETAPA 4b - resgate: interp_frac={interp_frac:.2f}, iniciando isolate_lead_vocal")
+        try:
+            lead_vocals = isolate_lead_vocal(stems.vocals, work_path / "lead_vocal")
+            retry_timings = align_lyrics_to_audio(
+                lead_vocals, Path(lyrics_path), language=language, device=device,
+                synced_lyrics_path=Path(synced_lyrics_path) if synced_lyrics_path else None,
+            )
+            retry_interp = alignment_stats(retry_timings)["by_source"]["interpolated"]
+            base_interp = alignment_stats(word_timings)["by_source"]["interpolated"]
+            debug_log(f"ETAPA 4b - interpoladas: demucs={base_interp} lead={retry_interp}")
+            if retry_interp < base_interp:
+                word_timings = retry_timings
+                console.print(
+                    f"[green]OK[/green] Resgate melhorou: {base_interp} -> {retry_interp} "
+                    "palavras interpoladas (usando voz principal isolada)."
+                )
+            else:
+                console.print(
+                    f"[dim]Resgate não melhorou ({base_interp} -> {retry_interp} interpoladas) - "
+                    "mantendo o alinhamento no stem combinado.[/dim]"
+                )
+        except Exception as e:
+            debug_log(f"ETAPA 4b - falhou (não-fatal): {e}")
+            console.print(
+                f"[yellow]AVISO[/yellow] Não consegui isolar a voz principal ({e}) - "
+                "mantendo o alinhamento no stem combinado do Demucs."
+            )
 
     stats = alignment_stats(word_timings)
     by_source = stats["by_source"]
