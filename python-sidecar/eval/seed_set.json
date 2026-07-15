@@ -47,7 +47,7 @@
       "title": "Me porto bonito",
       "language": "es",
       "style": "reggaeton",
-      "stresses": "duet P1/P2 ([MULTI] gold -> evaluate.py --duet, not the replay) + fast delivery"
+      "stresses": "fast delivery; [MULTI] duet gold scored flattened (single-player: one voice covers both parts) - per-singer scoring returns if duet generation lands"
     },
     {
       "folder": "Abingdon boys school - Innocent sorrow (TV)",

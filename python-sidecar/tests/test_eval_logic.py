@@ -128,27 +128,18 @@ def test_identical_charts_score_perfect():
     assert m["pitch_within_2st_rate"] == 1.0
 
 
-def test_duet_pairing_and_assignment():
-    chart = usdx_parse.parse(DUET_CHART, keep_tracks=True)
-    assert chart.tracks is not None and len(chart.tracks) == 2
-    assert chart.p1 == "Ana" and chart.p2 == "Bruno"
-    # chart idêntico contra si mesmo: pareamento direto, atribuição perfeita
-    m = evaluate.evaluate_duet(chart, chart)
-    assert m["duet"] is True
-    assert m["pairing"] == "direct"
-    assert m["singer_assignment_accuracy"] == 1.0
-    # com os tracks trocados no "gerado", o melhor pareamento é o swap
-    swapped = usdx_parse.parse(DUET_CHART, keep_tracks=True)
-    swapped.tracks = [swapped.tracks[1], swapped.tracks[0]]
-    m2 = evaluate.evaluate_duet(swapped, chart)
-    assert m2["pairing"] == "swap"
-    assert m2["singer_assignment_accuracy"] == 1.0
-
-
-def test_duet_requires_two_tracks_both_sides():
-    flat = usdx_parse.parse(SYNTHETIC_CHART)
-    duet = usdx_parse.parse(DUET_CHART, keep_tracks=True)
-    assert evaluate.evaluate_duet(flat, duet) == {"duet": False}
+def test_duet_chart_flattens_to_single_player():
+    # avaliação é single-player por enquanto (USKMaker só gera 1 track):
+    # um gold [MULTI] achata P1+P2 em ordem de tempo - o que um jogador
+    # sozinho canta cobrindo as duas partes. Se/quando geração de dueto
+    # existir, re-portar o keep_tracks/evaluate_duet do usdx-autochart.
+    chart = usdx_parse.parse(DUET_CHART)
+    all_notes = [n for l in chart.lines for n in l.notes]
+    assert len(all_notes) == 4  # as duas partes presentes, nenhuma perdida
+    flat = evaluate._flatten(chart)
+    assert [t.text for t in flat] == ["la", "la", "na", "na"]
+    # ordenado no tempo mesmo vindo de blocos P1/P2 separados
+    assert all(a.start <= b.start for a, b in zip(flat, flat[1:]))
 
 
 def test_song_data_loader_matches_txt_semantics():

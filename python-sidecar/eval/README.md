@@ -9,8 +9,8 @@ issue #2.
 
 | file | purpose |
 |---|---|
-| `usdx_parse.py` | UltraStar `.txt` reader (headers, notes, breaks, P1/P2 duets, cp1252 fallback). Time model: `time_s = GAP/1000 + beat*60/(BPM*4)`. Note lyrics keep their spaces — they mark word boundaries. |
-| `evaluate.py` | Time-domain scoring of a generated chart (`.txt` **or** `song_data.json`) against a gold `.txt`: note-count ratio, onset error, relative-pitch contour, lyric similarity; `--duet` scores P1/P2 per singer. |
+| `usdx_parse.py` | UltraStar `.txt` reader (headers, notes, breaks, cp1252 fallback). P1/P2 duet blocks are flattened in time order. Time model: `time_s = GAP/1000 + beat*60/(BPM*4)`. Note lyrics keep their spaces — they mark word boundaries. |
+| `evaluate.py` | Time-domain scoring of a generated chart (`.txt` **or** `song_data.json`) against a gold `.txt`: note-count ratio, onset error, relative-pitch contour, lyric similarity. |
 | `library_replay.py` | Stage-level replay of USKMaker's own stages against a local gold library: whisperx alignment (word recall/onset error, interpolated fraction, lead-vocal rescue stats), SwiftF0 pitch inside gold note bounds, BPM vs gold `#BPM` (mod octave). Resumable, per-song caching, stratified sampling. |
 | `seed_set.json` | The 7-song seed set agreed on issue #2, referenced **by name only**. |
 
@@ -52,5 +52,10 @@ Run from `python-sidecar/` with its venv. Outputs land in
   was interpolated, not measured); `rescue_tried/won` shows when the
   lead-vocal rescue (main.py Etapa 4b) fired and whether it improved things —
   the background-choir failure detector.
-- `[MULTI]` duet golds are excluded from the replay (it flattens tracks);
-  score duets end-to-end with `evaluate.py --duet`.
+- Evaluation is **single-player only for now** — USKMaker doesn't generate
+  duets. `evaluate.py` scores a generated chart against a `[MULTI]` gold by
+  flattening both parts in time order (what one player sings covering both);
+  the replay excludes `[MULTI]` golds entirely (interleaved voices would
+  poison word matching). If duet generation lands, usdx-autochart's
+  per-singer scoring (`evaluate_duet`) can be re-ported from the same MIT
+  source.

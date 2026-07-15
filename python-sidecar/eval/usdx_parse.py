@@ -7,7 +7,7 @@ Mirrors the grammar in USDX's src/base/USong.pas (ReadTXTHeader + LoadOpenedSong
   header lines start with '#TAG:value'
   note lines:   <type> <startBeat> <durationBeats> <pitch> <lyric>
   break lines:  - <startBeat> [relativeOffset]
-  duet tracks:  P1 / P2     end marker: E
+  duet tracks:  P1 / P2 (flattened - see parse())     end marker: E
 
 Timing model (same formula validated against D:\\Canciones Karaoke charts):
   time_s = GAP/1000 + beat * 60 / (fileBPM * 4)
@@ -54,11 +54,6 @@ class Chart:
     gap_ms: float               # #GAP in milliseconds
     audio: str
     lines: List[Line] = field(default_factory=list)
-    # Duet: with keep_tracks=True, one list of Lines per singer (P1/P2 blocks);
-    # `lines` is then empty.
-    tracks: Optional[List[List[Line]]] = None
-    p1: Optional[str] = None
-    p2: Optional[str] = None
     language: Optional[str] = None
     genre: Optional[str] = None
     year: Optional[int] = None
@@ -75,24 +70,21 @@ def _to_float(value: str) -> float:
     return float(value.strip().replace(",", "."))
 
 
-def parse(text: str, *, keep_tracks: bool = False) -> Chart:
-    """Parse a chart. By default duet ``P1``/``P2`` markers are flattened into a
-    single ``Chart.lines`` (enough for the flattened time-domain ``evaluate``).
-    With ``keep_tracks=True`` the P-blocks are kept as separate ``Chart.tracks``
-    (used by ``evaluate_duet`` to score per-singer attribution)."""
+def parse(text: str) -> Chart:
+    """Parse a chart. Duet ``P1``/``P2`` markers are flattened into a single
+    ``Chart.lines`` - USKMaker generates single-track charts only today, and a
+    flattened [MULTI] gold is exactly what a single player sings when covering
+    both parts, so the time-domain ``evaluate`` compares against that. If duet
+    generation lands later, re-port usdx-autochart's ``keep_tracks`` mode."""
     header = {}
     lines: List[Line] = []
-    tracks: List[List[Line]] = []
     cur = Line()  # first sentence has no preceding break
     started = False
-
-    def target() -> List[Line]:
-        return tracks[-1] if (keep_tracks and tracks) else lines
 
     def flush():
         nonlocal cur
         if cur.notes or cur.break_beat is not None:
-            target().append(cur)
+            lines.append(cur)
         cur = Line()
 
     for raw in text.splitlines():
@@ -124,30 +116,21 @@ def parse(text: str, *, keep_tracks: bool = False) -> Chart:
         elif token in ("E",):
             break
         elif token in ("P", "p"):
-            # duet track marker: community charts use "P 1"/"P 2", generated
-            # ones "P1"/"P2" - both key on the first char.
+            # duet track marker ("P 1"/"P1") - notes keep absolute beats, so
+            # just keep appending: the tracks interleave when time-sorted.
             started = True
-            if keep_tracks:
-                flush()
-                tracks.append([])
             continue
 
     flush()
 
     audio = header.get("AUDIO") or header.get("MP3") or ""
-    p1 = header.get("DUETSINGERP1") or header.get("P1")
-    p2 = header.get("DUETSINGERP2") or header.get("P2")
-    keep = keep_tracks and bool(tracks)
     return Chart(
         title=header.get("TITLE", ""),
         artist=header.get("ARTIST", ""),
         bpm=_to_float(header["BPM"]) if "BPM" in header else 0.0,
         gap_ms=_to_float(header.get("GAP", "0")),
         audio=audio,
-        lines=[] if keep else lines,
-        tracks=tracks if keep else None,
-        p1=p1,
-        p2=p2,
+        lines=lines,
         language=header.get("LANGUAGE"),
         genre=header.get("GENRE"),
         year=int(header["YEAR"]) if header.get("YEAR", "").isdigit() else None,
@@ -165,13 +148,13 @@ def is_relative(path: str) -> bool:
         return False
 
 
-def read_file(path: str, *, keep_tracks: bool = False) -> Chart:
+def read_file(path: str) -> Chart:
     # Community charts are frequently CP1252; fall through from utf-8.
     for enc in ("utf-8-sig", "cp1252", "latin-1"):
         try:
             with open(path, "r", encoding=enc) as f:
-                return parse(f.read(), keep_tracks=keep_tracks)
+                return parse(f.read())
         except UnicodeDecodeError:
             continue
     with open(path, "r", encoding="utf-8", errors="replace") as f:
-        return parse(f.read(), keep_tracks=keep_tracks)
+        return parse(f.read())
