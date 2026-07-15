@@ -43,7 +43,21 @@ Write-Step "Localizando o codigo do sidecar"
 
 # O script fica em .../scripts/ e o python-sidecar e PASTA IRMA (quando
 # distribuido via instalador Tauri, ambos ficam sob resources/_up_/).
-$scriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
+#
+# IMPORTANTE: quando o app dispara o setup, ele passa o caminho deste script no
+# formato "extended-length" (\\?\C:\...) - o resource_dir() do Tauri devolve
+# assim no Windows. Esse prefixo QUEBRA o Split-Path/Join-Path no Windows
+# PowerShell 5.1 ("Nao existe uma unidade..." / "o valor do argumento 'drive'
+# e nulo"). Normalizamos removendo o prefixo antes de qualquer conta de caminho.
+$scriptFullPath = if ($PSCommandPath) { $PSCommandPath } else { $MyInvocation.MyCommand.Path }
+if ($scriptFullPath) {
+    if ($scriptFullPath.StartsWith('\\?\UNC\')) {
+        $scriptFullPath = '\\' + $scriptFullPath.Substring(8)
+    } elseif ($scriptFullPath.StartsWith('\\?\')) {
+        $scriptFullPath = $scriptFullPath.Substring(4)
+    }
+}
+$scriptDir  = Split-Path -Parent $scriptFullPath
 $candidatesLocal = @(
     (Join-Path (Split-Path -Parent $scriptDir) "python-sidecar"),  # irmao (instalado)
     (Join-Path $scriptDir "python-sidecar")                         # filho (fallback)
