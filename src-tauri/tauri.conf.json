@@ -34,6 +34,7 @@
       "resources": [
         "../python-sidecar/main.py",
         "../python-sidecar/server.py",
+        "../python-sidecar/read_tags.py",
         "../python-sidecar/verify_setup.py",
         "../python-sidecar/requirements.txt",
         "../python-sidecar/pipeline/*.py",

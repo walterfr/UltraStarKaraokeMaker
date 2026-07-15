@@ -62,6 +62,16 @@ const PIX_PAYLOAD =
 const SETTINGS_KEY = "uskmaker-settings";
 const WINDOW_KEY = "uskmaker-window";
 
+/// Tags básicas lidas do arquivo de áudio (comando Rust read_audio_tags →
+/// read_tags.py). Todos os campos podem vir nulos.
+interface AudioTags {
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  year: number | null;
+  genre: string | null;
+}
+
 /// Resposta do LRCLIB (https://lrclib.net/docs) - API aberta, sem chave.
 interface LrclibTrack {
   plainLyrics: string | null;
@@ -136,6 +146,8 @@ function App() {
   const [lyricsText, setLyricsText] = useState("");
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
+  // aviso transitório "preenchemos X a partir do arquivo" (auto-fill de tags)
+  const [tagsMsg, setTagsMsg] = useState<string | null>(null);
   const [language, setLanguage] = useState(saved.language ?? "pt");
   const [bpm, setBpm] = useState("");
   const [withVideo, setWithVideo] = useState(saved.withVideo ?? false);
@@ -337,6 +349,32 @@ function App() {
     });
     if (typeof selected === "string") {
       setFilePath(selected);
+      autofillFromTags(selected);
+    }
+  }
+
+  // Pré-preenche título/artista a partir das tags do arquivo escolhido. Só
+  // toca em campos VAZIOS - nunca sobrescreve o que o usuário já digitou. É
+  // conveniência: qualquer falha (ambiente não configurado, sem tags) é
+  // ignorada em silêncio.
+  async function autofillFromTags(path: string) {
+    try {
+      const tags = await invoke<AudioTags>("read_audio_tags", { path, lang });
+      const applied: string[] = [];
+      if (!title.trim() && tags?.title?.trim()) {
+        setTitle(tags.title.trim());
+        applied.push(t("titleLabel"));
+      }
+      if (!artist.trim() && tags?.artist?.trim()) {
+        setArtist(tags.artist.trim());
+        applied.push(t("artistLabel"));
+      }
+      if (applied.length) {
+        setTagsMsg(t("tagsAutofilled", { fields: applied.join(", ") }));
+        setTimeout(() => setTagsMsg(null), 5000);
+      }
+    } catch {
+      /* leitura de tags é conveniência - ignora silenciosamente */
     }
   }
 
@@ -817,6 +855,7 @@ function App() {
           <input type="text" value={artist} onChange={(e) => setArtist(e.target.value)} disabled={isRunning} />
         </div>
       </div>
+      {tagsMsg && <p className="field-hint">🎵 {tagsMsg}</p>}
 
       <div className="field-group">
         <label>

@@ -128,6 +128,7 @@ fn tr(lang: &str, key: &str) -> &'static str {
         "open_folder" => if en { "Error opening the folder: {err}" } else { "Erro ao abrir a pasta: {err}" },
         "setup_spawn" => if en { "Error starting the setup: {err}" } else { "Erro ao iniciar o setup: {err}" },
         "setup_failed" => if en { "Setup failed. See the log at '{log}'." } else { "O setup falhou. Veja o log em '{log}'." },
+        "read_tags" => if en { "Error reading the file's tags: {err}" } else { "Erro ao ler as tags do arquivo: {err}" },
         _ => "",
     }
 }
@@ -960,6 +961,32 @@ mod clean_extras_tests {
     }
 }
 
+/// Lê as tags básicas (título/artista/álbum/ano/gênero) de um arquivo de
+/// áudio local, para o app pré-preencher o formulário ao selecionar o arquivo.
+/// Roda o leitor leve `read_tags.py` (só mutagen) no python do sidecar e
+/// devolve o JSON como está. É uma conveniência: se o ambiente ainda não foi
+/// configurado (sem venv) ou algo falhar, o frontend simplesmente ignora.
+#[tauri::command]
+fn read_audio_tags(
+    app: tauri::AppHandle,
+    path: String,
+    lang: String,
+) -> Result<serde_json::Value, String> {
+    let (code_dir, python_exe) = resolve_sidecar(&app, &lang)?;
+    let script = code_dir.join("read_tags.py");
+
+    let mut cmd = std::process::Command::new(&python_exe);
+    cmd.arg(&script).arg(&path);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let output = cmd.output().map_err(|e| tr_err(&lang, "read_tags", &e))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // read_tags.py nunca sai com traceback (imprime {} em erro); mesmo assim,
+    // se a saída não for JSON válido, devolvemos um objeto vazio.
+    Ok(serde_json::from_str(stdout.trim()).unwrap_or_else(|_| serde_json::json!({})))
+}
+
 #[tauri::command]
 fn open_folder(path: String, lang: String) -> Result<(), String> {
     // Windows-only por enquanto (Fase 2 é dev no Windows) - abre o
@@ -978,6 +1005,7 @@ fn main() {
             run_pipeline,
             open_folder,
             clean_song_extras,
+            read_audio_tags,
             load_song,
             save_song,
             cancel_pipeline,
