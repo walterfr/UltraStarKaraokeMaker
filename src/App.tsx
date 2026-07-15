@@ -50,6 +50,9 @@ interface QueueItem {
   status: QueueStatus;
   result?: PipelineResult;
   error?: string;
+  // true quando os auxiliares (inclusive song_data.json) foram apagados ao
+  // fim da fila — nesse caso a revisão manual não é mais possível.
+  cleaned?: boolean;
 }
 
 const CANCELLED_MSG = "__CANCELADO__";
@@ -83,6 +86,7 @@ interface PersistedSettings {
   withVideo: boolean;
   bgVideo: boolean;
   cleanWork: boolean;
+  cleanExtras: boolean;
 }
 
 function loadSettings(): Partial<PersistedSettings> {
@@ -138,6 +142,10 @@ function App() {
   const [bgVideo, setBgVideo] = useState(saved.bgVideo ?? false);
   const [bgVideoUrl, setBgVideoUrl] = useState("");
   const [cleanWork, setCleanWork] = useState(saved.cleanWork ?? true);
+  // Apagar TODOS os auxiliares (lrc/log/json + letra de entrada) da pasta de
+  // cada música ao fim da fila. Opt-in e destrutivo: remove o song_data.json,
+  // então o pacote fica SEM a tela de revisão. Padrão desligado.
+  const [cleanExtras, setCleanExtras] = useState(saved.cleanExtras ?? false);
   const [outDir, setOutDir] = useState(saved.outDir ?? "");
 
   // Letra sincronizada (.lrc) do LRCLIB: guardada crua e enviada ao pipeline,
@@ -159,6 +167,9 @@ function App() {
   const [logs, setLogs] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PipelineResult | null>(null);
+  // O pacote mostrado em `result` teve os auxiliares apagados? Então some com
+  // o botão de revisão (o song_data.json que a revisão lê não existe mais).
+  const [resultCleaned, setResultCleaned] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [env, setEnv] = useState<EnvCheck | null>(null);
@@ -212,9 +223,9 @@ function App() {
 
   // ------------------------------------------------ persistência leve
   useEffect(() => {
-    const settings: PersistedSettings = { sourceMode, language, outDir, withVideo, bgVideo, cleanWork };
+    const settings: PersistedSettings = { sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras };
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  }, [sourceMode, language, outDir, withVideo, bgVideo, cleanWork]);
+  }, [sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras]);
 
   useEffect(() => {
     (async () => {
@@ -467,6 +478,10 @@ function App() {
   async function processQueue(list: QueueItem[]) {
     setIsRunning(true);
     setCancelling(false);
+    // Músicas concluídas com sucesso nesta rodada (id + pasta) — usadas na
+    // limpeza opcional dos auxiliares ao fim da fila (cleanExtras).
+    const doneItems: { id: number; dir: string }[] = [];
+    setResultCleaned(false);
     for (const item of list) {
       if (item.status !== "pending") continue;
       patchItem(item.id, { status: "running" });
@@ -485,6 +500,7 @@ function App() {
         patchItem(item.id, { status: "done", result: res });
         setResult(res);
         setCurrentStep(STEP_KEYS.length + 1);
+        doneItems.push({ id: item.id, dir: res.outDir });
       } catch (err) {
         if (err === CANCELLED_MSG) {
           patchItem(item.id, { status: "cancelled" });
@@ -498,6 +514,22 @@ function App() {
         // segue para o próximo item (uma música ruim não trava o lote)
       }
     }
+    // Limpeza opcional dos auxiliares: só ao FIM da fila e só nas músicas que
+    // concluíram. Best-effort — uma falha aqui não afeta os pacotes gerados.
+    // Marca cada item (e o resultado em foco) como "cleaned" para a UI esconder
+    // o botão de revisão, que ficaria quebrado sem o song_data.json.
+    if (cleanExtras && doneItems.length > 0) {
+      for (const { id, dir } of doneItems) {
+        try {
+          await invoke("clean_song_extras", { dir });
+        } catch {
+          /* limpeza é best-effort; ignora falhas por pasta */
+        }
+        patchItem(id, { cleaned: true });
+      }
+      setResultCleaned(true);
+    }
+
     setIsRunning(false);
     setCancelling(false);
     appWindow.setTitle("USKMaker");
@@ -775,6 +807,17 @@ function App() {
         </div>
       )}
 
+      <div className="row">
+        <div className="field-group">
+          <label>{t("titleLabel")}</label>
+          <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} disabled={isRunning} />
+        </div>
+        <div className="field-group">
+          <label>{t("artistLabel")}</label>
+          <input type="text" value={artist} onChange={(e) => setArtist(e.target.value)} disabled={isRunning} />
+        </div>
+      </div>
+
       <div className="field-group">
         <label>
           {t("lyricsLabel")}
@@ -807,17 +850,6 @@ function App() {
             ⚠ {w}
           </p>
         ))}
-      </div>
-
-      <div className="row">
-        <div className="field-group">
-          <label>{t("titleLabel")}</label>
-          <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} disabled={isRunning} />
-        </div>
-        <div className="field-group">
-          <label>{t("artistLabel")}</label>
-          <input type="text" value={artist} onChange={(e) => setArtist(e.target.value)} disabled={isRunning} />
-        </div>
       </div>
 
       <div className="row">
@@ -859,6 +891,16 @@ function App() {
           />
           {t("cleanWorkLabel")}
         </label>
+        <label className="checkbox-line">
+          <input
+            type="checkbox"
+            checked={cleanExtras}
+            onChange={(e) => setCleanExtras(e.target.checked)}
+            disabled={isRunning}
+          />
+          {t("cleanExtrasLabel")}
+        </label>
+        {cleanExtras && <p className="field-hint warn">⚠ {t("cleanExtrasHint")}</p>}
       </div>
 
       {queue.length > 0 && (
@@ -892,7 +934,12 @@ function App() {
                 <span className="queue-actions">
                   {it.status === "done" && it.result && (
                     <>
-                      <button className="link-button" onClick={() => setReviewDir(it.result!.outDir)}>
+                      <button
+                        className="link-button"
+                        onClick={() => setReviewDir(it.result!.outDir)}
+                        disabled={it.cleaned}
+                        title={it.cleaned ? t("reviewUnavailableCleaned") : undefined}
+                      >
                         {t("queueReview")}
                       </button>
                       <button className="link-button" onClick={() => invoke("open_folder", { path: it.result!.outDir, lang })}>
@@ -999,9 +1046,11 @@ function App() {
               {result.audioPath}
             </p>
             <div className="result-actions">
-              <button className="submit-button compact" onClick={() => setReviewDir(result.outDir)}>
-                {t("resultReview")}
-              </button>
+              {!resultCleaned && (
+                <button className="submit-button compact" onClick={() => setReviewDir(result.outDir)}>
+                  {t("resultReview")}
+                </button>
+              )}
               <button className="secondary" onClick={openOutputFolder}>
                 {t("resultOpenFolder")}
               </button>

@@ -928,3 +928,8 @@ button:focus-visible {
   font-size: 0.75rem;
   margin: 0.25rem 0 0.4rem;
 }
+
+/* aviso do "deixar só o essencial": destrutivo (remove a revisão) */
+.field-hint.warn {
+  color: #d98a3d;
+}

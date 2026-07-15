@@ -845,6 +845,121 @@ fn save_song(out_dir: String, song: Song, lang: String) -> Result<SaveResult, St
     })
 }
 
+/// Apaga os arquivos auxiliares (não essenciais) da pasta de UMA música já
+/// finalizada: os intermediários `.json` (song_data.json / _job_status.json),
+/// os logs `.log` (pipeline_debug.log / _process_output.log) e a letra
+/// sincronizada `.lrc`. Preserva o essencial do pacote: o `.txt` do UltraStar,
+/// o áudio (.ogg), a capa e o vídeo.
+///
+/// ATENÇÃO: remover o song_data.json inviabiliza a tela de revisão manual
+/// desse pacote (ela lê exatamente esse arquivo). É opt-in e o usuário é
+/// avisado disso na interface. Best-effort: falha em um arquivo não derruba
+/// os demais nem o comando.
+/// Decide se um arquivo da pasta do pacote é AUXILIAR (pode ser apagado) a
+/// partir do nome. Auxiliares: intermediários `.json` (song_data.json /
+/// _job_status.json), logs `.log` (pipeline_debug.log / _process_output.log),
+/// a letra sincronizada `.lrc` e a cópia da letra de entrada
+/// (`_lyrics_input.txt`, o único auxiliar em .txt). O `.txt` do UltraStar tem
+/// outro nome e NÃO começa com "_", então é preservado — assim como .ogg,
+/// capa e vídeo. Função pura para poder ser testada isoladamente.
+fn is_aux_package_file(file_name: &str) -> bool {
+    if file_name == "_lyrics_input.txt" {
+        return true;
+    }
+    let ext = std::path::Path::new(file_name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase());
+    matches!(ext.as_deref(), Some("json") | Some("log") | Some("lrc"))
+}
+
+#[tauri::command]
+fn clean_song_extras(dir: String) -> Result<(), String> {
+    let dir_path = std::path::Path::new(&dir);
+    let entries = match std::fs::read_dir(dir_path) {
+        Ok(e) => e,
+        // pasta inexistente/ilegível: nada a fazer, não é erro fatal
+        Err(_) => return Ok(()),
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if is_aux_package_file(name) {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod clean_extras_tests {
+    use super::{clean_song_extras, is_aux_package_file};
+
+    #[test]
+    fn classifica_auxiliares_e_preserva_essenciais() {
+        // Espelha exatamente os nomes de uma pasta real gerada pelo pipeline.
+        let apagar = [
+            "_lyrics_input.txt",
+            "_process_output.log",
+            "pipeline_debug.log",
+            "song_data.json",
+            "_job_status.json",
+            "_synced_lyrics.lrc",
+        ];
+        let manter = [
+            "Rita Lee - Sangue Latino.txt",
+            "Rita Lee - Sangue Latino (rust).txt",
+            "Rita Lee - Sangue Latino.ogg",
+            "Rita Lee - Sangue Latino [CO].jpg",
+            "Rita Lee - Sangue Latino.mp4",
+        ];
+        for f in apagar {
+            assert!(is_aux_package_file(f), "deveria apagar: {f}");
+        }
+        for f in manter {
+            assert!(!is_aux_package_file(f), "deveria manter: {f}");
+        }
+    }
+
+    #[test]
+    fn remove_de_uma_pasta_real_so_os_auxiliares() {
+        // Cria uma pasta temporária com os MESMOS arquivos de um pacote real e
+        // roda o comando de verdade; confirma que só os auxiliares somem.
+        let base = std::env::temp_dir().join(format!("usk_clean_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+
+        let essenciais = [
+            "Rita Lee - Sangue Latino.txt",
+            "Rita Lee - Sangue Latino.ogg",
+            "Rita Lee - Sangue Latino [CO].jpg",
+            "Rita Lee - Sangue Latino.mp4",
+        ];
+        let auxiliares = [
+            "_lyrics_input.txt",
+            "_process_output.log",
+            "pipeline_debug.log",
+            "song_data.json",
+        ];
+        for f in essenciais.iter().chain(auxiliares.iter()) {
+            std::fs::write(base.join(f), b"x").unwrap();
+        }
+
+        clean_song_extras(base.to_string_lossy().to_string()).unwrap();
+
+        for f in essenciais {
+            assert!(base.join(f).exists(), "essencial sumiu: {f}");
+        }
+        for f in auxiliares {
+            assert!(!base.join(f).exists(), "auxiliar sobrou: {f}");
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+}
+
 #[tauri::command]
 fn open_folder(path: String, lang: String) -> Result<(), String> {
     // Windows-only por enquanto (Fase 2 é dev no Windows) - abre o
@@ -862,6 +977,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             run_pipeline,
             open_folder,
+            clean_song_extras,
             load_song,
             save_song,
             cancel_pipeline,

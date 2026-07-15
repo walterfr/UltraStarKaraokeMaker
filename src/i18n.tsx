@@ -84,6 +84,8 @@ const STRINGS = {
     outDirPick: "Escolher pasta...",
     outDirHint: "O pacote será criado numa subpasta \"Artista - Título\" dentro da pasta escolhida.",
     cleanWorkLabel: "Remover arquivos intermediários ao final (economiza espaço; deixe desmarcado para reprocessar mais rápido)",
+    cleanExtrasLabel: "Deixar só o essencial: apagar os auxiliares (.lrc, .log, .json) ao final da fila",
+    cleanExtrasHint: "Remove também o song_data.json — os pacotes ficarão SEM a tela de revisão. Deixe desmarcado se quiser revisar depois.",
 
     // ---- validação ----
     valNeedYoutube: "Informe o link do YouTube.",
@@ -105,6 +107,7 @@ const STRINGS = {
     queueStatusCancelled: "cancelado",
     queueRemove: "Remover",
     queueReview: "Revisar",
+    reviewUnavailableCleaned: "Revisão indisponível: os auxiliares (song_data.json) foram apagados para este pacote.",
     queueOpen: "Abrir pasta",
     queueClearDone: "Limpar concluídas",
     clearFields: "Limpar campos",
@@ -258,6 +261,8 @@ const STRINGS = {
     outDirPick: "Choose folder...",
     outDirHint: "The package will be created in an \"Artist - Title\" subfolder inside the chosen folder.",
     cleanWorkLabel: "Remove intermediate files when done (saves space; leave unchecked to reprocess faster)",
+    cleanExtrasLabel: "Keep only the essentials: delete the helper files (.lrc, .log, .json) at the end of the queue",
+    cleanExtrasHint: "This also removes song_data.json — packages will have NO review screen. Leave unchecked if you want to review later.",
 
     valNeedYoutube: "Enter the YouTube link.",
     valNeedFile: "Select a local audio/video file.",
@@ -277,6 +282,7 @@ const STRINGS = {
     queueStatusCancelled: "cancelled",
     queueRemove: "Remove",
     queueReview: "Review",
+    reviewUnavailableCleaned: "Review unavailable: the helper files (song_data.json) were deleted for this package.",
     queueOpen: "Open folder",
     queueClearDone: "Clear completed",
     clearFields: "Clear fields",
