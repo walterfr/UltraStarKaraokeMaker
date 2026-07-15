@@ -77,6 +77,7 @@ class SongMetadata:
     year: int | None = None
     genre: str | None = None
     cover_path: Path | None = None  # caminho local da capa já salva, se houver
+    background_path: Path | None = None  # imagem de fundo 16:9 (fanart.tv), se houver
     source: str = "nenhuma"  # fontes usadas, unidas por "+" (ex.:
     # "arquivo+itunes"); "nenhuma" quando nada foi encontrado
 
@@ -396,6 +397,80 @@ def _deezer_fetch_cover(artist: str, title: str, out_cover_path: Path) -> Path |
 
 
 # ---------------------------------------------------------------------------
+# Background 16:9 (opcional): fanart.tv - exige chave em FANARTTV_API_KEY
+# ---------------------------------------------------------------------------
+_FANARTTV_BASE = "https://webservice.fanart.tv/v3"
+
+
+def _mb_find_artist_mbid(artist: str) -> str | None:
+    """
+    Procura o MBID do ARTISTA no MusicBrainz. O fanart.tv indexa a arte de
+    fundo (background 16:9) por artista, então precisamos do MBID do artista,
+    não do release. Retorna None se nada plausível for achado.
+    """
+    _respect_mb_rate_limit()
+    try:
+        resp = requests.get(
+            f"{_MB_BASE}/artist",
+            params={"query": f'artist:"{artist}"', "fmt": "json", "limit": 5},
+            headers={"User-Agent": _USER_AGENT},
+            timeout=_HTTP_TIMEOUT,
+        )
+        resp.raise_for_status()
+        artists = resp.json().get("artists") or []
+    except Exception as e:
+        print(f"[metadata] aviso: busca de artista no MusicBrainz falhou ({e}).")
+        return None
+    # o 1º resultado é o de maior score de correspondência
+    return artists[0].get("id") if artists else None
+
+
+def _fanarttv_fetch_background(artist_mbid: str, out_bg_path: Path) -> Path | None:
+    """
+    Baixa um 'artist background' (16:9) do fanart.tv para o MBID do artista e
+    salva em out_bg_path. Só participa se a variável de ambiente
+    FANARTTV_API_KEY estiver definida (chave pessoal gratuita em
+    https://fanart.tv/get-an-api-key/). Sem a chave, é pulada em silêncio.
+    Best-effort: nunca lança exceção pra cima.
+    """
+    api_key = (os.environ.get("FANARTTV_API_KEY") or "").strip()
+    if not api_key:
+        print("[metadata] fanart.tv: FANARTTV_API_KEY não definido neste processo - background pulado.")
+        return None
+    try:
+        resp = requests.get(
+            f"{_FANARTTV_BASE}/music/{artist_mbid}",
+            params={"api_key": api_key},
+            headers={"User-Agent": _USER_AGENT},
+            timeout=_HTTP_TIMEOUT,
+        )
+        if resp.status_code == 404:
+            return None  # artista sem arte no fanart.tv
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        print(f"[metadata] aviso: consulta ao fanart.tv falhou ({e}) - seguindo sem background.")
+        return None
+
+    backgrounds = data.get("artistbackground") or []
+    if not backgrounds:
+        return None
+    # o fanart.tv ordena por likes; o 1º é o mais votado
+    url = backgrounds[0].get("url")
+    if not url:
+        return None
+    try:
+        img = requests.get(url, headers={"User-Agent": _USER_AGENT}, timeout=_HTTP_TIMEOUT)
+        img.raise_for_status()
+        # background ocupa a tela inteira - permite mais resolução que a capa
+        if _save_cover_image(img.content, out_bg_path, max_side=1920):
+            return out_bg_path
+    except Exception as e:
+        print(f"[metadata] aviso: download do background do fanart.tv falhou ({e}).")
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Fonte 5 (opcional): Last.fm - exige chave de API em LASTFM_API_KEY
 # ---------------------------------------------------------------------------
 
@@ -536,19 +611,22 @@ def _discogs_fetch_cover(artist: str, title: str, out_cover_path: Path) -> Path 
 # Utilitário de imagem
 # ---------------------------------------------------------------------------
 
-def _save_cover_image(image_bytes: bytes, out_path: Path) -> bool:
+def _save_cover_image(image_bytes: bytes, out_path: Path, max_side: int = 600) -> bool:
     """
     Valida os bytes como imagem (via Pillow), converte para JPEG e salva.
     Padroniza tudo para JPEG - formato universalmente aceito pelo UltraStar
     e evita surpresas com PNG/WEBP em engines mais antigos.
     Retorna True se salvou com sucesso.
+
+    max_side limita o lado maior (preservando a proporção): 600 para capas
+    (padrão); um valor maior, ex. 1920, para imagens de fundo (background),
+    que ocupam a tela inteira e se beneficiam de mais resolução.
     """
     try:
         img = Image.open(io.BytesIO(image_bytes))
         img = img.convert("RGB")
-        # capa quadrada não é obrigatória, mas capas muito grandes só pesam
-        # o pacote sem ganho visível no jogo - limita o lado maior a 600px.
-        max_side = 600
+        # imagens muito grandes só pesam o pacote sem ganho visível - limita
+        # o lado maior a `max_side` (proporção preservada).
         if max(img.size) > max_side:
             ratio = max_side / max(img.size)
             new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
@@ -571,6 +649,7 @@ def fetch_metadata(
     title: str,
     out_cover_path: Path,
     use_network: bool = True,
+    out_bg_path: Path | None = None,
 ) -> SongMetadata:
     """
     Descobre metadados em cascata: primeiro tags embutidas, depois
@@ -580,6 +659,10 @@ def fetch_metadata(
     audio_path: arquivo de áudio ORIGINAL (não o stem separado) - é ele que
                 carrega as tags embutidas.
     out_cover_path: onde salvar a capa (ex.: "Artista - Título [CO].jpg").
+    out_bg_path: onde salvar a imagem de fundo 16:9 (ex.: "... [BG].jpg"),
+                buscada no fanart.tv apenas se FANARTTV_API_KEY estiver
+                definida. Sem chave ou sem arte, fica None (o main.py cai no
+                fallback de reaproveitar a capa como background).
     use_network: se False, usa só as tags embutidas (modo offline).
     """
     meta = _extract_embedded(audio_path, out_cover_path)
@@ -629,6 +712,14 @@ def fetch_metadata(
             if _discogs_fetch_cover(artist, title, out_cover_path):
                 meta.cover_path = out_cover_path
                 sources_used.append("discogs")
+
+        # --- fanart.tv (background 16:9; só participa com FANARTTV_API_KEY) ---
+        # Independente da capa: é uma imagem de fundo diferente, não uma capa.
+        if out_bg_path is not None and (os.environ.get("FANARTTV_API_KEY") or "").strip():
+            artist_mbid = _mb_find_artist_mbid(artist)
+            if artist_mbid and _fanarttv_fetch_background(artist_mbid, out_bg_path):
+                meta.background_path = out_bg_path
+                sources_used.append("fanart.tv")
 
     meta.source = "+".join(sources_used) if sources_used else "nenhuma"
     return meta

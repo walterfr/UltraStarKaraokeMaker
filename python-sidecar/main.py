@@ -254,29 +254,47 @@ def run_pipeline(
 
     console.rule("[bold cyan]Etapa 5/6 — Buscando metadados (capa, ano, gênero)")
     debug_log("ETAPA 5 - iniciando fetch_metadata")
-    # Nome de capa no padrão UltraStar profissional: "Artista - Título [CO].jpg"
+    # Nomes no padrão UltraStar profissional: "[CO]" (capa) e "[BG]" (fundo).
     cover_path = out_path / f"{artist} - {title} [CO].jpg"
+    bg_path = out_path / f"{artist} - {title} [BG].jpg"
     metadata = fetch_metadata(
         audio_path=source.audio_wav,
         artist=artist,
         title=title,
         out_cover_path=cover_path,
         use_network=True,
+        out_bg_path=bg_path,
     )
     debug_log(
         f"ETAPA 5 - concluída. fonte={metadata.source} ano={metadata.year} "
-        f"gênero={metadata.genre} capa={metadata.cover_path}"
+        f"gênero={metadata.genre} capa={metadata.cover_path} fundo={metadata.background_path}"
     )
     console.print(f"[green]OK[/green] Metadados (fonte: {metadata.source}):")
     console.print(
         f"    [dim]ano={metadata.year or '—'} / gênero={metadata.genre or '—'} / "
-        f"capa={'sim' if metadata.cover_path else 'não'}[/dim]"
+        f"capa={'sim' if metadata.cover_path else 'não'} / "
+        f"fundo={'fanart.tv' if metadata.background_path else 'capa' if metadata.cover_path else 'não'}[/dim]"
     )
 
     console.rule("[bold cyan]Etapa 6/6 — Extraindo pitch e montando o .txt")
     debug_log("ETAPA 6 - iniciando build_song")
     final_audio_name = f"{artist} - {title}.ogg"
     cover_filename = metadata.cover_path.name if metadata.cover_path else None
+
+    # Background (#BACKGROUND): em camadas. Se o fanart.tv devolveu um fundo
+    # 16:9 (só com FANARTTV_API_KEY), usa ele. Senão, reaproveita a capa como
+    # background ("[BG].jpg") para que TODO pacote com capa tenha #BACKGROUND -
+    # é comum no padrão do formato. Sem capa nenhuma, fica sem background.
+    background_filename = None
+    if metadata.background_path and metadata.background_path.exists():
+        background_filename = metadata.background_path.name
+    elif metadata.cover_path and metadata.cover_path.exists():
+        try:
+            shutil.copy(metadata.cover_path, bg_path)
+            background_filename = bg_path.name
+            debug_log(f"Background (fallback) copiado da capa: {bg_path}")
+        except Exception as e:
+            debug_log(f"Falha ao copiar capa->background (ignorada): {e}")
 
     # Se um vídeo foi baixado, copia para o pacote com o nome padrão
     # UltraStar ("Artista - Título.mp4") e referencia na tag #VIDEO.
@@ -302,6 +320,7 @@ def run_pipeline(
         genre=metadata.genre,
         cover_filename=cover_filename,
         video_filename=video_filename,
+        background_filename=background_filename,
     )
     debug_log("ETAPA 6 - build_song concluído, escrevendo .txt")
 
