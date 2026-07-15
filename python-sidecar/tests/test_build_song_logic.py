@@ -15,8 +15,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from pipeline.align import WordTiming
 from pipeline.beatgrid import BeatGrid
-from pipeline.build_song import allocate_syllable_durations, build_notes, detect_melisma_notes
+from pipeline.build_song import (
+    allocate_syllable_durations,
+    apply_golden_notes,
+    build_notes,
+    detect_melisma_notes,
+)
 from pipeline.pitch import PitchResult, PitchTrack
+from pipeline.ultrastar_writer import Note
 
 
 def _empty_track() -> PitchTrack:
@@ -186,6 +192,60 @@ def test_build_notes_keeps_phrase_break_when_last_word_is_punctuation_only():
 
     assert len(notes) > 0
     assert phrase_breaks == [len(notes) - 1]
+
+
+# --------------------------------------------------------------------------
+# apply_golden_notes (auto-golden: notas mais longas viram "*", espalhadas)
+# --------------------------------------------------------------------------
+def _mknotes(durs, types=None):
+    types = types or [":"] * len(durs)
+    return [
+        Note(start_beat=i * 20, duration_beats=d, pitch=60, text="la", note_type=t)
+        for i, (d, t) in enumerate(zip(durs, types))
+    ]
+
+
+def test_golden_picks_longest_non_adjacent():
+    notes = _mknotes([1, 5, 1, 8, 1, 3, 1, 10, 1, 6])
+    apply_golden_notes(notes, golden_fraction=0.30, min_duration_beats=2)
+    golden = [i for i, n in enumerate(notes) if n.note_type == "*"]
+    # orçamento = int(0.30*10+0.5) = 3; as 3 mais longas (10,8,6) nos índices 7,3,9
+    assert golden == [3, 7, 9]
+
+
+def test_golden_never_two_adjacent():
+    notes = _mknotes([10, 9, 8, 7])  # todas longas E adjacentes
+    apply_golden_notes(notes, golden_fraction=1.0, min_duration_beats=2)
+    golden = sorted(i for i, n in enumerate(notes) if n.note_type == "*")
+    assert all(b - a >= 2 for a, b in zip(golden, golden[1:]))  # nunca vizinhas
+    assert golden == [0, 2]  # 10 e 8; as vizinhas (9, 7) são puladas
+
+
+def test_golden_skips_freestyle():
+    notes = _mknotes([20, 3, 20], types=[":", "F", "F"])
+    apply_golden_notes(notes, golden_fraction=1.0, min_duration_beats=2)
+    assert notes[0].note_type == "*"
+    # "F" nunca vira golden, mesmo sendo a nota mais longa
+    assert notes[2].note_type == "F"
+
+
+def test_golden_skips_short_notes():
+    notes = _mknotes([1, 1, 1, 1])  # todas abaixo da duração mínima
+    apply_golden_notes(notes, golden_fraction=0.5, min_duration_beats=2)
+    assert all(n.note_type == ":" for n in notes)
+
+
+def test_golden_no_scoreable_returns_unchanged():
+    notes = _mknotes([20, 20], types=["F", "F"])
+    apply_golden_notes(notes)
+    assert all(n.note_type == "F" for n in notes)
+
+
+def test_golden_budget_scales_with_fraction():
+    notes = _mknotes([5] * 100)
+    apply_golden_notes(notes, golden_fraction=0.05, min_duration_beats=2)
+    n_gold = sum(1 for n in notes if n.note_type == "*")
+    assert n_gold == 5  # int(0.05*100+0.5) = 5, espalhadas em índices pares
 
 
 if __name__ == "__main__":

@@ -225,6 +225,61 @@ def detect_melisma_notes(
     return [(syl_start, merged[0][1])] + merged[1:-1] + [(merged[-1][0], syl_end)]
 
 
+# Fração das notas pontuáveis marcadas como "golden" ("*", bônus de pontuação
+# ~2x). Calibrado nos charts feitos à mão da comunidade (medido em ABBA, Vicente
+# Fernández, 50 Cent, Morat, Bad Bunny, 3 Doors Down, etc.): a golden cai
+# tipicamente em ~2-6% das notas (mediana ~4-5%), concentrada nas notas mais
+# LONGAS/sustentadas e em ganchos repetidos. Automatizamos o padrão DOMINANTE (as
+# mais longas); ganchos repetidos exigiriam detecção de refrão (fora do escopo).
+# É só camada de score: NÃO altera pitch nem tempo, então é aditivo e seguro.
+GOLDEN_FRACTION_DEFAULT = 0.05
+GOLDEN_MIN_DURATION_BEATS = 2
+
+
+def apply_golden_notes(
+    notes: list[Note],
+    golden_fraction: float = GOLDEN_FRACTION_DEFAULT,
+    min_duration_beats: int = GOLDEN_MIN_DURATION_BEATS,
+) -> list[Note]:
+    """
+    Marca como golden ("*") as notas MAIS LONGAS, até um orçamento proporcional
+    ao total de notas pontuáveis, espalhando-as (nunca duas adjacentes na
+    sequência). Reproduz o que os charters à mão fazem: a nota sustentada é o
+    "momento de destaque". Muta a lista in-place e a devolve.
+
+    - Só considera notas normais (":") - NUNCA doura freestyle ("F", que não
+      pontua). Continuações de melisma ("~") PODEM ser golden (charts reais
+      douram trechos sustentados, inclusive "~").
+    - `min_duration_beats`: ignora notas curtas demais (dourar 1 beat não é
+      "destaque" e não é o que os charts fazem).
+    - Orçamento com arredondamento meio-pra-cima (evita o banker's rounding do
+      round() zerar músicas curtas).
+    """
+    scoreable = [i for i, n in enumerate(notes) if n.note_type == ":"]
+    if not scoreable:
+        return notes
+    budget = int(golden_fraction * len(scoreable) + 0.5)
+    if budget <= 0:
+        return notes
+
+    candidates = [i for i in scoreable if notes[i].duration_beats >= min_duration_beats]
+    # mais longas primeiro; empate -> índice menor (determinístico).
+    candidates.sort(key=lambda i: (-notes[i].duration_beats, i))
+
+    chosen: set[int] = set()
+    for i in candidates:
+        if len(chosen) >= budget:
+            break
+        # espalha: não marca duas notas vizinhas na sequência como golden.
+        if (i - 1) in chosen or (i + 1) in chosen:
+            continue
+        chosen.add(i)
+
+    for i in chosen:
+        notes[i].note_type = "*"
+    return notes
+
+
 def build_notes(
     word_timings: list[WordTiming],
     vocals_wav_path: Path,
@@ -300,6 +355,7 @@ def build_notes(
             phrase_breaks.append(len(notes) - 1)
 
     notes = fix_rounding_overlaps(notes)
+    notes = apply_golden_notes(notes)
 
     return notes, phrase_breaks
 
