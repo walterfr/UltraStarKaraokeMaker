@@ -69,7 +69,16 @@ def run_subprocess(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
     canal compartilhado com o processo pai), evitando tanto o cenário de
     dois processos escrevendo no mesmo pipe do Windows simultaneamente
     quanto o OSError de escrita única grande demais (ver notas do módulo).
+
+    text=True SEM encoding explícito usa o codec de locale (cp1252 no
+    Windows), que estoura UnicodeDecodeError quando a saída do subprocesso
+    tem bytes fora do cp1252 - ex.: yt-dlp/ffmpeg ecoando um título de vídeo
+    ou uma tag de metadados com emoji/CJK. Fixar utf-8 + errors="replace"
+    garante que a decodificação da saída nunca derrube o pipeline. Usamos
+    setdefault para um eventual chamador ainda poder sobrescrever.
     """
+    kwargs.setdefault("encoding", "utf-8")
+    kwargs.setdefault("errors", "replace")
     result = subprocess.run(cmd, capture_output=True, text=True, **kwargs)
 
     _print_captured(result.stdout)

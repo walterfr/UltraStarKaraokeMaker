@@ -53,8 +53,13 @@ from pipeline.separate import separate_vocals
 # Quando o stdout/stderr do Python não está conectado a um terminal real (é
 # o caso ao rodar via Tauri), o Python usa buffer em bloco por padrão.
 # Forçar line_buffering garante que cada linha seja enviada imediatamente.
-sys.stdout.reconfigure(line_buffering=True)
-sys.stderr.reconfigure(line_buffering=True)
+#
+# encoding="utf-8": sem isso, o stdout de um pipe no Windows fica em cp1252 e
+# um print() de saída ecoada de subprocesso (yt-dlp/ffmpeg com título/tag
+# CJK/emoji) estoura UnicodeEncodeError. O caminho do app (server.py) já
+# redireciona para um arquivo utf-8; isto cobre o caminho standalone (CLI/dev).
+sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
+sys.stderr.reconfigure(encoding="utf-8", line_buffering=True)
 
 console = Console()
 
