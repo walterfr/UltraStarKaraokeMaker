@@ -32,6 +32,9 @@ interface USNote {
   // Proveniência do timing (align.py): "anchor" | "fuzzy" | "realign" |
   // "interpolated". Ausente em pacotes gerados antes desse campo existir.
   source?: string | null;
+  // Confiança fonética medida (WordTiming.score em align.py), herdada da
+  // palavra de origem. Ausente em pacotes gerados antes desse campo existir.
+  score?: number | null;
 }
 
 // Cor de preenchimento por proveniência do timing - o olho do revisor deve
@@ -46,6 +49,25 @@ const SOURCE_COLORS: Record<string, string> = {
   interpolated: "#d6802f", // ESTIMADO: interpolação entre vizinhas - revisar!
 };
 const DEFAULT_NOTE_COLOR = "#3d6fd6";
+
+// Nota MEDIDA (source != interpolated) mas com score fonético baixo - um
+// match que existe, mas é suspeito (ex.: casou com o evento acústico
+// errado quando vocal de apoio sobrepõe o lead). Cor própria: "nunca medido"
+// (laranja, acima) e "medido mas suspeito" (aqui) são falhas diferentes -
+// vale a pena o revisor distinguir uma da outra.
+const LOW_CONFIDENCE_COLOR = "#d64f4f";
+// Conservador de propósito: o próprio align.py documenta que vogais
+// cantadas esticadas/vibrato derrubam o score do whisperx mesmo quando o
+// timing está correto (score 0.00-0.35 é normal ali). Um threshold baixo
+// mira abaixo do "normal-mas-correto" e ainda assim pega mais casos da
+// região corrompida do que teria visibilidade nenhuma.
+const LOW_SCORE_ANCHOR_THRESHOLD = 0.15;
+
+function isLowConfidenceAnchor(n: USNote): boolean {
+  if (n.note_type === "F") return false; // já sinalizado por outro caminho (freestyle)
+  if (n.source == null || n.source === "interpolated") return false; // já coberto pela cor "interpolated"
+  return typeof n.score === "number" && n.score < LOW_SCORE_ANCHOR_THRESHOLD;
+}
 
 interface USSong {
   title: string;
@@ -457,6 +479,8 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
           ? "#4a4a58"
           : n.note_type === "*"
           ? "#c9a227"
+          : isLowConfidenceAnchor(n)
+          ? LOW_CONFIDENCE_COLOR
           : SOURCE_COLORS[n.source ?? ""] ?? DEFAULT_NOTE_COLOR;
       ctx.beginPath();
       ctx.roundRect(x, y, nw, nh, 3);
@@ -515,9 +539,9 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
 
         for (const n of s.notes) {
           const nx = mxOf(beatToSec(s, n.start_beat));
-          if (n.source === "interpolated") {
-            // notas estimadas saltam aos olhos até no minimapa
-            mctx.fillStyle = SOURCE_COLORS.interpolated;
+          if (n.source === "interpolated" || isLowConfidenceAnchor(n)) {
+            // notas estimadas ou suspeitas saltam aos olhos até no minimapa
+            mctx.fillStyle = n.source === "interpolated" ? SOURCE_COLORS.interpolated : LOW_CONFIDENCE_COLOR;
             mctx.fillRect(nx, 2, 2, mh - 4);
           } else {
             mctx.fillStyle = "#3d6fd6";
@@ -999,19 +1023,18 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
 
   const sel = selected !== null ? song.notes[selected] : null;
   // Pacotes antigos não têm o campo source - nesse caso a legenda e o botão
-  // de "pular para estimada" não fazem sentido e ficam ocultos.
+  // de "pular pra flagrada" não fazem sentido e ficam ocultos.
   const hasSourceInfo = song.notes.some((n) => n.source != null);
-  const interpolatedCount = song.notes.filter((n) => n.source === "interpolated").length;
+  const needsReview = (n: USNote) => n.source === "interpolated" || isLowConfidenceAnchor(n);
+  const flaggedCount = song.notes.filter(needsReview).length;
 
-  function jumpToNextInterpolated() {
+  function jumpToNextFlagged() {
     const s = songRef.current;
     if (!s) return;
     const from = selectedRef.current !== null ? selectedRef.current : -1;
     const order = [...Array(s.notes.length).keys()];
     // procura a partir da seleção atual, dando a volta no fim
-    const next = [...order.slice(from + 1), ...order.slice(0, from + 1)].find(
-      (i) => s.notes[i].source === "interpolated"
-    );
+    const next = [...order.slice(from + 1), ...order.slice(0, from + 1)].find((i) => needsReview(s.notes[i]));
     if (next === undefined) return;
     setSelected(next);
     selectedRef.current = next;
@@ -1094,15 +1117,11 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
         <button onClick={redo} title="Ctrl+Y">
           {t("revRedo")}
         </button>
-        {hasSourceInfo && interpolatedCount > 0 && (
+        {hasSourceInfo && flaggedCount > 0 && (
           <>
             <span className="toolbar-sep" />
-            <button
-              className="jump-interpolated"
-              onClick={jumpToNextInterpolated}
-              title={t("revNextEstimatedTitle")}
-            >
-              {t("revNextEstimated", { n: interpolatedCount })}
+            <button className="jump-interpolated" onClick={jumpToNextFlagged} title={t("revNextFlaggedTitle")}>
+              {t("revNextFlagged", { n: flaggedCount })}
             </button>
           </>
         )}
@@ -1158,7 +1177,8 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
           <span className="legend-chip" style={{ background: SOURCE_COLORS.lrc }} />{" "}
           {t("revLegendLrc")}{" "}
           <span className="legend-chip" style={{ background: SOURCE_COLORS.interpolated }} />{" "}
-          {t("revLegendInterp")} · <span className="legend-chip" style={{ background: "#c9a227" }} />{" "}
+          {t("revLegendInterp")} · <span className="legend-chip" style={{ background: LOW_CONFIDENCE_COLOR }} />{" "}
+          {t("revLegendLowScore")} · <span className="legend-chip" style={{ background: "#c9a227" }} />{" "}
           {t("revLegendGolden")} · <span className="legend-chip" style={{ background: "#4a4a58" }} />{" "}
           {t("revLegendFreestyle")}
         </p>
@@ -1238,9 +1258,11 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
             {sel.source != null && (
               <span
                 className="note-source"
-                style={{ color: SOURCE_COLORS[sel.source] ?? "#9a9aa8" }}
+                style={{ color: isLowConfidenceAnchor(sel) ? LOW_CONFIDENCE_COLOR : SOURCE_COLORS[sel.source] ?? "#9a9aa8" }}
               >
                 {sourceLabels[sel.source] ?? sel.source}
+                {/* score cru visível pra não fazer o revisor confiar cegamente num threshold arbitrário */}
+                {typeof sel.score === "number" && ` (${sel.score.toFixed(2)})`}
               </span>
             )}
             <button className="danger" onClick={() => deleteNote(selected)}>

@@ -48,6 +48,11 @@ class Note:
     # origem (anchor/fuzzy/realign/interpolated - ver align.py). Vai para o
     # JSON intermediário para a tela de revisão colorir por confiança;
     # NUNCA é escrito no .txt (não faz parte do formato UltraStar).
+    score: float | None = None  # confiança FONÉTICA medida (WordTiming.score
+    # em align.py), herdada da palavra de origem. Mesmo contrato do `source`
+    # acima: só diagnóstico pra tela de revisão, nunca vai pro .txt. Permite
+    # sinalizar uma âncora MEDIDA (source != interpolated) mas com score
+    # baixo - um match que existe mas é suspeito, diferente de "não medido".
 
 
 @dataclass

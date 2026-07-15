@@ -78,6 +78,8 @@ import unicodedata
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
+import numpy as np
+
 # Fontes de timestamp, da mais confiável para a menos:
 SOURCE_ANCHOR = "anchor"          # match exato com a transcrição livre (medido)
 SOURCE_FUZZY = "fuzzy"            # match aproximado de grafia (medido)
@@ -264,6 +266,84 @@ def seed_line_anchors(
     return seeded
 
 
+def demote_anchors_conflicting_with_lrc(
+    anchors: list[Anchor | None],
+    lyric_lines: list[tuple[str, int]],
+    lrc_lines: list[tuple[float, str]],
+    tolerance: float = 3.0,
+    audio_duration: float | None = None,
+) -> int:
+    """
+    Usa os inícios de linha do .lrc casados (mesmo casamento usado por
+    `seed_line_anchors`) como "postes de referência" no tempo pra flagrar
+    âncoras JÁ MEDIDAS que caem longe demais de onde a palavra deveria
+    estar - não só a 1ª palavra de cada linha, qualquer palavra entre dois
+    postes conhecidos, por interpolação linear entre eles.
+
+    Sem isto, uma âncora errada isolada (ex.: a palavra comum "en" casada
+    ~9s cedo demais - caso real observado quando vocal de apoio sobrepõe o
+    lead e o Whisper ouve algo espúrio que parece bater com uma palavra
+    comum) fica intocada e envenena a interpolação/realinhamento ao redor
+    dela inteira, mesmo não sendo a 1ª palavra da sua linha (que é tudo que
+    `seed_line_anchors` cobre). `tolerance` é folgada (segundos) porque o
+    início de linha do .lrc já tem sua própria imprecisão - isto pega
+    apenas divergências grandes demais pra serem coincidência.
+
+    PONTO CEGO REAL (encontrado num teste de verdade, "Ama De Mi Sol",
+    13/07/2026): palavras dentro da ÚLTIMA linha da letra (ou depois do
+    último poste medido) não tinham "próximo poste" pra comparar e ficavam
+    de fora da checagem inteira - justo onde o coro sobrepondo o vocal
+    principal mais precisa dela. `audio_duration`, quando informado, vira
+    um poste sintético no fim (índice = nº de palavras, tempo = duração do
+    áudio), fechando esse buraco sem precisar de outra linha de letra
+    depois. Sem `audio_duration`, mantém o comportamento de antes (ignora
+    palavras sem poste dos dois lados).
+    """
+    line_texts = [t for t, _ in lyric_lines]
+    matched = match_lrc_to_lines(line_texts, lrc_lines)
+    if not matched:
+        return 0
+
+    n = len(anchors)
+    posts: list[tuple[int, float]] = []
+    for line_idx, (_, start_word) in enumerate(lyric_lines):
+        t = matched.get(line_idx)
+        if t is not None and start_word < n:
+            posts.append((start_word, t))
+    if audio_duration is not None and (not posts or audio_duration > posts[-1][1]):
+        posts.append((n, audio_duration))
+    if len(posts) < 2:
+        return 0
+
+    demoted = 0
+    for word_idx in range(n):
+        a = anchors[word_idx]
+        if a is None:
+            continue
+
+        prev_post: tuple[int, float] | None = None
+        next_post: tuple[int, float] | None = None
+        for p_idx, p_time in posts:
+            if p_idx <= word_idx:
+                prev_post = (p_idx, p_time)
+            elif next_post is None:
+                next_post = (p_idx, p_time)
+                break
+        if prev_post is None or next_post is None or next_post[0] <= prev_post[0]:
+            continue  # sem referência dos dois lados, sem base suficiente pra julgar
+
+        prev_idx, prev_time = prev_post
+        next_idx, next_time = next_post
+        frac = (word_idx - prev_idx) / (next_idx - prev_idx)
+        expected = prev_time + frac * (next_time - prev_time)
+
+        if abs(a[0] - expected) > tolerance:
+            anchors[word_idx] = None
+            demoted += 1
+
+    return demoted
+
+
 def _normalize_word(word: str) -> str:
     """
     Normaliza uma palavra para comparação (minúsculas, sem pontuação),
@@ -311,8 +391,12 @@ def _fuzzy_pairs(
     blocos de palavras normalizadas, maximizando a soma das similaridades de
     caracteres acima de `threshold`. Retorna pares (idx_whisper, idx_real).
 
-    Palavras de 1 caractere ficam de fora (similaridade de caracteres não
-    diz nada útil sobre "e"/"a"/"o").
+    Palavras vazias ficam de fora. Palavras de 1 caractere PARTICIPAM (ao
+    contrário de versões antigas desta função): `ratio()` entre duas
+    strings de tamanho 1 só pode dar 0.0 ou 1.0 - não existe "quase igual"
+    degenerado aqui, então isto só recupera o caso legítimo de grafias
+    diferentes pro MESMO caractere pós dobra de acento (ex.: "í" vs "i",
+    que o passe de âncora exata não casa por preservar acento).
     """
     n, m = len(whisper_block), len(real_block)
     if n == 0 or m == 0 or n * m > 250_000:
@@ -323,10 +407,10 @@ def _fuzzy_pairs(
 
     sims = [[0.0] * m for _ in range(n)]
     for i, a in enumerate(whisper_folded):
-        if len(a) < 2:
+        if len(a) < 1:
             continue
         for j, b in enumerate(real_folded):
-            if len(b) < 2:
+            if len(b) < 1:
                 continue
             r = difflib.SequenceMatcher(None, a, b).ratio()
             if r >= threshold:
@@ -395,20 +479,33 @@ def compute_anchors(
     return anchors
 
 
-def _demote_suspicious_anchors(anchors: list[Anchor | None], real_norm: list[str]) -> None:
+def _demote_suspicious_anchors(
+    anchors: list[Anchor | None],
+    real_norm: list[str],
+    min_isolation_gap: int = 3,
+    score_floor: float = 0.3,
+) -> None:
     """
     Demove (vira None) âncoras EXATAS de palavras muito curtas (<= 2 chars)
-    que estão isoladas no meio de um gap grande: um "e"/"de" casado sozinho
-    dentro de um trecho que o Whisper inteiro errou tem boa chance de ser a
-    ocorrência errada, e uma âncora errada envenena a interpolação E parte a
-    janela do realinhamento acústico no lugar errado. Sem ela, o passe de
-    realinhamento mede o trecho inteiro de uma vez.
+    que estão isoladas no meio de um gap grande E têm score fonético baixo:
+    um "e"/"de" casado sozinho dentro de um trecho que o Whisper inteiro
+    errou tem boa chance de ser a ocorrência errada, e uma âncora errada
+    envenena a interpolação E parte a janela do realinhamento acústico no
+    lugar errado. Sem ela, o passe de realinhamento mede o trecho inteiro
+    de uma vez.
+
+    O gate de `score` (adicionado depois do bug real da palavra "Y" ficar
+    "grudada" perto da âncora anterior em vez do timestamp medido correto)
+    evita jogar fora uma âncora isolada mas CONFIANTE - só demove quando a
+    isolação E a baixa confiança concordam que o match é suspeito.
     """
     n = len(anchors)
     for j in range(n):
         a = anchors[j]
         if a is None or a[3] != SOURCE_ANCHOR or len(real_norm[j]) > 2:
             continue
+        if a[2] >= score_floor:
+            continue  # medido com confiança - não é o padrão de match "grudado" que isto existe pra pegar
         if (j > 0 and anchors[j - 1] is not None) or (j + 1 < n and anchors[j + 1] is not None):
             continue  # não está isolada
         # tamanho do gap ao redor (vizinhos None contíguos de cada lado)
@@ -422,7 +519,7 @@ def _demote_suspicious_anchors(anchors: list[Anchor | None], real_norm: list[str
         while k < n and anchors[k] is None:
             after += 1
             k += 1
-        if before >= 3 and after >= 3:
+        if before >= min_isolation_gap and after >= min_isolation_gap:
             anchors[j] = None
 
 
@@ -530,6 +627,54 @@ def anchor_and_interpolate(
     return timings_from_anchors(anchors, real_words)
 
 
+def _trim_silence_bounds(
+    audio,
+    win_start_sample: int,
+    win_end_sample: int,
+    sample_rate: int = 16000,
+    energy_threshold: float = 0.01,
+    frame_ms: float = 20.0,
+) -> tuple[int, int]:
+    """
+    Aperta [win_start_sample, win_end_sample) pros limites reais de energia
+    vocal (RMS por quadro de `frame_ms`), descartando silêncio/pausa nas
+    pontas antes de mandar a janela pro forced alignment (whisperx.align).
+
+    Por quê: uma palavra curta e isolada (ex.: "Y") cercada de silêncio real
+    antes dela faz o CTC "espalhar" a palavra em direção ao início da
+    janela em vez do início real do canto - a janela cheia de silêncio não
+    dá ao alinhador nenhum sinal de ONDE dentro dela o áudio realmente
+    começa. Aparar o silêncio resolve isso sem mudar a lógica do alinhador.
+
+    Nunca devolve uma janela vazia/inválida: sem nenhum quadro acima do
+    threshold, devolve os limites originais inalterados (ex.: janela sem
+    áudio vocal nenhum - deixa o resto do pipeline lidar com isso como já
+    fazia antes desta função existir).
+    """
+    frame_len = max(1, int(sample_rate * frame_ms / 1000))
+    segment = audio[win_start_sample:win_end_sample]
+    if segment.size < frame_len:
+        return win_start_sample, win_end_sample
+
+    n_frames = segment.size // frame_len
+    frames = segment[: n_frames * frame_len].reshape(n_frames, frame_len)
+    rms = np.sqrt(np.mean(frames.astype(np.float64) ** 2, axis=1))
+    voiced = np.where(rms >= energy_threshold)[0]
+
+    if voiced.size == 0:
+        return win_start_sample, win_end_sample
+
+    # 1 quadro de folga antes do ataque detectado, pra nunca cortar em cima
+    # do próprio começo do som (ataque de consoante costuma ter energia
+    # menor que a vogal que segue, mas ainda faz parte da palavra).
+    first = max(0, int(voiced[0]) - 1)
+    last = int(voiced[-1]) + 1
+
+    new_start = win_start_sample + first * frame_len
+    new_end = min(win_end_sample, win_start_sample + last * frame_len)
+    return new_start, new_end
+
+
 def realign_gap_windows(
     timings: list[WordTiming],
     align_model,
@@ -570,6 +715,16 @@ def realign_gap_windows(
         win_end = timings[idx].start if idx < n else audio_duration
         win_start = max(0.0, min(win_start, audio_duration))
         win_end = max(0.0, min(win_end, audio_duration))
+
+        # aperta a janela pro trecho com energia vocal de verdade antes de
+        # mandar pro CTC - evita que silêncio nas pontas (pausa antes de
+        # uma palavra curta isolada) empurre o resultado pro início/fim da
+        # janela em vez do início real do canto.
+        win_start_sample, win_end_sample = _trim_silence_bounds(
+            audio, int(win_start * sample_rate), int(win_end * sample_rate), sample_rate
+        )
+        win_start = win_start_sample / sample_rate
+        win_end = win_end_sample / sample_rate
 
         # janela precisa de espaço mínimo para o CTC ter o que medir
         if win_end - win_start < 0.10 + 0.08 * len(run):
@@ -717,11 +872,20 @@ def align_lyrics_to_audio(
     real_words, line_end_flags = _load_lyrics_words_with_line_ends(lyrics_path)
     anchors = compute_anchors(whisper_words, real_words)
 
-    # 3b) Âncoras de linha do .lrc (LRCLIB), se houver: preenchem os vãos que
-    #     o Whisper não mediu, antes da interpolação e do realinhamento.
+    # 3b) Âncoras de linha do .lrc (LRCLIB), se houver: primeiro DEMOVE
+    #     âncoras já medidas que estão implausivelmente longe de onde a
+    #     letra sincronizada diz que a palavra deveria estar (corta a
+    #     poluição de matches espúrios ANTES dela envenenar a interpolação
+    #     ao redor), depois preenche os vãos que o Whisper não mediu.
     if synced_lyrics_path is not None and Path(synced_lyrics_path).exists():
         lrc_lines = parse_lrc(Path(synced_lyrics_path).read_text(encoding="utf-8"))
         lyric_lines = _lyric_lines_with_start_index(lyrics_path)
+
+        audio_duration = float(len(audio)) / 16000  # whisperx.audio.SAMPLE_RATE
+        demoted = demote_anchors_conflicting_with_lrc(anchors, lyric_lines, lrc_lines, audio_duration=audio_duration)
+        if demoted:
+            print(f"[INFO] Âncoras de linha do .lrc: {demoted} âncoras implausíveis demovidas.")
+
         seeded = seed_line_anchors(anchors, lyric_lines, lrc_lines)
         if seeded:
             print(f"[INFO] Âncoras de linha do .lrc: {seeded} inícios de linha semeados.")

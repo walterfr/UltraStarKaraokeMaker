@@ -45,6 +45,21 @@ class PitchResult:
     raw_hz: float
 
 
+@dataclass
+class PitchTrack:
+    """
+    Dados de pitch quadro-a-quadro (não colapsados a uma mediana), usados
+    para decidir COMO uma palavra se divide em sílabas/notas (build_song.py)
+    em vez de simplesmente dividir a duração igualmente. `timestamps` é
+    ABSOLUTO (segundos desde o início do áudio, não relativo ao segmento
+    extraído) para poder ser comparado direto com os tempos de WordTiming.
+    """
+    timestamps: np.ndarray
+    pitch_hz: np.ndarray
+    confidence: np.ndarray
+    voicing: np.ndarray  # bool
+
+
 def hz_to_ultrastar_pitch(hz: float) -> int:
     """Converte Hz -> semitom relativo a C4 (pitch 0 do UltraStar)."""
     if hz <= 0:
@@ -67,18 +82,48 @@ class PitchExtractor:
         self.model = SwiftF0(confidence_threshold=confidence_threshold, fmin=fmin, fmax=fmax)
 
     def extract_segment_pitch(self, audio_path: str, start_s: float, end_s: float) -> PitchResult:
+        track = self.extract_word_track(audio_path, start_s, end_s)
+        return self.summarize_track_window(track, start_s, end_s)
+
+    def extract_word_track(self, audio_path: str, start_s: float, end_s: float) -> PitchTrack:
+        """
+        Roda o detector de pitch UMA VEZ sobre o intervalo (tipicamente uma
+        PALAVRA inteira) e devolve os quadros crus, sem colapsar a uma
+        mediana - build_song.py usa isso para decidir onde estão os limites
+        reais de cada sílaba e onde há sustentação (melisma), em vez de só
+        dividir a duração da palavra igualmente entre as sílabas.
+        """
         y, sr = sf.read(audio_path)
         start_sample = int(start_s * sr)
         end_sample = int(end_s * sr)
         segment = y[start_sample:end_sample]
 
         if segment.size == 0:
-            return PitchResult(ultrastar_pitch=0, confidence=0.0, raw_hz=0.0)
+            empty = np.array([])
+            return PitchTrack(timestamps=empty, pitch_hz=empty, confidence=empty, voicing=np.array([], dtype=bool))
 
         result = self.model.detect_from_array(segment, sr)
+        return PitchTrack(
+            timestamps=np.asarray(result.timestamps) + start_s,  # absoluto
+            pitch_hz=np.asarray(result.pitch_hz),
+            confidence=np.asarray(result.confidence),
+            voicing=np.asarray(result.voicing, dtype=bool),
+        )
 
-        voiced_hz = result.pitch_hz[result.voicing]
-        voiced_conf = result.confidence[result.voicing]
+    def summarize_track_window(self, track: PitchTrack, start_s: float, end_s: float) -> PitchResult:
+        """
+        Colapsa os quadros de `track` que caem em [start_s, end_s) para um
+        PitchResult (mediana Hz + confiança média dos quadros vozeados) -
+        mesma lógica que `extract_segment_pitch` fazia inline, mas reusável
+        para qualquer subjanela (sílaba, run de melisma) sem reler o áudio.
+        """
+        if track.timestamps.size == 0:
+            return PitchResult(ultrastar_pitch=0, confidence=0.0, raw_hz=0.0)
+
+        in_window = (track.timestamps >= start_s) & (track.timestamps < end_s)
+        mask = in_window & track.voicing
+        voiced_hz = track.pitch_hz[mask]
+        voiced_conf = track.confidence[mask]
 
         if voiced_hz.size == 0:
             return PitchResult(ultrastar_pitch=0, confidence=0.0, raw_hz=0.0)

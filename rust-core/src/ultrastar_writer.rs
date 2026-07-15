@@ -36,6 +36,11 @@ pub struct Note {
     /// escrito no .txt. Opcional para compatibilidade com JSONs antigos.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    /// Confiança fonética medida (WordTiming.score no sidecar), herdada da
+    /// palavra de origem. Mesmo contrato do `source` acima: só diagnóstico
+    /// pra tela de revisão, nunca vai pro .txt. Opcional pelo mesmo motivo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub score: Option<f64>,
 }
 
 fn default_note_type() -> String {
