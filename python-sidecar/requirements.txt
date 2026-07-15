@@ -10,6 +10,7 @@
 #   pip install --upgrade pip
 #   pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu126
 #   pip install -r requirements.txt
+#   pip install "audio-separator[gpu]>=0.44.0"   # [cpu] se nao tiver GPU NVIDIA
 #
 # NOTA: não fixar a versão do torch - deixe o pip resolver a versão mais
 # recente compatível com o Python instalado e com o build CUDA escolhido
@@ -35,6 +36,11 @@ demucs>=4.0.1
 # envenena o alinhamento ao redor. Ver pipeline/separate.py:isolate_lead_vocal.
 # Baixa modelos sob demanda (~900MB no 1º uso) - não-fatal se falhar (cai
 # pro stem combinado do Demucs, ver main.py).
+# ATENÇÃO: o pacote base NÃO instala o onnxruntime, que ele importa no topo
+# do módulo - sem o extra [gpu] (ou [cpu]) o resgate falha silenciosamente.
+# Extras não dão pra condicionar por máquina num requirements estático, então
+# o setup-sidecar.ps1 instala o extra certo depois deste arquivo; em install
+# manual, rode também: pip install "audio-separator[gpu]>=0.44.0" ([cpu] sem GPU).
 audio-separator>=0.44.0
 
 # --- Forced alignment / transcrição ---

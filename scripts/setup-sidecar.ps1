@@ -182,6 +182,14 @@ Write-Step "Instalando as demais dependencias do pipeline"
 & $uvExe pip install --python "$venvPython" -r (Join-Path $sidecarDir "requirements.txt")
 if ($LASTEXITCODE -ne 0) { Fail "Falha ao instalar as dependencias (requirements.txt)." }
 
+# O extra [gpu]/[cpu] traz o onnxruntime, que o audio-separator importa no
+# topo do modulo mas NAO declara como dependencia base - sem ele o resgate
+# de voz principal falha silenciosamente (cai sempre pro stem do Demucs).
+$sepExtra = if ($hasNvidia) { 'gpu' } else { 'cpu' }
+Write-Step "Instalando onnxruntime para o audio-separator (extra [$sepExtra])"
+& $uvExe pip install --python "$venvPython" "audio-separator[$sepExtra]>=0.44.0"
+if ($LASTEXITCODE -ne 0) { Fail "Falha ao instalar audio-separator[$sepExtra] (onnxruntime)." }
+
 # ---------------------------------------------------------------------------
 # 7. Validacao final
 # ---------------------------------------------------------------------------
@@ -194,7 +202,7 @@ if ($hasNvidia -and $cudaCheck.Trim() -ne "True") {
     Write-Ok "torch instalado (CUDA disponivel: $($cudaCheck.Trim()))"
 }
 
-& $venvPython -c "import whisperx, demucs, librosa, mutagen" 2>$null
+& $venvPython -c "import whisperx, demucs, librosa, mutagen, audio_separator.separator" 2>$null
 if ($LASTEXITCODE -eq 0) {
     Write-Ok "Bibliotecas do pipeline importadas com sucesso."
 } else {
