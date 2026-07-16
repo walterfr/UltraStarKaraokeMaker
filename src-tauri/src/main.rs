@@ -129,6 +129,7 @@ fn tr(lang: &str, key: &str) -> &'static str {
         "setup_spawn" => if en { "Error starting the setup: {err}" } else { "Erro ao iniciar o setup: {err}" },
         "setup_failed" => if en { "Setup failed. See the log at '{log}'." } else { "O setup falhou. Veja o log em '{log}'." },
         "read_tags" => if en { "Error reading the file's tags: {err}" } else { "Erro ao ler as tags do arquivo: {err}" },
+        "deps_missing" => if en { "The AI environment is incomplete: the libraries {mods} are missing (the setup didn't finish). Run 'Set up AI environment' again — it needs Git installed (https://git-scm.com/download/win)." } else { "O ambiente de IA está incompleto: faltam as bibliotecas {mods} (o setup não terminou). Rode 'Configurar ambiente de IA' de novo — ele precisa do Git instalado (https://git-scm.com/download/win)." },
         _ => "",
     }
 }
@@ -657,10 +658,49 @@ struct EnvCheck {
     gpu_name: Option<String>,
 }
 
+/// Confere se as bibliotecas do pipeline estão REALMENTE instaladas no venv.
+/// Devolve Err(lista de módulos faltando) quando algo não está lá.
+///
+/// POR QUE ISTO EXISTE (bug real reportado 16/07/2026): o `resolve_sidecar` só
+/// verifica se o `python.exe` do venv EXISTE. Um setup que criou o venv mas
+/// morreu no meio (caso real: sem Git instalado, o `pip install` do whisperx —
+/// que vem de `git+https://...` — falha) deixava o app com o strip VERDE de
+/// "✓ Ambiente de IA" e SEM o botão de configurar, mas a geração morria com
+/// "o sidecar encerrou inesperadamente" e sem nem criar o log (o server.py
+/// morre no `import whisperx`, antes de abrir o arquivo de log).
+///
+/// Usa `find_spec` (só procura o módulo, NÃO importa) - rápido o bastante para
+/// a checagem de abertura; importar o whisperx carregaria o torch inteiro.
+async fn probe_sidecar_deps(python: &Path) -> Result<(), String> {
+    const PROBE: &str = "import importlib.util as u,sys;\
+mods=['whisperx','demucs','librosa','mutagen','swift_f0','yt_dlp'];\
+missing=[m for m in mods if u.find_spec(m) is None];\
+print(','.join(missing));\
+sys.exit(1 if missing else 0)";
+
+    let mut cmd = Command::new(python);
+    cmd.arg("-c").arg(PROBE);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    match cmd.output().await {
+        Ok(out) if out.status.success() => Ok(()),
+        Ok(out) => {
+            let missing = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            Err(if missing.is_empty() { "?".to_string() } else { missing })
+        }
+        // o python do venv existe mas nem roda: trata como ambiente quebrado
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 #[tauri::command]
 async fn check_environment(app: tauri::AppHandle, lang: String) -> Result<EnvCheck, String> {
     let (sidecar_ok, sidecar_msg) = match resolve_sidecar(&app, &lang) {
-        Ok((_, python)) => (true, python.display().to_string()),
+        Ok((_, python)) => match probe_sidecar_deps(&python).await {
+            Ok(()) => (true, python.display().to_string()),
+            Err(missing) => (false, tr(&lang, "deps_missing").replace("{mods}", &missing)),
+        },
         Err(e) => (false, e),
     };
 
