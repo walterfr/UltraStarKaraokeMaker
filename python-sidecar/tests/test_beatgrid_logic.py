@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from pipeline.beatgrid import BeatGrid, fold_bpm_to_octave
+from pipeline.beatgrid import BeatGrid, detect_bpm, fold_bpm_to_octave
 
 
 def test_fold_mantem_bpm_ja_na_faixa():
@@ -64,6 +64,22 @@ def test_fold_e_idempotente():
 def test_fold_ignora_valores_invalidos():
     assert fold_bpm_to_octave(0.0) == 0.0
     assert fold_bpm_to_octave(-120.0) == -120.0
+
+
+def test_bpm_manual_e_literal():
+    """
+    O --bpm do usuário vai pro #BPM EXATAMENTE como veio, mesmo fora da faixa
+    alvo - inclusive quando dobrá-lo daria notas mais precisas. O campo é a
+    saída de emergência pra quando a automação erra; uma saída de emergência
+    que "corrige" o que o usuário digitou não é saída de emergência.
+
+    (Nem toca no áudio: o caminho manual retorna antes de carregar o arquivo,
+    por isso o caminho abaixo nem precisa existir.)
+    """
+    assert detect_bpm(Path("nao-existe.wav"), manual_bpm=110.0).bpm == 110.0
+    assert detect_bpm(Path("nao-existe.wav"), manual_bpm=60.0).bpm == 60.0
+    # e um valor JÁ na faixa também passa igual, obviamente
+    assert detect_bpm(Path("nao-existe.wav"), manual_bpm=246.1).bpm == 246.1
 
 
 def test_seconds_to_beat_usa_fator_4_e_desconta_gap():

@@ -19,9 +19,11 @@ nota - medido: a faixa antiga [90,180) injetava ~35 ms de erro médio (65% das
 notas acima de 25 ms), contra ~17 ms na faixa nova. Ver a tabela completa no
 docstring de fold_bpm_to_octave.
 
-O BPM manual (--bpm) também é dobrado pra faixa: o campo serve pra corrigir
-uma detecção errada de ANDAMENTO, e gravar o valor cru puniria justamente
-quem digitou o tempo certo.
+O BPM manual (--bpm) é LITERAL - vai pro #BPM exatamente como veio, mesmo
+fora da faixa. O campo é a saída de emergência pra quando a automação erra;
+uma saída de emergência que "corrige" o que o usuário digitou não serve pra
+nada. Quando o valor fica fora da faixa, o log só AVISA que a grade fica mais
+grossa - sem mexer no número.
 
 BUG CRÍTICO CORRIGIDO (05/07/2026, 3ª rodada de testes - problema de
 sincronia relatado pelo usuário: a letra "andava" 4x mais rápido que a
@@ -150,20 +152,25 @@ def fold_bpm_to_octave(
 
 def detect_bpm(vocal_or_full_wav: Path, manual_bpm: float | None = None) -> BeatGrid:
     if manual_bpm:
-        # O BPM manual TAMBÉM é dobrado pra faixa alvo. Parece desrespeitar o
-        # usuário, mas é o contrário: o campo existe pra corrigir uma detecção
-        # errada ("recomendado após a 1ª rodada automática"), ou seja, ele
-        # digita o ANDAMENTO. Gravar 110 cru daria uma grade de 136 ms e um
-        # resultado PIOR que o automático - quem digita o tempo certo seria
-        # punido por isso. E o fluxo fica idempotente: digitar 110 ou 220
-        # (o que a rodada anterior gravou) dá exatamente o mesmo arquivo.
-        folded = fold_bpm_to_octave(manual_bpm)
-        if abs(folded - manual_bpm) > 0.01:
+        # O BPM manual é LITERAL: vai pro #BPM exatamente como o usuário
+        # digitou. Se ele pediu 110, é 110 - o campo é a saída de emergência
+        # pra quando a automação erra, e uma saída de emergência que "corrige"
+        # o que o usuário escreveu não é saída de emergência nenhuma.
+        #
+        # A automação dobra pra [200,400) porque o #BPM é a unidade da grade
+        # (ver fold_bpm_to_octave); quem digita um valor fora dessa faixa fica
+        # com uma grade mais grossa, e isso é escolha dele. Só avisamos, pra
+        # não ser surpresa silenciosa - sem mexer no valor.
+        if not (_OCTAVE_MIN_BPM <= manual_bpm < _OCTAVE_MAX_BPM):
+            beat_ms = 60000.0 / (manual_bpm * 4) if manual_bpm > 0 else 0.0
             print(
-                f"[BPM] Manual {manual_bpm:.2f} -> {folded:.2f} (grade fina; "
-                f"o #BPM do UltraStar é a unidade da grade, não o andamento)"
+                f"[BPM] Manual {manual_bpm:.2f} usado como veio. Nota: fora da "
+                f"faixa {_OCTAVE_MIN_BPM:.0f}-{_OCTAVE_MAX_BPM:.0f} a grade fica "
+                f"mais grossa (1 beat = {beat_ms:.0f} ms), o que arredonda mais "
+                f"as notas. Um múltiplo por 2 do mesmo andamento dá a mesma "
+                f"música com notas mais precisas."
             )
-        return BeatGrid(bpm=folded)
+        return BeatGrid(bpm=manual_bpm)
 
     y, sr = librosa.load(str(vocal_or_full_wav), sr=None)
     tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
