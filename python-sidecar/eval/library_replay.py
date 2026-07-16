@@ -77,8 +77,59 @@ def slugify(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_")[:80]
 
 
+# Extensões de áudio que o ffmpeg (e portanto demucs/librosa) lê sem drama.
+# NÃO é "o que o UltraStar aceita" - é o que ESTE harness consegue processar.
+_AUDIO_EXTS = (".mp3", ".m4a", ".ogg", ".opus", ".wav", ".flac", ".aac", ".webm")
+
+# Sufixos de faixa separada (convenção usdb_syncer/nossa): NUNCA são o áudio
+# principal da música. Sem isto, uma pasta sincronizada com separação ligada
+# tem 3 áudios e o harness ou desiste dela ou escolhe o errado.
+_STEM_SUFFIXES = ("[voc]", "[instr]")
+
+
+def _pick_audio(dir_path: str, files: list[str], gold_path: str) -> str | None:
+    """
+    Descobre qual arquivo é o áudio da música.
+
+    Ordem: o que o PRÓPRIO CHART declara (#AUDIO/#MP3) -> heurística de um
+    único áudio na pasta. Perguntar ao chart não é refinamento, é o certo: ele
+    é a fonte da verdade sobre o próprio pacote, e evita as duas armadilhas de
+    adivinhar por extensão:
+      - o usdb_syncer baixa em M4A por PADRÃO (não mp3), então exigir .mp3
+        descartava silenciosamente uma biblioteca inteira baixada com os
+        defaults;
+      - com separação de faixas ligada (lá e aqui) a pasta tem 3 áudios, e
+        "exatamente um" nunca bate.
+    """
+    try:
+        declared = usdx_parse.read_file(gold_path).audio.strip()
+    except Exception:
+        declared = ""
+    if declared:
+        # o header é um nome relativo à pasta da música (spec, seção 3.2)
+        cand = os.path.join(dir_path, declared)
+        if os.path.isfile(cand):
+            return cand
+        # o chart pode citar um nome que não veio junto (áudio não baixado, ou
+        # renomeado): cai pra heurística em vez de desistir
+    audios = [
+        f for f in files
+        if f.lower().endswith(_AUDIO_EXTS)
+        and not any(s in f.lower() for s in _STEM_SUFFIXES)
+    ]
+    if len(audios) == 1:
+        return os.path.join(dir_path, audios[0])
+    return None
+
+
 def scan_library(lib: str) -> list[dict]:
-    """Folders with exactly one .mp3 and a gold (non-MULTI) .txt."""
+    """
+    Pastas com um gold .txt (não-MULTI) e um áudio identificável.
+
+    O áudio sai do header #AUDIO/#MP3 do próprio chart (ver _pick_audio); a
+    chave do dict continua "mp3" por compatibilidade com o resto do módulo,
+    mas o arquivo pode ser qualquer formato que o ffmpeg leia.
+    """
     songs = []
     for name in sorted(os.listdir(lib)):
         d = os.path.join(lib, name)
@@ -88,16 +139,15 @@ def scan_library(lib: str) -> list[dict]:
             files = os.listdir(d)
         except OSError:
             continue
-        mp3s = [f for f in files if f.lower().endswith(".mp3")]
         txts = [f for f in files if f.lower().endswith(".txt")]
         golds = [f for f in txts if "[multi]" not in f.lower()]
-        if len(mp3s) != 1 or not golds:
+        if not golds:
             continue
-        songs.append({
-            "name": name,
-            "mp3": os.path.join(d, mp3s[0]),
-            "gold": os.path.join(d, sorted(golds, key=len)[0]),
-        })
+        gold = os.path.join(d, sorted(golds, key=len)[0])
+        audio = _pick_audio(d, files, gold)
+        if not audio:
+            continue
+        songs.append({"name": name, "mp3": audio, "gold": gold})
     return songs
 
 

@@ -15,6 +15,7 @@ sys.path.insert(0, str(_ROOT / "eval"))
 
 import usdx_parse
 import evaluate
+import library_replay
 from library_replay import gold_words, match_words, timing_stats
 
 SYNTHETIC_CHART = """#TITLE:Test Song
@@ -173,6 +174,72 @@ def test_song_data_loader_matches_txt_semantics():
 def test_interpolated_fraction_without_sources():
     assert evaluate.interpolated_fraction({"notes": [{"text": "a"}]}) is None
 
+
+
+# --- scan_library: descobrir o audio da musica -----------------------------
+
+def _mk_song_dir(tmp, folder, gold_name, audio_header, extra_files=()):
+    d = tmp / folder
+    d.mkdir(parents=True)
+    (d / gold_name).write_text(
+        "\n".join([
+            "#TITLE:T",
+            "#ARTIST:A",
+            f"#MP3:{audio_header}",
+            "#BPM:200",
+            "#GAP:0",
+            ": 0 2 0 la",
+            "E",
+        ]),
+        encoding="utf-8",
+    )
+    for f in extra_files:
+        (d / f).write_bytes(b"x")
+    return d
+
+
+def test_scan_aceita_m4a_o_formato_padrao_do_usdb_syncer(tmp_path):
+    """
+    O usdb_syncer baixa em M4A por PADRAO. Exigir .mp3 fazia o harness
+    descartar em silencio uma biblioteca inteira baixada com os defaults.
+    """
+    _mk_song_dir(tmp_path, "A - T", "A - T.txt", "A - T.m4a", ["A - T.m4a"])
+    songs = library_replay.scan_library(str(tmp_path))
+    assert len(songs) == 1
+    assert songs[0]["mp3"].endswith("A - T.m4a")
+
+
+def test_scan_ignora_faixas_separadas_e_pega_a_mistura(tmp_path):
+    """
+    Com separacao ligada (no usdb_syncer ou aqui) a pasta tem 3 audios.
+    O chart diz qual e o principal - "exatamente um audio" nunca bateria.
+    """
+    _mk_song_dir(
+        tmp_path, "A - T", "A - T.txt", "A - T.mp3",
+        ["A - T.mp3", "A - T [VOC].mp3", "A - T [INSTR].mp3"],
+    )
+    songs = library_replay.scan_library(str(tmp_path))
+    assert len(songs) == 1
+    assert songs[0]["mp3"].endswith("A - T.mp3")
+    assert "[VOC]" not in songs[0]["mp3"] and "[INSTR]" not in songs[0]["mp3"]
+
+
+def test_scan_cai_na_heuristica_quando_o_header_mente(tmp_path):
+    # chart cita um arquivo que nao veio junto -> nao desiste, usa o unico audio
+    _mk_song_dir(tmp_path, "A - T", "A - T.txt", "nao-existe.mp3", ["A - T.ogg"])
+    songs = library_replay.scan_library(str(tmp_path))
+    assert len(songs) == 1
+    assert songs[0]["mp3"].endswith("A - T.ogg")
+
+
+def test_scan_pula_pasta_sem_audio(tmp_path):
+    _mk_song_dir(tmp_path, "A - T", "A - T.txt", "A - T.mp3")  # sem o audio
+    assert library_replay.scan_library(str(tmp_path)) == []
+
+
+def test_scan_pula_chart_multi(tmp_path):
+    _mk_song_dir(tmp_path, "A - T", "A - T [MULTI].txt", "A - T.mp3", ["A - T.mp3"])
+    assert library_replay.scan_library(str(tmp_path)) == []
 
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
