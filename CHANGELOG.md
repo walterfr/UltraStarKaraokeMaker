@@ -6,6 +6,24 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 Cada versão tem um instalador pronto em **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — as notas de cada release trazem também as instruções de instalação.
 
+## [0.3.4] — 2026-07-16
+
+Melhorias de qualidade do chart e um bug que quebrava pacotes em silêncio. Boa parte veio de revisar os projetos vizinhos ([UltraSinger](https://github.com/rakuri255/UltraSinger), [UltraStar-Creator](https://github.com/UltraStar-Deluxe/UltraStar-Creator), [usdb_syncer](https://github.com/bohning/usdb_syncer) e a [spec oficial](https://github.com/UltraStar-Deluxe/format)).
+
+### Corrigido
+
+- **Título com `?`, `/` ou `:` quebrava o pacote.** Sanitizávamos o nome da pasta, mas não o dos arquivos dentro dela — e bastava um caractere comum para dar errado de três jeitos: "AC/DC" fazia o áudio ir parar em outra pasta (pacote sem som, sem erro nenhum), "Quem?" fazia a geração falhar, e "Song 2: Live" criava um arquivo de **0 byte** com o áudio escondido num *stream* do NTFS — sem reclamar. Agora os nomes seguem a mesma convenção que o USDB usa ("AC/DC" vira "AC-DC"). O título e o artista continuam intactos dentro do arquivo e nas buscas de capa/ano/gênero.
+- **Notas muito mais precisas: o `#BPM` agora usa a grade fina dos charts feitos à mão.** O `#BPM` do UltraStar não é o andamento da música — é a unidade da grade de tempo. Gravávamos o andamento real, o que dava uma grade grossa demais: **59% das notas ficavam presas na duração mínima**, porque a duração real delas simplesmente não cabia. Agora a duração das notas reflete o que é cantado de verdade, e o erro de tempo por nota caiu pela metade.
+- **Números na letra ("20", "1985") saíam com a nota errada.** Ninguém canta "dois-zero", canta "vinte" — e o alinhador não entende dígitos. A nota do número saía até 6× curta demais e adiantada. Agora ela acompanha o que é cantado. A letra continua escrita do seu jeito, com o número.
+
+### Adicionado
+
+- **Tag `#AUDIO`** no pacote, junto do `#MP3` e apontando para o mesmo arquivo. É para onde o formato está migrando: a spec já manda os players preferirem o `#AUDIO` quando ele existe, e a próxima versão do formato o torna obrigatório. Escrever os dois atende player novo e antigo.
+
+### Nota
+
+- O ambiente de IA ganhou uma biblioteca nova (para os números por extenso). Se você **não** rodar o **Configurar ambiente de IA** de novo, tudo continua funcionando — só a correção dos números não entra em ação.
+
 ## [0.3.3] — 2026-07-16
 
 ### Alterado
@@ -90,6 +108,7 @@ Correções a partir de feedback da comunidade, validadas contra a [spec oficial
 
 Primeira release pública: pipeline completo (letra sincronizada, pitch, BPM, metadados, vídeo), instalador Windows e setup assistido do ambiente de IA.
 
+[0.3.4]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.4
 [0.3.3]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.3
 [0.3.2]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.2
 [0.3.1]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.1

@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Every version has a ready-to-use installer on **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — each release's notes also carry the install instructions.
 
+## [0.3.4] — 2026-07-16
+
+Chart-quality improvements and a bug that broke packages silently. Much of this came from reviewing the neighbouring projects ([UltraSinger](https://github.com/rakuri255/UltraSinger), [UltraStar-Creator](https://github.com/UltraStar-Deluxe/UltraStar-Creator), [usdb_syncer](https://github.com/bohning/usdb_syncer)) and the [official spec](https://github.com/UltraStar-Deluxe/format).
+
+### Fixed
+
+- **A title with `?`, `/` or `:` broke the package.** We sanitized the folder name but not the files inside it, and one ordinary character was enough to break things in three ways: "AC/DC" sent the audio into a different folder (a package with no sound, and no error at all), "Quem?" made generation fail outright, and "Song 2: Live" created a **0-byte** file with the audio hidden in an NTFS stream — silently. Names now follow the same convention USDB uses ("AC/DC" becomes "AC-DC"). Your title and artist stay untouched inside the file and in the cover/year/genre lookups.
+- **Much more accurate notes: `#BPM` now uses the fine grid that hand-made charts use.** UltraStar's `#BPM` isn't the song's tempo — it's the unit of the timing grid. We were writing the real tempo, which made the grid too coarse: **59% of notes were stuck at the minimum duration**, because their real length simply didn't fit. Note lengths now reflect what's actually sung, and the per-note timing error dropped by half.
+- **Numbers in the lyrics ("20", "1985") got the wrong note.** Nobody sings "two-zero", they sing "twenty" — and the aligner doesn't understand digits. The number's note came out up to 6× too short and too early. It now follows what's actually sung, while your lyrics keep the number as you wrote it.
+
+### Added
+
+- **`#AUDIO` tag** in the package, alongside `#MP3` and pointing at the same file. It's where the format is heading: the spec already tells players to prefer `#AUDIO` when present, and the next format version makes it the required one. Writing both serves new and old players.
+
+### Note
+
+- The AI environment gained one new library (for spelling numbers out). If you **don't** re-run **Set up AI environment**, everything keeps working — you just won't get the number fix.
+
 ## [0.3.3] — 2026-07-16
 
 ### Changed
@@ -90,6 +108,7 @@ Fixes from community feedback, validated against the [official format spec](http
 
 First public release: the complete pipeline (synced lyrics, pitch, BPM, metadata, video), a Windows installer and assisted AI-environment setup.
 
+[0.3.4]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.4
 [0.3.3]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.3
 [0.3.2]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.2
 [0.3.1]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.1
