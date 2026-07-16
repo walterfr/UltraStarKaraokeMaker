@@ -110,6 +110,10 @@ Escaneie o QR code no app do seu banco, ou use a chave **copia e cola** abaixo:
 00020101021126400014br.gov.bcb.pix0118walterfr@gmail.com5204000053039865802BR5915WALTER REBOUCAS6009FORTALEZA62070503***63045603
 ```
 
+## Histórico de versões
+
+O que mudou em cada versão está no [CHANGELOG](CHANGELOG.md). Os instaladores ficam em [Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases).
+
 ## Licença
 
 MIT. Veja o arquivo [LICENSE](LICENSE).

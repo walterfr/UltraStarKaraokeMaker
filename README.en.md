@@ -110,6 +110,10 @@ Brazilian users can scan the QR code in their bank app, or use the **copy-and-pa
 00020101021126400014br.gov.bcb.pix0118walterfr@gmail.com5204000053039865802BR5915WALTER REBOUCAS6009FORTALEZA62070503***63045603
 ```
 
+## Version history
+
+What changed in each version is in the [CHANGELOG](CHANGELOG.en.md). Installers live on [Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases).
+
 ## License
 
 MIT. See the [LICENSE](LICENSE) file.

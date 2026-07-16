@@ -1,0 +1,100 @@
+# Changelog
+
+All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
+
+Every version has a ready-to-use installer on **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — each release's notes also carry the install instructions.
+
+## [0.3.3] — 2026-07-16
+
+### Changed
+
+- **Git is no longer required to install.** `whisperx` (the alignment library) was the only dependency installed straight from its GitHub repo (`git+https://...`), and it alone forced **Set up AI environment** to require Git on the machine. Without it, setup died halfway and generation later failed with *"the sidecar exited unexpectedly"* and no log at all. It now comes from PyPI, pinned (`whisperx==3.8.7rc1`) — which also makes installs reproducible, since `git+` tracked the repo's latest commit, a moving target. It's the exact same version as before: the PyPI package was verified to be the same code file-by-file, and confirmed with a full end-to-end generation. Generated packages are unchanged.
+
+## [0.3.2] — 2026-07-16
+
+### Fixed
+
+- **The app reported "environment OK" when it wasn't.** If the AI-environment setup failed halfway, the app still showed the green ✓ and hid the setup button; generation then failed with *"the sidecar exited unexpectedly"* and **no log** (the process died before creating it). The app now actually probes the libraries and reports which ones are missing.
+- **Setup now fails loudly** when something goes wrong, instead of ending with a success message.
+
+### Added
+
+- **Automatic golden notes** (`*`) on sustained parts, like hand-made charts (~5% of notes, a ratio calibrated by measuring community charts). Packages previously had none.
+- **Octave consistency** for pitch — fixes isolated notes where the detector picked the wrong octave.
+
+### Changed
+
+- **Much more precise timing** — syllable splits follow the actual voice (instead of dividing time evenly), with real **melisma (`~`)** on sustained syllables and sturdier alignment anchors. Contributed by [@Alejololer](https://github.com/Alejololer).
+- **Lead-vocal rescue** — when backing vocals break the alignment, the app isolates the lead vocal and retries, accepting the result only if it improves. Contributed by [@Alejololer](https://github.com/Alejololer).
+- The review screen now also flags notes measured with **low confidence**, not just estimated ones.
+- New `eval/` module: a quality evaluation harness (time-domain scoring). Contributed by [@Alejololer](https://github.com/Alejololer).
+
+## [0.3.1] — 2026-07-15
+
+### Fixed
+
+- **Setup wouldn't start on some machines** — the "Set up AI environment" button failed with a path error (`Join-Path ... the argument "drive" is null`) on Windows PowerShell 5.1.
+- **Crash on accents/emoji** — titles or tags with special characters (CJK, emoji) took down processing on Windows. Everything is UTF-8 now.
+
+### Added
+
+- **Auto-fills title and artist** from the audio file's tags (only fields you haven't filled in).
+- **`#BACKGROUND` image** in the package: a real 16:9 background via [fanart.tv](https://fanart.tv/get-an-api-key/) (optional, with `FANARTTV_API_KEY`); without the key it reuses the cover, so every package with a cover gets a background.
+- **Automatic BPM correction** — fixes the common half/double error in detected tempo.
+- **"Keep only the essentials" checkbox** — at the end of the queue, deletes the auxiliary files (`.lrc`/`.log`/`.json`) from each folder (optional; removes that package's review screen).
+- A discreet project support link on the About page.
+
+### Changed
+
+- **Title/artist fields moved above the lyric search** — the search depends on them.
+
+## [0.3.0] — 2026-07-12
+
+### Added
+
+- **One-button AI environment setup.** "Set up AI environment" downloads `uv` (which installs Python 3.12 for you if missing), a **bundled ffmpeg** (with libvorbis) and the AI libraries, with live progress in the app. No more installing Python by hand, putting ffmpeg on PATH, or running `setup-sidecar.ps1` (still available as an alternative).
+
+## [0.2.2] — 2026-07-12
+
+### Fixed
+
+- **Machines without an NVIDIA GPU** (e.g. Intel Iris Xe) crashed with `AssertionError: Torch not compiled with CUDA enabled`, even though the UI showed CPU mode. The app now detects the absence of CUDA and runs everything on the CPU automatically.
+
+## [0.2.1] — 2026-07-12
+
+Fixes from community feedback, validated against the [official format spec](https://github.com/UltraStar-Deluxe/format/blob/main/The%20UltraStar%20File%20Format%20(v1).md).
+
+### Fixed
+
+- **Tilde (`~`) on syllables** — a `~` was prefixed to every continuation syllable, and the game displayed the literal tilde on screen ("Ju~rei").
+- **GAP / first note** — the first note now starts at beat 0 and the real vocal lead-in moves to the `#GAP` tag, so re-syncing to a different audio source is just a GAP tweak.
+- **Translated error messages** — errors coming from the Rust core now follow the UI language.
+
+## [0.2.0] — 2026-07-12
+
+### Added
+
+- **Song queue + warm models** — a persistent Python sidecar keeps the AI models loaded between songs; from the 2nd song on, alignment is much faster.
+- **Lyric fetching (LRCLIB)** by artist + title. When a synced version exists, each line's timing feeds the alignment as anchors.
+- **Bilingual PT/EN interface**, detecting the system language.
+- **Organized output** into an `Artist - Title` subfolder (the UltraStar collection convention).
+- Splash screen, About page and a crisp taskbar icon.
+
+### Changed
+
+- **UX rework** — environment check on startup, real-time lyric validation, a step list with status and duration, real cancellation, and a result view with cover, metadata and a measured-vs-estimated note count.
+
+## [0.1.0] — 2026-07-09
+
+First public release: the complete pipeline (synced lyrics, pitch, BPM, metadata, video), a Windows installer and assisted AI-environment setup.
+
+[0.3.3]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.3
+[0.3.2]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.2
+[0.3.1]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.1
+[0.3.0]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.0
+[0.2.2]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.2.2
+[0.2.1]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.2.1
+[0.2.0]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.2.0
+[0.1.0]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.1.0
