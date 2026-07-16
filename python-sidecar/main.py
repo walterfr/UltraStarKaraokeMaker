@@ -46,6 +46,7 @@ from pipeline.align import align_lyrics_to_audio, alignment_stats
 from pipeline.beatgrid import detect_bpm
 from pipeline.build_song import build_song
 from pipeline.download import download_background_video, get_source_audio
+from pipeline.filenames import sanitize_filename
 from pipeline.metadata import fetch_metadata
 from pipeline.proc_utils import ffmpeg_exe, run_subprocess
 from pipeline.separate import isolate_lead_vocal, separate_vocals
@@ -299,9 +300,15 @@ def run_pipeline(
 
     console.rule("[bold cyan]Etapa 5/6 — Buscando metadados (capa, ano, gênero)")
     debug_log("ETAPA 5 - iniciando fetch_metadata")
+    # Base dos nomes de arquivo do pacote. SANITIZADA: o texto do usuário pode
+    # trazer caractere que o Windows não aceita ("Quem?") ou que muda o caminho
+    # ("AC/DC", "Song 2: Live") - ver pipeline/filenames.py. O título/artista
+    # ORIGINAIS seguem intactos para os headers e as buscas de metadado.
+    file_base = sanitize_filename(f"{artist} - {title}")
+
     # Nomes no padrão UltraStar profissional: "[CO]" (capa) e "[BG]" (fundo).
-    cover_path = out_path / f"{artist} - {title} [CO].jpg"
-    bg_path = out_path / f"{artist} - {title} [BG].jpg"
+    cover_path = out_path / f"{file_base} [CO].jpg"
+    bg_path = out_path / f"{file_base} [BG].jpg"
     metadata = fetch_metadata(
         audio_path=source.audio_wav,
         artist=artist,
@@ -323,7 +330,7 @@ def run_pipeline(
 
     console.rule("[bold cyan]Etapa 6/6 — Extraindo pitch e montando o .txt")
     debug_log("ETAPA 6 - iniciando build_song")
-    final_audio_name = f"{artist} - {title}.ogg"
+    final_audio_name = f"{file_base}.ogg"
     cover_filename = metadata.cover_path.name if metadata.cover_path else None
 
     # Background (#BACKGROUND): em camadas. Se o fanart.tv devolveu um fundo
@@ -346,7 +353,7 @@ def run_pipeline(
     video_filename = None
     if source.video_path and source.video_path.exists():
         video_ext = source.video_path.suffix.lower() or ".mp4"
-        video_filename = f"{artist} - {title}{video_ext}"
+        video_filename = f"{file_base}{video_ext}"
         video_dest = out_path / video_filename
         shutil.copy(source.video_path, video_dest)
         debug_log(f"Vídeo copiado para o pacote: {video_dest}")
@@ -369,7 +376,7 @@ def run_pipeline(
     )
     debug_log("ETAPA 6 - build_song concluído, escrevendo .txt")
 
-    txt_path = out_path / f"{artist} - {title}.txt"
+    txt_path = out_path / f"{file_base}.txt"
     song.write(str(txt_path))
     console.print(f"[green]OK[/green] Arquivo UltraStar gerado (Python): {txt_path}")
 

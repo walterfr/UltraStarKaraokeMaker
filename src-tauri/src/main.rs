@@ -142,16 +142,36 @@ fn tr_err(lang: &str, key: &str, e: &impl std::fmt::Display) -> String {
 /// Remove caracteres inválidos em nomes de pasta/arquivo do Windows
 /// (< > : " / \ | ? *), além de espaços e pontos nas bordas (pastas
 /// terminadas em ponto/espaço são problemáticas no Explorer).
+/// Nome utilizável como arquivo/pasta no Windows.
+///
+/// TEM QUE DAR EXATAMENTE O MESMO RESULTADO que `sanitize_filename` em
+/// python-sidecar/pipeline/filenames.py: o Rust cria a pasta e procura o .txt
+/// pelo nome; o Python cria os arquivos dentro. Se divergirem, o app gera o
+/// pacote e não acha o próprio arquivo. Os dois lados têm teste.
+///
+/// A tabela vem do usdb_syncer (a ferramenta que nomeia os milhares de charts
+/// do USDB): '?' ':' '"' somem, '<' '>' viram parênteses, separadores e
+/// curinga viram hífen. Assim "AC/DC" vira "AC-DC" (a convenção da
+/// comunidade), não "AC_DC".
 fn sanitize_path_component(s: &str) -> String {
     let cleaned: String = s
         .chars()
+        .filter(|c| !matches!(c, '?' | ':' | '"'))
         .map(|c| match c {
-            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
+            '<' => '(',
+            '>' => ')',
+            '/' | '\\' | '|' | '*' => '-',
             c if (c as u32) < 0x20 => '_',
             c => c,
         })
         .collect();
-    cleaned.trim().trim_end_matches('.').trim().to_string()
+    // o Windows não aceita espaço nem ponto no fim
+    let cleaned = cleaned.trim().trim_end_matches([' ', '.']).trim().to_string();
+    if cleaned.is_empty() {
+        "musica".to_string()
+    } else {
+        cleaned
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -577,7 +597,13 @@ async fn run_pipeline(
             .replace("{err}", &e.to_string())
     })?;
 
-    let txt_path = out_dir.join(format!("{} - {}.txt", input.artist, input.title));
+    // mesmo nome que o sidecar usou pra criar o arquivo (ver
+    // pipeline/filenames.py) - com o texto cru, um título "Quem?" não acharia
+    // nada aqui e um "AC/DC" procuraria numa subpasta inexistente.
+    let txt_path = out_dir.join(format!(
+        "{}.txt",
+        sanitize_path_component(&format!("{} - {}", input.artist, input.title))
+    ));
     song.write(&txt_path)
         .map_err(|e| tr_err(lang, "write_txt_final", &e))?;
 
@@ -873,7 +899,10 @@ fn save_song(out_dir: String, song: Song, lang: String) -> Result<SaveResult, St
             .replace("{err}", &e.to_string())
     })?;
 
-    let txt_path = dir.join(format!("{} - {}.txt", song.artist, song.title));
+    let txt_path = dir.join(format!(
+        "{}.txt",
+        sanitize_path_component(&format!("{} - {}", song.artist, song.title))
+    ));
     song.write(&txt_path).map_err(|e| {
         tr(&lang, "write_txt_path")
             .replace("{path}", &txt_path.display().to_string())
@@ -933,6 +962,60 @@ fn clean_song_extras(dir: String) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod sanitize_tests {
+    use super::sanitize_path_component;
+
+    // Os três casos abaixo foram reproduzidos de verdade (16/07/2026):
+    // "AC/DC" fazia o arquivo escapar pra outra pasta, "Quem?" quebrava a
+    // escrita com OSError, e "Song 2: Live" virava um alternate data stream
+    // do NTFS (arquivo de 0 byte, áudio oculto, sem erro nenhum).
+    //
+    // ESTES TESTES SÃO O ESPELHO de python-sidecar/tests/test_filenames_logic.py.
+    // Se mudar a tabela aqui, mude lá também - o Rust cria a pasta e procura o
+    // .txt; o Python cria os arquivos dentro. Divergir = o app não achar o
+    // próprio pacote.
+
+    #[test]
+    fn barra_nao_vira_separador_de_caminho() {
+        let out = sanitize_path_component("AC/DC - T.N.T.");
+        assert!(!out.contains('/') && !out.contains('\\'));
+        assert!(out.starts_with("AC-DC"));
+    }
+
+    #[test]
+    fn interrogacao_e_dois_pontos_somem() {
+        assert_eq!(sanitize_path_component("Rita Lee - Quem?"), "Rita Lee - Quem");
+        assert_eq!(sanitize_path_component("Blur - Song 2: Live"), "Blur - Song 2 Live");
+    }
+
+    #[test]
+    fn maior_menor_viram_parenteses_e_curinga_vira_hifen() {
+        assert_eq!(sanitize_path_component("A <b> C"), "A (b) C");
+        assert_eq!(sanitize_path_component("A|B*C"), "A-B-C");
+    }
+
+    #[test]
+    fn ponto_e_espaco_no_fim_somem() {
+        assert_eq!(sanitize_path_component("AC-DC - T.N.T."), "AC-DC - T.N.T");
+        assert_eq!(sanitize_path_component("Artista - Titulo  "), "Artista - Titulo");
+    }
+
+    #[test]
+    fn nome_normal_e_acentos_passam_intactos() {
+        assert_eq!(
+            sanitize_path_component("Rita Lee - Sangue Latino"),
+            "Rita Lee - Sangue Latino"
+        );
+        assert_eq!(sanitize_path_component("Djavan - Açaí"), "Djavan - Açaí");
+    }
+
+    #[test]
+    fn nome_que_zeraria_vira_fallback() {
+        assert_eq!(sanitize_path_component("???"), "musica");
+    }
 }
 
 #[cfg(test)]
@@ -1071,3 +1154,4 @@ fn main() {
         }
     });
 }
+
