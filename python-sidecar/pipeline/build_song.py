@@ -280,6 +280,55 @@ def apply_golden_notes(
     return notes
 
 
+# Consistência de oitava. O SwiftF0 às vezes detecta a oitava errada em notas
+# isoladas (medido: em "ABBA - Dancing Queen", separar a voz NÃO mexe no pitch —
+# mediana 0 semitons — mas ~4,4% das notas têm saltos de oitava; o problema é do
+# detector, não de contaminação de harmonia, então a correção é no pós-proc).
+# tol: quão perto das DUAS vizinhas o valor dobrado precisa ficar (terça maior);
+# min_improvement: quão melhor a dobra precisa ser pra valer.
+OCTAVE_SNAP_TOL = 4
+OCTAVE_SNAP_MIN_IMPROVEMENT = 6
+
+
+def snap_octave_outliers(
+    notes: list[Note],
+    tol: int = OCTAVE_SNAP_TOL,
+    min_improvement: int = OCTAVE_SNAP_MIN_IMPROVEMENT,
+) -> list[Note]:
+    """
+    Corrige erros de OITAVA isolados: uma nota cujo pitch está ~1-2 oitavas longe
+    das DUAS vizinhas imediatas é dobrada (±12/±24 semitons) de volta pra perto
+    delas. Conserta a instabilidade de oitava do SwiftF0 sem estragar saltos
+    melódicos legítimos.
+
+    Só dobra quando o valor dobrado fica perto de AMBAS as vizinhas (a pior das
+    duas distâncias <= `tol`) E isso melhora a pior distância em mais de
+    `min_improvement` semitons. Isso protege três casos que uma mediana de janela
+    erraria: (1) FRONTEIRA de região — a nota casa com uma vizinha, então dobrar
+    pra outra não fica perto das duas; (2) nota BOA ao lado de um erro — dobrá-la
+    "no meio" não a deixa perto das duas; (3) intervalo real até a sexta — melhora
+    <= 6, não passa do limite. Extremos (sem as duas vizinhas) ficam como estão.
+    Referência usa os pitches ORIGINAIS (snapshot): ordem não importa. In-place.
+    """
+    n = len(notes)
+    if n < 3:
+        return notes
+    ref = [nt.pitch for nt in notes]  # snapshot antes de qualquer dobra
+    for i in range(1, n - 1):
+        left, right = ref[i - 1], ref[i + 1]
+        p = notes[i].pitch
+        best, best_dev = p, max(abs(p - left), abs(p - right))
+        for k in (-2, -1, 1, 2):
+            cand = p + 12 * k
+            dev = max(abs(cand - left), abs(cand - right))
+            if dev < best_dev:
+                best, best_dev = cand, dev
+        orig_dev = max(abs(p - left), abs(p - right))
+        if best_dev <= tol and orig_dev - best_dev > min_improvement:
+            notes[i].pitch = int(best)
+    return notes
+
+
 def build_notes(
     word_timings: list[WordTiming],
     vocals_wav_path: Path,
@@ -355,6 +404,7 @@ def build_notes(
             phrase_breaks.append(len(notes) - 1)
 
     notes = fix_rounding_overlaps(notes)
+    notes = snap_octave_outliers(notes)
     notes = apply_golden_notes(notes)
 
     return notes, phrase_breaks

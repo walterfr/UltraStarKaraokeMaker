@@ -20,6 +20,7 @@ from pipeline.build_song import (
     apply_golden_notes,
     build_notes,
     detect_melisma_notes,
+    snap_octave_outliers,
 )
 from pipeline.pitch import PitchResult, PitchTrack
 from pipeline.ultrastar_writer import Note
@@ -246,6 +247,56 @@ def test_golden_budget_scales_with_fraction():
     apply_golden_notes(notes, golden_fraction=0.05, min_duration_beats=2)
     n_gold = sum(1 for n in notes if n.note_type == "*")
     assert n_gold == 5  # int(0.05*100+0.5) = 5, espalhadas em índices pares
+
+
+# --------------------------------------------------------------------------
+# snap_octave_outliers (consistência de oitava: dobra erros de oitava isolados)
+# --------------------------------------------------------------------------
+def _pitches(notes):
+    return [n.pitch for n in notes]
+
+
+def test_octave_snaps_isolated_high_note():
+    notes = _mknotes([4, 4, 4, 4, 4])
+    for n, p in zip(notes, [60, 60, 72, 60, 60]):
+        n.pitch = p
+    snap_octave_outliers(notes)
+    assert _pitches(notes) == [60, 60, 60, 60, 60]  # o 72 (oitava acima) volta
+
+
+def test_octave_snaps_isolated_low_note():
+    notes = _mknotes([4] * 5)
+    for n, p in zip(notes, [60, 60, 48, 60, 60]):
+        n.pitch = p
+    snap_octave_outliers(notes)
+    assert _pitches(notes) == [60, 60, 60, 60, 60]  # o 48 (oitava abaixo) sobe
+
+
+def test_octave_snaps_two_octaves():
+    notes = _mknotes([4] * 5)
+    for n, p in zip(notes, [60, 60, 84, 60, 60]):
+        n.pitch = p
+    snap_octave_outliers(notes)
+    assert _pitches(notes) == [60, 60, 60, 60, 60]  # 84 (duas oitavas) volta
+
+
+def test_octave_leaves_real_interval_untouched():
+    # um salto de quinta (7 semitons) NÃO é erro de oitava - fica intacto
+    notes = _mknotes([4] * 5)
+    for n, p in zip(notes, [60, 60, 67, 60, 60]):
+        n.pitch = p
+    snap_octave_outliers(notes)
+    assert _pitches(notes) == [60, 60, 67, 60, 60]
+
+
+def test_octave_leaves_sustained_high_region():
+    # um trecho agudo SUSTENTADO puxa a própria mediana - nada é dobrado
+    notes = _mknotes([4] * 10)
+    original = [60, 60, 60, 60, 72, 72, 72, 72, 72, 72]
+    for n, p in zip(notes, original):
+        n.pitch = p
+    snap_octave_outliers(notes)
+    assert _pitches(notes) == original
 
 
 if __name__ == "__main__":
