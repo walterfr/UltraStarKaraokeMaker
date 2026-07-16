@@ -80,6 +80,8 @@ from pathlib import Path
 
 import numpy as np
 
+from .numerals import expand_numeral
+
 # Fontes de timestamp, da mais confiável para a menos:
 SOURCE_ANCHOR = "anchor"          # match exato com a transcrição livre (medido)
 SOURCE_FUZZY = "fuzzy"            # match aproximado de grafia (medido)
@@ -356,13 +358,18 @@ def _normalize_word(word: str) -> str:
 _VOWEL_GROUP_RE = re.compile(r"[aeiouyáàâãäéèêëíìîïóòôõöúùûü]+", re.IGNORECASE)
 
 
-def _syllable_weight(word: str) -> int:
+def _syllable_weight(word: str, language: str = "pt") -> int:
     """
     Estimativa barata do nº de sílabas (grupos de vogais) para ponderar a
     interpolação - não precisa ser hifenização perfeita, só capturar que
     "coração" dura mais que "e". Mínimo 1.
+
+    Números contam pelo que se CANTA, não pelo que se escreve: "20" não tem
+    vogal e pesaria 1, quando "vinte" leva 2 sílabas - e "1985" leva 8, não 1.
     """
-    return max(1, len(_VOWEL_GROUP_RE.findall(_normalize_word(word))))
+    norm = _normalize_word(word)
+    spelled = " ".join(expand_numeral(norm, language))
+    return max(1, len(_VOWEL_GROUP_RE.findall(spelled)))
 
 
 # Cada âncora é (start, end, score, source); None = ainda sem timestamp medido.
@@ -449,6 +456,23 @@ def compute_anchors(
 
     Retorna uma lista paralela a `real_words`: (start, end, score, source)
     para palavras com timestamp medido, None para as demais.
+
+    AQUI NÃO SE EXPANDE NÚMERO POR EXTENSO - e isso é deliberado, medido, não
+    esquecimento. A tentação é óbvia (a letra diz "20", o Whisper transcreve
+    "vinte", e casar os dois daria uma âncora medida de graça), mas o efeito
+    real é o oposto: em "20 e poucos anos", expandir aqui derrubou as âncoras
+    exatas de 166 para 100 e jogou 109 das 181 palavras +43,8 s pra frente.
+    O motivo é o difflib: sem o match, "Que os meus | 20 | e poucos anos" são
+    dois blocos curtos; com o match vira UM bloco de 7 tokens, e como o
+    SequenceMatcher ancora a recursão no bloco mais longo, ele passou a travar
+    na repetição ERRADA do refrão (a música canta o refrão mais vezes do que a
+    letra o lista). Ou seja: expandir aqui não cria informação, só alonga um
+    bloco ambíguo - e a ambiguidade de refrão repetido é global, sem janela que
+    a contenha.
+
+    O número é tratado onde é seguro: no realinhamento de janela (passe 3), que
+    roda entre duas âncoras vizinhas e não pode fugir do lugar. Ver
+    realign_gap_windows e pipeline/numerals.py.
     """
     whisper_norm = [_normalize_word(w.get("word", "")) for w in whisper_words]
     real_norm = [_normalize_word(w) for w in real_words]
@@ -526,6 +550,7 @@ def _demote_suspicious_anchors(
 def timings_from_anchors(
     anchors: list[Anchor | None],
     real_words: list[str],
+    language: str = "pt",
 ) -> list[WordTiming]:
     """
     Passe 4 (fallback final): converte âncoras em WordTiming, interpolando
@@ -558,7 +583,7 @@ def timings_from_anchors(
         prev_idx = run_start - 1  # ancorado ou -1
         next_idx = idx            # ancorado ou n
 
-        weights = [_syllable_weight(real_words[k]) for k in run]
+        weights = [_syllable_weight(real_words[k], language) for k in run]
 
         if prev_idx >= 0 and next_idx < n:
             prev_end = anchors[prev_idx][1]
@@ -617,6 +642,7 @@ def timings_from_anchors(
 def anchor_and_interpolate(
     whisper_words: list[dict],
     real_words: list[str],
+    language: str = "pt",
 ) -> list[WordTiming]:
     """
     Estratégia completa SEM o passe acústico de janela (passes 1, 2 e 4).
@@ -624,7 +650,7 @@ def anchor_and_interpolate(
     (passe 3) é aplicado por cima em align_lyrics_to_audio.
     """
     anchors = compute_anchors(whisper_words, real_words)
-    return timings_from_anchors(anchors, real_words)
+    return timings_from_anchors(anchors, real_words, language)
 
 
 def _trim_silence_bounds(
@@ -675,12 +701,54 @@ def _trim_silence_bounds(
     return new_start, new_end
 
 
+def _alignment_tokens(word: str, language: str) -> list[str]:
+    """
+    Tokens que representam `word` para o forced alignment: os números viram
+    extenso ("20" -> ["vinte"]), o resto passa intacto (com a pontuação
+    original - o whisperx já a descarta sozinho).
+    """
+    norm = _normalize_word(word)
+    pieces = expand_numeral(norm, language)
+    return pieces if pieces != [norm] else [word]
+
+
+def _collapse_expanded_words(
+    raw_out: list[dict],
+    origin: list[int],
+    n_words: int,
+) -> list[dict] | None:
+    """
+    Junta os tokens expandidos de volta em uma medida por palavra do usuário:
+    a palavra começa no primeiro token e termina no último ("mil novecentos e
+    oitenta e cinco" -> um único intervalo para "1985").
+
+    Devolve None se algum token ficou sem timestamp - aí a run inteira volta
+    pra interpolação, que é o comportamento seguro já existente.
+    """
+    grouped: list[dict | None] = [None] * n_words
+    for w, pos in zip(raw_out, origin):
+        ws, we = w.get("start"), w.get("end")
+        if ws is None or we is None:
+            return None
+        cur = grouped[pos]
+        if cur is None:
+            grouped[pos] = dict(w)
+        else:
+            cur["start"] = min(float(cur["start"]), float(ws))
+            cur["end"] = max(float(cur["end"]), float(we))
+            cur["score"] = min(float(cur.get("score", 0.0)), float(w.get("score", 0.0)))
+    if any(g is None for g in grouped):
+        return None
+    return grouped  # type: ignore[return-value]
+
+
 def realign_gap_windows(
     timings: list[WordTiming],
     align_model,
     align_metadata: dict,
     audio,
     device: str,
+    language: str = "pt",
 ) -> int:
     """
     Passe 3: para cada run contígua de palavras INTERPOLADAS, roda
@@ -726,14 +794,27 @@ def realign_gap_windows(
         win_start = win_start_sample / sample_rate
         win_end = win_end_sample / sample_rate
 
+        # Texto para o CTC com os números POR EXTENSO: o vocabulário do
+        # wav2vec2 não tem dígito nenhum, então mandar "20" não casa com frame
+        # de áudio algum e o alinhamento colapsa a palavra num piscar de ~40 ms
+        # (medido em "20 e poucos anos": nota 260 ms atrasada e 6,5x curta).
+        # `origin` devolve cada token à palavra do usuário que o gerou.
+        cmp_tokens: list[str] = []
+        origin: list[int] = []
+        for pos, k in enumerate(run):
+            for piece in _alignment_tokens(timings[k].word, language):
+                cmp_tokens.append(piece)
+                origin.append(pos)
+
         # janela precisa de espaço mínimo para o CTC ter o que medir
-        if win_end - win_start < 0.10 + 0.08 * len(run):
+        # (conta os tokens expandidos - "1985" ocupa bem mais que uma palavra)
+        if win_end - win_start < 0.10 + 0.08 * len(cmp_tokens):
             continue
 
         segment = {
             "start": win_start,
             "end": win_end,
-            "text": " ".join(timings[k].word for k in run),
+            "text": " ".join(cmp_tokens),
         }
         try:
             result = whisperx.align(
@@ -743,9 +824,13 @@ def realign_gap_windows(
         except Exception:
             continue  # janela problemática não pode derrubar a pipeline
 
-        words_out = [w for seg in result.get("segments", []) for w in seg.get("words", [])]
-        if len(words_out) != len(run):
+        raw_out = [w for seg in result.get("segments", []) for w in seg.get("words", [])]
+        if len(raw_out) != len(cmp_tokens):
             continue  # mapeamento ambíguo - fica com a interpolação
+
+        words_out = _collapse_expanded_words(raw_out, origin, len(run))
+        if words_out is None:
+            continue
 
         # valida antes de aplicar: timestamps presentes, dentro da janela
         # (com folga) e monotônicos
@@ -890,12 +975,14 @@ def align_lyrics_to_audio(
         if seeded:
             print(f"[INFO] Âncoras de linha do .lrc: {seeded} inícios de linha semeados.")
 
-    word_timings = timings_from_anchors(anchors, real_words)
+    word_timings = timings_from_anchors(anchors, real_words, language)
 
     # 4) Realinhamento acústico das janelas ainda interpoladas (reusa o
     #    modelo wav2vec2 já carregado).
     if realign_gaps:
-        promoted = realign_gap_windows(word_timings, align_model, metadata, audio, device)
+        promoted = realign_gap_windows(
+            word_timings, align_model, metadata, audio, device, language
+        )
         if promoted:
             print(f"[INFO] Realinhamento de janela: {promoted} palavras medidas no 2º passe.")
 

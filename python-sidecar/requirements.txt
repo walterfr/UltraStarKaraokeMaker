@@ -71,6 +71,14 @@ librosa>=0.10.1
 # --- Separação silábica PT-BR ---
 pyphen>=0.15.0
 
+# --- Números por extenso (alinhamento) ---
+# A letra escreve "20", mas o Whisper transcreve "vinte" e o vocabulário do
+# wav2vec2 nao tem digito nenhum - sem expandir, a nota do numero saia ~6x
+# curta demais e atrasada (medido em "20 e poucos anos"). Usado SO para
+# comparar/alinhar; o texto do usuario vai intacto pro .txt.
+# Ver pipeline/numerals.py.
+num2words>=0.5.13
+
 # --- Metadados (Fase 3): capa/ano/gênero automáticos ---
 # mutagen: lê tags embutidas no arquivo de áudio (FLAC/MP3/etc), incluindo
 # capa embutida - fonte primária, offline, instantânea.
