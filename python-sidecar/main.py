@@ -138,6 +138,7 @@ def run_pipeline(
     bg_video_url: str | None = None,
     clean_work: bool = False,
     synced_lyrics_path: str | None = None,
+    with_stems: bool = False,
 ):
     global _debug_log_path
 
@@ -359,6 +360,35 @@ def run_pipeline(
         debug_log(f"Vídeo copiado para o pacote: {video_dest}")
         console.print(f"[green]OK[/green] Vídeo incluído no pacote: {video_dest}")
 
+    # Faixas separadas (#VOCALS/#INSTRUMENTAL, spec v1 apêndice A.3): deixam o
+    # player oferecer volume separado de voz-guia e instrumental. Os stems já
+    # existem - o Demucs os produziu na Etapa 2 e a gente os jogava fora.
+    # OPT-IN porque cada um vira um .ogg do tamanho da música: o pacote quase
+    # triplica. Convenção de nome "[VOC]"/"[INSTR]" copiada do usdb_syncer,
+    # que é como a comunidade nomeia (e casa com nosso "[CO]"/"[BG]").
+    vocals_filename = None
+    instrumental_filename = None
+    if with_stems:
+        debug_log("Convertendo stems separados para .ogg (with_stems=True)")
+        console.print("[cyan]Convertendo faixas separadas (voz/instrumental)...[/cyan]")
+        try:
+            vocals_filename = f"{file_base} [VOC].ogg"
+            instrumental_filename = f"{file_base} [INSTR].ogg"
+            convert_to_ogg(stems.vocals, out_path / vocals_filename)
+            convert_to_ogg(stems.instrumental, out_path / instrumental_filename)
+            console.print(
+                f"[green]OK[/green] Faixas separadas no pacote: "
+                f"{vocals_filename} / {instrumental_filename}"
+            )
+        except Exception as e:
+            # Não-fatal: o pacote é perfeitamente válido sem estas faixas (são
+            # opcionais na spec). Derrubar uma geração que já deu certo por
+            # causa de um extra seria desproporcional.
+            vocals_filename = None
+            instrumental_filename = None
+            debug_log(f"Falha ao converter stems: {e}")
+            console.print(f"[yellow]AVISO[/yellow] Não consegui incluir as faixas separadas: {e}")
+
     song = build_song(
         title=title,
         artist=artist,
@@ -373,6 +403,8 @@ def run_pipeline(
         cover_filename=cover_filename,
         video_filename=video_filename,
         background_filename=background_filename,
+        vocals_filename=vocals_filename,
+        instrumental_filename=instrumental_filename,
     )
     debug_log("ETAPA 6 - build_song concluído, escrevendo .txt")
 
@@ -442,6 +474,7 @@ if __name__ == "__main__":
         help="URL específica do videoclipe de fundo (implica --bg-video)",
     )
     parser.add_argument("--clean-work", action="store_true", help="Remover a pasta _work (intermediários) ao final")
+    parser.add_argument("--with-stems", action="store_true", help="Incluir faixas separadas voz/instrumental no pacote (#VOCALS/#INSTRUMENTAL) - quase triplica o tamanho")
     parser.add_argument(
         "--synced-lyrics",
         default=None,
@@ -465,6 +498,7 @@ if __name__ == "__main__":
             bg_video=args.bg_video,
             bg_video_url=args.bg_video_url,
             clean_work=args.clean_work,
+            with_stems=args.with_stems,
             synced_lyrics_path=args.synced_lyrics,
         )
     except Exception:

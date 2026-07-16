@@ -163,6 +163,43 @@ def test_header_traz_audio_junto_do_mp3():
     assert "#AUDIO:Rita Lee - Sangue Latino.ogg" in txt
 
 
+
+def test_headers_das_faixas_separadas_sao_opcionais():
+    """
+    #VOCALS/#INSTRUMENTAL (spec v1, apêndice A.3) só entram quando o usuário
+    pediu as faixas separadas. Sem elas, os headers NÃO podem aparecer: um
+    header apontando pra arquivo que não existe é pior que header nenhum.
+    """
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from pipeline.ultrastar_writer import Note, Song
+
+    base = dict(
+        title="Sangue Latino",
+        artist="Rita Lee",
+        mp3_filename="Rita Lee - Sangue Latino.ogg",
+        bpm=246.1,
+        gap_ms=0,
+        notes=[Note(start_beat=0, duration_beats=2, pitch=0, text="Ju")],
+    )
+
+    sem = Song(**base).to_txt()
+    assert "#VOCALS:" not in sem
+    assert "#INSTRUMENTAL:" not in sem
+
+    com = Song(
+        **base,
+        vocals_filename="Rita Lee - Sangue Latino [VOC].ogg",
+        instrumental_filename="Rita Lee - Sangue Latino [INSTR].ogg",
+    ).to_txt()
+    assert "#VOCALS:Rita Lee - Sangue Latino [VOC].ogg" in com
+    assert "#INSTRUMENTAL:Rita Lee - Sangue Latino [INSTR].ogg" in com
+    # e o #MP3 continua lá: as faixas separadas COMPLEMENTAM a mistura,
+    # não a substituem (o player escolhe o que usar)
+    assert "#MP3:Rita Lee - Sangue Latino.ogg" in com
+
 if __name__ == "__main__":
     import inspect
     failed = 0

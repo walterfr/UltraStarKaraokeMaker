@@ -72,6 +72,12 @@ class Song:
     cover_filename: str | None = None
     video_filename: str | None = None
     background_filename: str | None = None
+    # Faixas separadas (a cappella / playback), opcionais. A spec v1 (apêndice
+    # A.3) permite ao player usá-las no lugar do #MP3 pra oferecer volume
+    # separado de voz-guia e instrumental - o karaokê "de verdade": subir a voz
+    # pra aprender, zerar pra cantar sozinho.
+    vocals_filename: str | None = None
+    instrumental_filename: str | None = None
     creator: str = "USKMaker"
     notes: list[Note] = field(default_factory=list)
     # índices em `notes` onde deve haver quebra de frase (fim de linha da letra)
@@ -106,6 +112,10 @@ class Song:
             lines.append(f"#VIDEO:{self.video_filename}")
         if self.background_filename:
             lines.append(f"#BACKGROUND:{self.background_filename}")
+        if self.vocals_filename:
+            lines.append(f"#VOCALS:{self.vocals_filename}")
+        if self.instrumental_filename:
+            lines.append(f"#INSTRUMENTAL:{self.instrumental_filename}")
         lines.append(f"#CREATOR:{self.creator}")
 
         phrase_break_set = set(self.phrase_breaks_after_index)

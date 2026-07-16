@@ -27,6 +27,11 @@ fn parses_json_and_generates_valid_header() {
     // #MP3 quando o #AUDIO existe, e na v2 o #AUDIO vira core. Os dois
     // apontam para o MESMO arquivo - se um dia divergirem, é bug.
     assert!(txt.contains("#AUDIO:Rita Lee - Sangue Latino.ogg\n"));
+    // #VOCALS/#INSTRUMENTAL são OPCIONAIS (opt-in do usuário): quando não
+    // vieram no JSON, não podem aparecer no .txt apontando pra arquivo
+    // nenhum - um header quebrado é pior que header ausente.
+    assert!(!txt.contains("#VOCALS:"), "sem stems no JSON => sem header");
+    assert!(!txt.contains("#INSTRUMENTAL:"));
     // BPM BRUTO, sem multiplicação por 4 - o bug histórico que causava
     // dessincronia de 4x (ver notas em ultrastar_writer.rs e no
     // beatgrid.py do lado Python).

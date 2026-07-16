@@ -439,6 +439,8 @@ def build_song(
     cover_filename: str | None = None,
     video_filename: str | None = None,
     background_filename: str | None = None,
+    vocals_filename: str | None = None,
+    instrumental_filename: str | None = None,
 ) -> Song:
     pitch_extractor = PitchExtractor()
 
@@ -472,6 +474,8 @@ def build_song(
         cover_filename=cover_filename,
         video_filename=video_filename,
         background_filename=background_filename,
+        vocals_filename=vocals_filename,
+        instrumental_filename=instrumental_filename,
         notes=notes,
         phrase_breaks_after_index=phrase_breaks,
     )

@@ -87,6 +87,8 @@ const STRINGS = {
     cleanWorkLabel: "Remover arquivos intermediários ao final (economiza espaço; deixe desmarcado para reprocessar mais rápido)",
     cleanExtrasLabel: "Deixar só o essencial: apagar os auxiliares (.lrc, .log, .json) ao final da fila",
     cleanExtrasHint: "Remove também o song_data.json — os pacotes ficarão SEM a tela de revisão. Deixe desmarcado se quiser revisar depois.",
+    withStemsLabel: "Incluir faixas separadas de voz e instrumental no pacote",
+    withStemsHint: "Permite ao jogo controlar o volume da voz-guia separado do instrumental (subir para aprender, zerar para cantar sozinho). O pacote fica quase 3x maior. A separação já é feita de qualquer jeito — isto só a inclui no pacote.",
 
     // ---- validação ----
     valNeedYoutube: "Informe o link do YouTube.",
@@ -266,6 +268,8 @@ const STRINGS = {
     cleanWorkLabel: "Remove intermediate files when done (saves space; leave unchecked to reprocess faster)",
     cleanExtrasLabel: "Keep only the essentials: delete the helper files (.lrc, .log, .json) at the end of the queue",
     cleanExtrasHint: "This also removes song_data.json — packages will have NO review screen. Leave unchecked if you want to review later.",
+    withStemsLabel: "Include separate vocal and instrumental tracks in the package",
+    withStemsHint: "Lets the game control the guide vocal's volume separately from the instrumental (turn it up to learn, off to sing solo). Makes the package almost 3x bigger. The separation happens anyway — this just includes it.",
 
     valNeedYoutube: "Enter the YouTube link.",
     valNeedFile: "Select a local audio/video file.",

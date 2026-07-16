@@ -97,6 +97,7 @@ interface PersistedSettings {
   bgVideo: boolean;
   cleanWork: boolean;
   cleanExtras: boolean;
+  withStems: boolean;
 }
 
 function loadSettings(): Partial<PersistedSettings> {
@@ -158,6 +159,7 @@ function App() {
   // cada música ao fim da fila. Opt-in e destrutivo: remove o song_data.json,
   // então o pacote fica SEM a tela de revisão. Padrão desligado.
   const [cleanExtras, setCleanExtras] = useState(saved.cleanExtras ?? false);
+  const [withStems, setWithStems] = useState(saved.withStems ?? false);
   const [outDir, setOutDir] = useState(saved.outDir ?? "");
 
   // Letra sincronizada (.lrc) do LRCLIB: guardada crua e enviada ao pipeline,
@@ -235,9 +237,9 @@ function App() {
 
   // ------------------------------------------------ persistência leve
   useEffect(() => {
-    const settings: PersistedSettings = { sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras };
+    const settings: PersistedSettings = { sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems };
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  }, [sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras]);
+  }, [sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems]);
 
   useEffect(() => {
     (async () => {
@@ -460,6 +462,7 @@ function App() {
       bgVideo: sourceMode === "file" ? bgVideo : false,
       bgVideoUrl: sourceMode === "file" && bgVideo ? bgVideoUrl.trim() || null : null,
       cleanWork,
+      withStems,
     };
   }
 
@@ -940,6 +943,16 @@ function App() {
           {t("cleanExtrasLabel")}
         </label>
         {cleanExtras && <p className="field-hint warn">⚠ {t("cleanExtrasHint")}</p>}
+        <label className="checkbox-line">
+          <input
+            type="checkbox"
+            checked={withStems}
+            onChange={(e) => setWithStems(e.target.checked)}
+            disabled={isRunning}
+          />
+          {t("withStemsLabel")}
+        </label>
+        {withStems && <p className="field-hint">{t("withStemsHint")}</p>}
       </div>
 
       {queue.length > 0 && (

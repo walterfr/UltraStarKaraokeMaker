@@ -201,6 +201,10 @@ struct PipelineInput {
     bg_video_url: Option<String>,
     #[serde(default)]
     clean_work: bool,
+    /// Incluir as faixas separadas voz/instrumental no pacote
+    /// (#VOCALS/#INSTRUMENTAL). Opt-in: o pacote quase triplica de tamanho.
+    #[serde(default)]
+    with_stems: bool,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -529,6 +533,7 @@ async fn run_pipeline(
         "bg_video": input.bg_video,
         "bg_video_url": input.bg_video_url.as_deref().map(str::trim).filter(|s| !s.is_empty()),
         "clean_work": input.clean_work,
+        "with_stems": input.with_stems,
         "synced_lyrics_path": synced_path.as_ref().map(|p| p.to_string_lossy().to_string()),
     });
     let job_line = serde_json::to_string(&job)
