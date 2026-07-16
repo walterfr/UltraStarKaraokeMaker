@@ -68,6 +68,43 @@ LANG_CODES = {
     "polish": "pl", "turkish": "tr", "latin": "la",
 }
 
+# Códigos ISO-639-1 que o whisper aceita direto. Charts reais escrevem o
+# #LANGUAGE dos dois jeitos - o nome por extenso E o código.
+_ISO_CODES = frozenset(LANG_CODES.values())
+
+
+def normalize_language(raw: str | None) -> str | None:
+    """
+    #LANGUAGE do chart -> código do whisper, ou None se não der pra saber.
+
+    O header é texto livre, e o que os charts REAIS trazem (medido numa
+    biblioteca de 1439 músicas do USDB) não é só "Portuguese":
+
+        'pt'                   70   <- código ISO, não nome
+        'Portuguese (Brazil)'  22   <- qualificador entre parênteses
+        'Japanese (romanized)'  3   <- idem
+        'English, French'       2   <- multi-valor
+
+    Um mapa exato de nomes descartava tudo isso em silêncio (a música só
+    "falhava"), e o pior é que 'pt' era o caso MAIS comum depois do inglês -
+    justo o idioma que mais nos interessa medir.
+    """
+    if not raw:
+        return None
+    value = raw.strip().lower()
+    if not value:
+        return None
+    # 'English, French' / 'English/French' -> o primeiro; medir no idioma
+    # principal é melhor que descartar a música
+    value = re.split(r"[,/;]", value)[0].strip()
+    # 'Portuguese (Brazil)' -> 'portuguese'
+    value = re.sub(r"\s*\([^)]*\)", "", value).strip()
+    if value in LANG_CODES:
+        return LANG_CODES[value]
+    if value in _ISO_CODES:
+        return value
+    return None
+
 
 def log(msg: str) -> None:
     print(f"[replay] {msg}", flush=True)
@@ -390,7 +427,7 @@ def _run_song(song: dict, run_dir: str, slug: str, device: str) -> dict:
     gwords = gold_words(chart)
     if len(gwords) < 30:
         raise ValueError(f"only {len(gwords)} gold words")
-    language = LANG_CODES.get((chart.language or "").strip().lower())
+    language = normalize_language(chart.language)
     if not language:
         raise ValueError(f"unmapped gold #LANGUAGE {chart.language!r}")
     notes = gold_notes(chart)

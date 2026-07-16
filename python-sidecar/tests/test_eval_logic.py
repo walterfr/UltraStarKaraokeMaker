@@ -241,6 +241,38 @@ def test_scan_pula_chart_multi(tmp_path):
     _mk_song_dir(tmp_path, "A - T", "A - T [MULTI].txt", "A - T.mp3", ["A - T.mp3"])
     assert library_replay.scan_library(str(tmp_path)) == []
 
+
+# --- normalize_language: o #LANGUAGE dos charts reais ----------------------
+
+def test_idioma_aceita_codigo_iso():
+    # 'pt' era o 2o valor mais comum na biblioteca real (70 musicas) e o mapa
+    # de nomes exatos o descartava - justo o idioma que mais nos interessa
+    assert library_replay.normalize_language("pt") == "pt"
+    assert library_replay.normalize_language("EN") == "en"
+
+
+def test_idioma_ignora_qualificador_entre_parenteses():
+    assert library_replay.normalize_language("Portuguese (Brazil)") == "pt"
+    assert library_replay.normalize_language("Japanese (romanized)") == "ja"
+
+
+def test_idioma_multivalor_usa_o_primeiro():
+    # medir no idioma principal e melhor que descartar a musica
+    assert library_replay.normalize_language("English, French") == "en"
+    assert library_replay.normalize_language("English/Italian") == "en"
+
+
+def test_idioma_nome_por_extenso_continua_funcionando():
+    assert library_replay.normalize_language("Portuguese") == "pt"
+    assert library_replay.normalize_language("español") == "es"
+
+
+def test_idioma_vazio_ou_desconhecido_devolve_none():
+    # None => a musica e pulada; chutar o idioma seria pior que nao medir
+    assert library_replay.normalize_language("") is None
+    assert library_replay.normalize_language(None) is None
+    assert library_replay.normalize_language("Klingon") is None
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0
