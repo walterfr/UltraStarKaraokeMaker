@@ -299,6 +299,38 @@ def test_octave_leaves_sustained_high_region():
     assert _pitches(notes) == original
 
 
+
+def test_dourada_minima_e_medida_em_tempo_nao_em_beats():
+    """
+    O acoplamento sutil da mudanca de faixa de BPM (16/07/2026): a duracao
+    minima pra dourar era "2 beats" fixo, e 2 beats so valiam ~273 ms por
+    acidente da faixa antiga ([90,180)). Com a grade ~2x mais fina, o mesmo
+    "2" viraria ~136 ms e douraria notas curtas demais - mudando o criterio
+    sem ninguem pedir. Em TEMPO, o criterio e o mesmo em qualquer BPM.
+    """
+    from pipeline.beatgrid import BeatGrid
+    from pipeline.build_song import GOLDEN_MIN_DURATION_S, golden_min_beats
+
+    # o mesmo limiar em segundos, em BPMs diferentes, tem que dar a mesma
+    # duracao real (a menos do arredondamento pra beat inteiro)
+    for bpm in (110.0, 220.0, 246.1, 400.0):
+        grid = BeatGrid(bpm=bpm)
+        beats = golden_min_beats(grid)
+        segundos = beats * 60.0 / (bpm * 4)
+        assert abs(segundos - GOLDEN_MIN_DURATION_S) < 0.05, (
+            f"BPM {bpm}: {beats} beats = {segundos:.3f}s, esperado ~{GOLDEN_MIN_DURATION_S}s"
+        )
+
+    # e na faixa nova o valor em beats de fato subiu (grade mais fina)
+    assert golden_min_beats(BeatGrid(bpm=220.0)) > golden_min_beats(BeatGrid(bpm=110.0))
+
+
+def test_dourada_minima_nunca_e_zero():
+    from pipeline.beatgrid import BeatGrid
+    from pipeline.build_song import golden_min_beats
+
+    assert golden_min_beats(BeatGrid(bpm=1.0)) >= 1
+
 if __name__ == "__main__":
     import inspect
     failed = 0

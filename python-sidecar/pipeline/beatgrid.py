@@ -7,14 +7,21 @@ IMPORTANTE: a detecção automática de BPM erra com frequência (meio/dobro do
 tempo real, sincopa, mudanças de andamento). Trate o valor daqui como um
 "palpite inicial" - o main.py permite sobrescrever via --bpm manual.
 
-CORREÇÃO DE OITAVA (12/07/2026): o erro mais comum do librosa é retornar
-exatamente metade ou o dobro do tempo real (o "octave error" clássico de MIR).
-fold_bpm_to_octave() dobra/reduz por 2 até o BPM cair na oitava alvo
-[90, 180), alinhada ao prior start_bpm=120 do beat_track. A sincronia das
-notas NÃO depende disso (o offset vem do alinhamento forçado, não da grade),
-mas o valor gravado em #BPM fica mais fiel e a granularidade da grade fica
-consistente entre músicas. Só age quando o valor está fora da faixa; um BPM
-manual (--bpm) é sempre respeitado como veio.
+OITAVA / RESOLUÇÃO DA GRADE (faixa alvo revisada em 16/07/2026): o
+fold_bpm_to_octave() dobra/reduz o BPM por 2 até cair em [200, 400). Isso
+corrige o erro de meio/dobro do librosa E, o que importa mais, põe o #BPM na
+faixa dos charts feitos à mão.
+
+O #BPM do UltraStar não é o andamento musical: é a UNIDADE DA GRADE (o motor
+usa `tempo = beat*60/(BPM*4)`, então o beat dura `60/(BPM*4)`). Como o
+seconds_to_beat ARREDONDA, uma grade grossa vira erro de sincronia em toda
+nota - medido: a faixa antiga [90,180) injetava ~35 ms de erro médio (65% das
+notas acima de 25 ms), contra ~17 ms na faixa nova. Ver a tabela completa no
+docstring de fold_bpm_to_octave.
+
+O BPM manual (--bpm) também é dobrado pra faixa: o campo serve pra corrigir
+uma detecção errada de ANDAMENTO, e gravar o valor cru puniria justamente
+quem digitou o tempo certo.
 
 BUG CRÍTICO CORRIGIDO (05/07/2026, 3ª rodada de testes - problema de
 sincronia relatado pelo usuário: a letra "andava" 4x mais rápido que a
@@ -74,14 +81,12 @@ class BeatGrid:
         return round(adjusted_seconds * beats_per_second)
 
 
-# Faixa "alvo" (uma oitava completa) para corrigir o erro de meio/dobro do
-# librosa. beat_track usa start_bpm=120 como prior, então sua saída já se
-# agrupa em torno de 120; usar [90, 180) mantém intactos os valores que já
-# caem nessa oitava e só corrige os casos claramente divididos (< 90) ou
-# duplicados (>= 180). A largura é exatamente uma oitava (90*2 == 180), então
-# o dobramento é determinístico: todo BPM mapeia para um único valor na faixa.
-_OCTAVE_MIN_BPM = 90.0
-_OCTAVE_MAX_BPM = 180.0
+# Faixa "alvo" (uma oitava completa) do #BPM gravado. NÃO é o andamento
+# musical - é a unidade da grade de beats, e a faixa alta é o que dá a
+# resolução fina dos charts feitos à mão. Ver o docstring de
+# fold_bpm_to_octave, que traz a medição.
+_OCTAVE_MIN_BPM = 200.0
+_OCTAVE_MAX_BPM = 400.0
 
 
 def fold_bpm_to_octave(
@@ -90,18 +95,44 @@ def fold_bpm_to_octave(
     max_bpm: float = _OCTAVE_MAX_BPM,
 ) -> float:
     """
-    Corrige o erro de oitava (meio/dobro) da detecção automática de BPM,
-    dobrando/reduzindo por 2 até o valor cair na faixa [min_bpm, max_bpm).
+    Dobra/reduz o BPM por 2 até cair na faixa [min_bpm, max_bpm).
 
-    O erro mais comum do detector é retornar exatamente metade ou o dobro do
-    tempo real (o "octave error" clássico de MIR). Como o offset temporal de
-    cada nota vem do alinhamento forçado (WhisperX), e não da grade de beats,
-    a sincronia não muda com a oitava - mas o valor gravado em #BPM fica mais
-    fiel ao andamento real e a granularidade da grade fica consistente entre
-    músicas.
+    Faz DUAS coisas ao mesmo tempo:
 
-    Só age quando o valor está fora da oitava alvo; um BPM já plausível
-    (ex.: 128) passa intacto. Retorna o valor possivelmente ajustado.
+    1. Corrige o erro de oitava (meio/dobro) da detecção - o "octave error"
+       clássico de MIR, modo de falha mais comum do librosa.beat.beat_track.
+    2. Põe o #BPM na faixa que os charts feitos à mão usam, o que MELHORA A
+       SINCRONIA. Isto é contraintuitivo e merece explicação.
+
+    O #BPM do UltraStar não é o andamento musical: é a UNIDADE DA GRADE. O
+    motor converte por `tempo = beat*60/(BPM*4)`, então o beat (a menor
+    posição representável) dura `60/(BPM*4)`. Gravar o andamento "real" da
+    música dá uma grade GROSSA, e como seconds_to_beat ARREDONDA, isso vira
+    erro de sincronia em toda nota.
+
+    MEDIDO ("20 e poucos anos", 362 tempos reais do alinhamento):
+
+        #BPM     1 beat    erro médio   erro máx   notas com erro > 25 ms
+        110       136 ms     35,1 ms     68,0 ms          65%     <- a faixa antiga
+        220        68 ms     16,7 ms     34,0 ms          27%
+        440        34 ms      8,3 ms     17,0 ms           0%
+
+    Ou seja: a faixa antiga [90,180) injetava ~35 ms de erro em CADA nota, de
+    graça - da mesma ordem do erro do próprio alinhador. (A versão anterior
+    deste docstring afirmava que "a sincronia não muda com a oitava". Estava
+    errado: não muda o *alinhamento*, mas muda o arredondamento pra grade, que
+    é o que o jogador ouve.)
+
+    POR QUE [200,400): é a faixa que a comunidade usa de verdade. O usdb_syncer
+    (que baixa/nomeia os milhares de charts do USDB) tem BPM_THRESHOLD=200 e
+    dobra o BPM até passar disso; a issue #166 deles só quer reduzir acima de
+    500. E o nosso próprio eval/seed_set.json descreve os charts gold como
+    "BPM range 184-417 (fine-grid hand charts)" - os dados já diziam isso.
+
+    A largura é exatamente uma oitava (200*2 == 400), então o dobramento é
+    determinístico: todo BPM mapeia para um único valor na faixa.
+
+    Só age quando o valor está fora da faixa. Retorna o valor ajustado.
     """
     if bpm <= 0:
         return bpm
@@ -119,9 +150,20 @@ def fold_bpm_to_octave(
 
 def detect_bpm(vocal_or_full_wav: Path, manual_bpm: float | None = None) -> BeatGrid:
     if manual_bpm:
-        # BPM informado manualmente é respeitado como está - o usuário sabe o
-        # andamento real e pode querer justamente uma oitava específica.
-        return BeatGrid(bpm=manual_bpm)
+        # O BPM manual TAMBÉM é dobrado pra faixa alvo. Parece desrespeitar o
+        # usuário, mas é o contrário: o campo existe pra corrigir uma detecção
+        # errada ("recomendado após a 1ª rodada automática"), ou seja, ele
+        # digita o ANDAMENTO. Gravar 110 cru daria uma grade de 136 ms e um
+        # resultado PIOR que o automático - quem digita o tempo certo seria
+        # punido por isso. E o fluxo fica idempotente: digitar 110 ou 220
+        # (o que a rodada anterior gravou) dá exatamente o mesmo arquivo.
+        folded = fold_bpm_to_octave(manual_bpm)
+        if abs(folded - manual_bpm) > 0.01:
+            print(
+                f"[BPM] Manual {manual_bpm:.2f} -> {folded:.2f} (grade fina; "
+                f"o #BPM do UltraStar é a unidade da grade, não o andamento)"
+            )
+        return BeatGrid(bpm=folded)
 
     y, sr = librosa.load(str(vocal_or_full_wav), sr=None)
     tempo, _ = librosa.beat.beat_track(y=y, sr=sr)

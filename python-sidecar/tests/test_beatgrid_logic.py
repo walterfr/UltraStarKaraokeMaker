@@ -15,32 +15,50 @@ from pipeline.beatgrid import BeatGrid, fold_bpm_to_octave
 
 
 def test_fold_mantem_bpm_ja_na_faixa():
-    # valores plausíveis dentro de [90, 180) passam intactos
-    for bpm in (90.0, 100.0, 120.0, 128.0, 179.9):
+    # valores dentro de [200, 400) passam intactos
+    for bpm in (200.0, 220.0, 246.1, 300.0, 399.9):
         assert fold_bpm_to_octave(bpm) == bpm
 
 
-def test_fold_corrige_metade():
-    # BPM detectado como metade do real (< 90) é dobrado até a faixa
-    assert fold_bpm_to_octave(45.0) == 90.0
-    assert fold_bpm_to_octave(60.0) == 120.0
-    assert fold_bpm_to_octave(70.0) == 140.0
-    assert fold_bpm_to_octave(43.5) == 174.0  # 43.5 -> 87 -> 174
+def test_fold_dobra_ate_a_grade_fina():
+    # O andamento musical típico (60-180) fica ABAIXO da faixa alvo e é
+    # dobrado - não porque a detecção errou, mas porque o #BPM do UltraStar é
+    # a unidade da GRADE: gravar 110 dá um beat de 136 ms (~35 ms de erro
+    # médio de quantização por nota); 220 dá 68 ms. Ver beatgrid.py.
+    assert fold_bpm_to_octave(110.0) == 220.0
+    assert fold_bpm_to_octave(123.05) == 246.1
+    assert fold_bpm_to_octave(60.0) == 240.0
+    assert fold_bpm_to_octave(45.0) == 360.0  # 45 -> 90 -> 180 -> 360
 
 
 def test_fold_corrige_dobro():
-    # BPM detectado como o dobro do real (>= 180) é reduzido à faixa
-    assert fold_bpm_to_octave(180.0) == 90.0
-    assert fold_bpm_to_octave(240.0) == 120.0
-    assert fold_bpm_to_octave(260.0) == 130.0
-    assert fold_bpm_to_octave(300.0) == 150.0
+    # detecção que veio alta demais é reduzida à faixa
+    assert fold_bpm_to_octave(400.0) == 200.0
+    assert fold_bpm_to_octave(800.0) == 200.0
+    assert fold_bpm_to_octave(520.0) == 260.0
 
 
-def test_fold_sempre_cai_na_oitava_alvo():
-    # qualquer valor razoável termina em [90, 180)
-    for raw in (30.0, 50.5, 95.0, 133.7, 210.0, 355.0):
+def test_fold_sempre_cai_na_faixa_alvo():
+    # qualquer valor razoável termina em [200, 400)
+    for raw in (30.0, 50.5, 95.0, 110.0, 133.7, 210.0, 355.0, 417.0, 900.0):
         out = fold_bpm_to_octave(raw)
-        assert 90.0 <= out < 180.0
+        assert 200.0 <= out < 400.0
+
+
+def test_faixa_alvo_tem_exatamente_uma_oitava():
+    # a largura ser 1 oitava (200*2 == 400) é o que torna o dobramento
+    # determinístico: todo BPM mapeia pra UM único valor na faixa.
+    from pipeline.beatgrid import _OCTAVE_MAX_BPM, _OCTAVE_MIN_BPM
+
+    assert _OCTAVE_MIN_BPM * 2 == _OCTAVE_MAX_BPM
+
+
+def test_fold_e_idempotente():
+    # dobrar o que já foi dobrado não muda nada - é o que faz o fluxo
+    # "rode, veja o BPM, redigite ele no campo manual" ser estável.
+    for raw in (110.0, 123.05, 45.0, 800.0):
+        once = fold_bpm_to_octave(raw)
+        assert fold_bpm_to_octave(once) == once
 
 
 def test_fold_ignora_valores_invalidos():

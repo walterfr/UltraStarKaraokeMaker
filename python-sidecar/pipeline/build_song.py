@@ -233,13 +233,25 @@ def detect_melisma_notes(
 # mais longas); ganchos repetidos exigiriam detecção de refrão (fora do escopo).
 # É só camada de score: NÃO altera pitch nem tempo, então é aditivo e seguro.
 GOLDEN_FRACTION_DEFAULT = 0.05
-GOLDEN_MIN_DURATION_BEATS = 2
+# Duração mínima para uma nota poder ser dourada, EM SEGUNDOS.
+#
+# Era "2 beats" fixo, o que só funcionava por acidente: 2 beats valiam ~273 ms
+# na faixa de BPM antiga ([90,180)). Com a faixa nova ([200,400), grade ~2x
+# mais fina - ver beatgrid.py) o mesmo "2" passaria a significar ~136 ms e
+# dobraria notas curtas demais, mudando o critério sem ninguém pedir. Em
+# tempo, o critério é o mesmo em qualquer BPM.
+GOLDEN_MIN_DURATION_S = 0.27
+
+
+def golden_min_beats(grid: BeatGrid, min_seconds: float = GOLDEN_MIN_DURATION_S) -> int:
+    """Converte a duração mínima da dourada (em segundos) para beats do grid."""
+    return max(1, round(min_seconds * grid.bpm * 4 / 60.0))
 
 
 def apply_golden_notes(
     notes: list[Note],
     golden_fraction: float = GOLDEN_FRACTION_DEFAULT,
-    min_duration_beats: int = GOLDEN_MIN_DURATION_BEATS,
+    min_duration_beats: int = 2,
 ) -> list[Note]:
     """
     Marca como golden ("*") as notas MAIS LONGAS, até um orçamento proporcional
@@ -251,7 +263,10 @@ def apply_golden_notes(
       pontua). Continuações de melisma ("~") PODEM ser golden (charts reais
       douram trechos sustentados, inclusive "~").
     - `min_duration_beats`: ignora notas curtas demais (dourar 1 beat não é
-      "destaque" e não é o que os charts fazem).
+      "destaque" e não é o que os charts fazem). O default de 2 só serve pros
+      testes puros; quem chama de verdade (build_notes) passa o valor derivado
+      do grid via golden_min_beats(), porque "curta demais" é uma medida de
+      TEMPO e beat só vira tempo quando se sabe o BPM.
     - Orçamento com arredondamento meio-pra-cima (evita o banker's rounding do
       round() zerar músicas curtas).
     """
@@ -405,7 +420,7 @@ def build_notes(
 
     notes = fix_rounding_overlaps(notes)
     notes = snap_octave_outliers(notes)
-    notes = apply_golden_notes(notes)
+    notes = apply_golden_notes(notes, min_duration_beats=golden_min_beats(grid))
 
     return notes, phrase_breaks
 
