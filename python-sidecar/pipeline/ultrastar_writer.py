@@ -84,6 +84,13 @@ class Song:
         lines.append(f"#TITLE:{self.title}")
         lines.append(f"#ARTIST:{self.artist}")
         lines.append(f"#MP3:{self.mp3_filename}")
+        # #AUDIO é o MESMO arquivo do #MP3, duplicado de propósito: na spec v1
+        # o #MP3 é obrigatório e o #AUDIO opcional, mas "implementações DEVEM
+        # desconsiderar o #MP3 se o #AUDIO estiver presente"; na v2 o #AUDIO
+        # vira core. Escrever os dois serve player novo e antigo.
+        # Espelha o rust-core/src/ultrastar_writer.rs, que é quem escreve o
+        # .txt final no app - os dois têm que sair iguais.
+        lines.append(f"#AUDIO:{self.mp3_filename}")
         lines.append(f"#BPM:{self._format_number(self.bpm)}")
         lines.append(f"#GAP:{self.gap_ms}")
 

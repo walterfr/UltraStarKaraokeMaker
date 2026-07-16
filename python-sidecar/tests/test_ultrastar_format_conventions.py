@@ -132,6 +132,37 @@ def test_generated_song_matches_community_conventions():
     assert violations == [], "\n".join(violations)
 
 
+def test_header_traz_audio_junto_do_mp3():
+    """
+    #AUDIO e #MP3 apontam para o MESMO arquivo, de propósito.
+
+    A spec v1 (a publicada) exige o #MP3 e trata o #AUDIO como opcional, mas
+    manda "desconsiderar o #MP3 se o #AUDIO estiver presente"; a v2 promove o
+    #AUDIO a header core. Escrever os dois serve player velho e novo.
+
+    Este writer (Python) precisa sair IGUAL ao rust-core, que é quem escreve
+    o .txt final dentro do app.
+    """
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from pipeline.ultrastar_writer import Note, Song
+
+    song = Song(
+        title="Sangue Latino",
+        artist="Rita Lee",
+        mp3_filename="Rita Lee - Sangue Latino.ogg",
+        bpm=123.05,
+        gap_ms=0,
+        notes=[Note(start_beat=0, duration_beats=2, pitch=0, text="Ju")],
+    )
+    txt = song.to_txt()
+
+    assert "#MP3:Rita Lee - Sangue Latino.ogg" in txt
+    assert "#AUDIO:Rita Lee - Sangue Latino.ogg" in txt
+
+
 if __name__ == "__main__":
     import inspect
     failed = 0

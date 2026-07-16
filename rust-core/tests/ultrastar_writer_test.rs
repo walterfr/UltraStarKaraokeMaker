@@ -23,6 +23,10 @@ fn parses_json_and_generates_valid_header() {
         txt
     );
     assert!(txt.contains("#MP3:Rita Lee - Sangue Latino.ogg\n"));
+    // #AUDIO duplica o #MP3 de propósito: a spec v1 manda desconsiderar o
+    // #MP3 quando o #AUDIO existe, e na v2 o #AUDIO vira core. Os dois
+    // apontam para o MESMO arquivo - se um dia divergirem, é bug.
+    assert!(txt.contains("#AUDIO:Rita Lee - Sangue Latino.ogg\n"));
     // BPM BRUTO, sem multiplicação por 4 - o bug histórico que causava
     // dessincronia de 4x (ver notas em ultrastar_writer.rs e no
     // beatgrid.py do lado Python).

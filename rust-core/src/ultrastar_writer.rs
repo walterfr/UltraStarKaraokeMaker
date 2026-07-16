@@ -124,6 +124,17 @@ impl Song {
         lines.push(format!("#TITLE:{}", self.title));
         lines.push(format!("#ARTIST:{}", self.artist));
         lines.push(format!("#MP3:{}", self.mp3_filename));
+        // #AUDIO é o mesmo arquivo do #MP3, escrito de propósito em duplicata.
+        // Na spec v1 (a publicada) o #MP3 é OBRIGATÓRIO e o #AUDIO é opcional
+        // (apêndice A.1), mas com uma regra clara: "implementações DEVEM
+        // desconsiderar o #MP3 se o #AUDIO estiver presente". Na v2 o #AUDIO
+        // vira header core e o #MP3 sai. Escrever os dois é o único jeito de
+        // servir os players novos e os antigos ao mesmo tempo - e não há risco
+        // de divergirem, porque apontam para o mesmo arquivo.
+        //
+        // NÃO subir o #VERSION por causa disto: a v2 se declara NÃO PUBLICADA
+        // ("may change significantly"), então 1.0.0 continua sendo o certo.
+        lines.push(format!("#AUDIO:{}", self.mp3_filename));
         lines.push(format!("#BPM:{}", Self::format_number(self.bpm)));
         lines.push(format!("#GAP:{}", self.gap_ms));
 
