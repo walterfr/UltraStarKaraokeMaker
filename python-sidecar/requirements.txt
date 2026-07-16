@@ -44,8 +44,18 @@ demucs>=4.0.1
 audio-separator>=0.44.0
 
 # --- Forced alignment / transcrição ---
-# whisperx traz o whisper + wav2vec2 CTC para alinhamento por palavra
-git+https://github.com/m-bain/whisperx.git
+# whisperx traz o whisper + wav2vec2 CTC para alinhamento por palavra.
+#
+# Instalado do PyPI, NÃO de "git+https://..." (como era até 16/07/2026). Motivo:
+# o git+ exigia Git na máquina do usuário só por causa desta linha - e o setup
+# morria no meio, sem log, quando faltava (caso real reportado). Verificado na
+# troca: o wheel 3.8.7rc1 do PyPI é byte-a-byte o mesmo código do commit que
+# instalávamos do git (8dcdec18), e não mexe no torch cu126 já instalado.
+#
+# Versão FIXA de propósito: o git+ seguia o HEAD (alvo móvel que podia quebrar
+# sozinho a qualquer commit novo). Ao atualizar, confira se o pin ainda existe
+# no PyPI e rode uma geração real antes de publicar.
+whisperx==3.8.7rc1
 
 # --- Pitch tracking ---
 # SwiftF0 é mais leve/rápido que CREPE e roda bem em 8GB de VRAM

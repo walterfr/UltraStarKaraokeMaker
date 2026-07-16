@@ -76,28 +76,9 @@ if (-not $sidecarDir) {
 }
 Write-Ok "Sidecar em: $sidecarDir"
 
-# ---------------------------------------------------------------------------
-# 1b. Git e OBRIGATORIO: o whisperx e instalado de "git+https://..."
-# (requirements.txt), entao sem o git o passo de dependencias falha. Checamos
-# AQUI, antes de baixar ~2 GB de torch, pra falhar rapido e com instrucao clara
-# (caso real reportado em 16/07/2026: o setup morria no meio sem dizer por que).
-# ---------------------------------------------------------------------------
-Write-Step "Verificando o Git (necessario para instalar o whisperx)"
-$gitOk = $null -ne (Get-Command git -ErrorAction SilentlyContinue)
-if (-not $gitOk) {
-    Fail @"
-O Git nao esta instalado (ou nao esta no PATH).
-
-O USKMaker instala o whisperx direto do repositorio dele, entao o Git e
-obrigatorio para configurar o ambiente de IA.
-
-O que fazer:
-  1. Instale o Git: https://git-scm.com/download/win  (as opcoes padrao servem)
-  2. FECHE e abra o app/terminal de novo (pro PATH atualizar)
-  3. Rode 'Configurar ambiente de IA' outra vez
-"@
-}
-Write-Ok "Git encontrado: $((git --version) 2>&1)"
+# NOTA: ate 16/07/2026 este script exigia o Git aqui, porque o whisperx era
+# instalado de "git+https://...". Agora ele vem do PyPI (ver requirements.txt),
+# entao o setup nao depende mais de Git nenhum.
 
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 
@@ -235,8 +216,7 @@ if ($LASTEXITCODE -eq 0) {
     Fail @"
 Alguma biblioteca do pipeline nao importou - o ambiente NAO esta pronto.
 
-Rode este setup de novo. Se persistir, confira se o Git esta instalado
-(https://git-scm.com/download/win) e abra uma issue com o log acima.
+Rode este setup de novo. Se persistir, abra uma issue com o log acima.
 "@
 }
 

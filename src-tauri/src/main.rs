@@ -129,7 +129,7 @@ fn tr(lang: &str, key: &str) -> &'static str {
         "setup_spawn" => if en { "Error starting the setup: {err}" } else { "Erro ao iniciar o setup: {err}" },
         "setup_failed" => if en { "Setup failed. See the log at '{log}'." } else { "O setup falhou. Veja o log em '{log}'." },
         "read_tags" => if en { "Error reading the file's tags: {err}" } else { "Erro ao ler as tags do arquivo: {err}" },
-        "deps_missing" => if en { "The AI environment is incomplete: the libraries {mods} are missing (the setup didn't finish). Run 'Set up AI environment' again — it needs Git installed (https://git-scm.com/download/win)." } else { "O ambiente de IA está incompleto: faltam as bibliotecas {mods} (o setup não terminou). Rode 'Configurar ambiente de IA' de novo — ele precisa do Git instalado (https://git-scm.com/download/win)." },
+        "deps_missing" => if en { "The AI environment is incomplete: the libraries {mods} are missing (the setup didn't finish). Run 'Set up AI environment' again." } else { "O ambiente de IA está incompleto: faltam as bibliotecas {mods} (o setup não terminou). Rode 'Configurar ambiente de IA' de novo." },
         _ => "",
     }
 }
