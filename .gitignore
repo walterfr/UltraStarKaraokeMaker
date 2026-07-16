@@ -18,6 +18,8 @@ python-sidecar/output_test/
 python-sidecar/output_raimundos/
 # log de sessão do sidecar persistente (server.py), gerado em runtime
 python-sidecar/_server_session.log
+# saídas do harness de avaliação (eval/library_replay.py) - stems/caches pesados
+python-sidecar/eval_runs/
 *.wav
 *.mp3
 *.webm

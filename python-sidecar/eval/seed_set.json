@@ -1,0 +1,61 @@
+{
+  "comment": "Curated gold seed set agreed on upstream issue #2. Referenced by library folder name ONLY - no audio or charts live in the repo; each dev supplies the files locally (folder = 'Artist - Title' with .mp3 + gold .txt). BPM range 184-417 (fine-grid hand charts).",
+  "songs": [
+    {
+      "folder": "ABBA - Dancing Queen",
+      "artist": "ABBA",
+      "title": "Dancing Queen",
+      "language": "en",
+      "style": "pop (SingStar ABBA)",
+      "stresses": "clean melismatic baseline; layered backing harmonies (lead-vocal rescue candidate)"
+    },
+    {
+      "folder": "3 Doors Down - Kryptonite",
+      "artist": "3 Doors Down",
+      "title": "Kryptonite",
+      "language": "en",
+      "style": "rock (SingStar Pop USA)",
+      "stresses": "syllabic rock, contrast to melisma"
+    },
+    {
+      "folder": "50 Cent feat Justin Timberlake & Timbaland - Ayo Technology",
+      "artist": "50 Cent feat Justin Timberlake & Timbaland",
+      "title": "Ayo Technology",
+      "language": "en",
+      "style": "pop-rock / rap",
+      "stresses": "fast rap + freestyle notes -> Whisper word-recall"
+    },
+    {
+      "folder": "Vicente Fernández - Estos celos",
+      "artist": "Vicente Fernández",
+      "title": "Estos celos",
+      "language": "es",
+      "style": "ranchera ballad",
+      "stresses": "held vowels / melisma / elongation"
+    },
+    {
+      "folder": "Morat & Juanes - Besos en guerra",
+      "artist": "Morat & Juanes",
+      "title": "Besos en guerra",
+      "language": "es",
+      "style": "pop",
+      "stresses": "elaborate mid-tempo, dense; stacked backing harmonies (lead-vocal rescue candidate)"
+    },
+    {
+      "folder": "Bad Bunny y Chencho Corleone - Me porto bonito",
+      "artist": "Bad Bunny & Chencho Corleone",
+      "title": "Me porto bonito",
+      "language": "es",
+      "style": "reggaeton",
+      "stresses": "fast delivery; [MULTI] duet gold scored flattened (single-player: one voice covers both parts) - per-singer scoring returns if duet generation lands"
+    },
+    {
+      "folder": "Abingdon boys school - Innocent sorrow (TV)",
+      "artist": "Abingdon boys school",
+      "title": "Innocent sorrow (TV)",
+      "language": "ja",
+      "style": "anime opening (short TV cut)",
+      "stresses": "romaji, fast syllabic"
+    }
+  ]
+}
