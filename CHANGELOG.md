@@ -6,6 +6,23 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 Cada versão tem um instalador pronto em **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — as notas de cada release trazem também as instruções de instalação.
 
+## [0.3.6] — 2026-07-17
+
+### Corrigido
+
+- **Quem instalou nas últimas semanas provavelmente está rodando sem a GPU — e nem sabe.** A instalação baixava ~2,5 GB da versão do PyTorch com CUDA e, no passo seguinte, **trocava tudo por uma versão sem CUDA** sem avisar. O resultado: processamento na CPU (~10 min por música em vez de ~2), com o app ainda mostrando "✓ GPU". Pior: quando dava para perceber, a mensagem culpava o **driver de vídeo** — que nunca teve nada a ver. **Se você tem GPU NVIDIA, rode o Configurar ambiente de IA de novo** e confira a linha final: deve dizer `CUDA disponivel: True`.
+  *(O bug apareceu sozinho, sem ninguém mexer em nada: a biblioteca que fazíamos o download passou a servir uma versão mais nova do que a que o app precisa.)*
+
+- **Músicas que saíam completamente fora de sincronia agora se resolvem sozinhas.** A separação da voz varia a cada tentativa, e de vez em quando sai uma ruim — quando isso acontece, o app não reconhece o canto e o pacote inteiro sai errado. Agora ele detecta e **refaz a separação automaticamente**, ficando com o melhor resultado. Custa 1–3 minutos, e só nos casos em que a primeira tentativa falhou.
+
+- **Se mesmo assim falhar, o app avisa** em vez de entregar calado. Antes, um pacote com 89% das notas estimadas trazia o mesmo aviso discreto de um com 5%.
+
+- **Notas depois do fim da música.** Quando o alinhamento se perdia, as notas podiam ser escritas além do fim do áudio — o jogo mostrava nota sem ter o que cantar.
+
+### Alterado
+
+- **`#GAP` arredondado para 10 ms** (`1927` → `1930`). O valor vinha do início da primeira palavra detectada, cuja precisão real é de dezenas de milissegundos — o milissegundo ali era ruído com cara de exatidão. É a convenção da comunidade, e 10 ms está bem abaixo do que o ouvido percebe.
+
 ## [0.3.5] — 2026-07-16
 
 ### Adicionado
@@ -118,6 +135,7 @@ Correções a partir de feedback da comunidade, validadas contra a [spec oficial
 
 Primeira release pública: pipeline completo (letra sincronizada, pitch, BPM, metadados, vídeo), instalador Windows e setup assistido do ambiente de IA.
 
+[0.3.6]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.6
 [0.3.5]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.5
 [0.3.4]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.4
 [0.3.3]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.3
