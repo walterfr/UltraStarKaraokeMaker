@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Every version has a ready-to-use installer on **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — each release's notes also carry the install instructions.
 
+## [0.3.8] — 2026-07-17
+
+### Added
+
+- **A warning when the app can't make out the lyrics well.** There was a way for a package to come out out-of-sync with no warning at all: when the app "heard" something else and placed the notes with false confidence, in the wrong spots. The previous warning only caught the case where the app *couldn't* place the notes — not the case where it placed them wrongly. Now, when lyric recognition comes out low, the result screen tells you to check the sync (and, if it's off, generate again). Found by measuring 60 songs against hand-made charts.
+
 ## [0.3.7] — 2026-07-17
 
 Two note-accuracy improvements, both measured against 1444 hand-made charts.
@@ -147,6 +153,7 @@ Fixes from community feedback, validated against the [official format spec](http
 
 First public release: the complete pipeline (synced lyrics, pitch, BPM, metadata, video), a Windows installer and assisted AI-environment setup.
 
+[0.3.8]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.8
 [0.3.7]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.7
 [0.3.6]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.6
 [0.3.5]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.5

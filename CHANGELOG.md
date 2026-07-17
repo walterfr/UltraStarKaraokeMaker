@@ -6,6 +6,12 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 Cada versão tem um instalador pronto em **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — as notas de cada release trazem também as instruções de instalação.
 
+## [0.3.8] — 2026-07-17
+
+### Adicionado
+
+- **Aviso quando o app não reconhece bem a letra na música.** Havia um jeito de o pacote sair fora de sincronia sem nenhum aviso: quando o app "ouvia" outra coisa e encaixava as notas com falsa confiança, nos lugares errados. O aviso anterior só pegava o caso em que o app *não conseguia* encaixar — não o caso em que ele encaixava errado. Agora, quando o reconhecimento da letra fica baixo, a tela de resultado avisa para você conferir a sincronia (e, se estiver ruim, gerar de novo). Descoberto medindo 60 músicas contra charts feitos à mão.
+
 ## [0.3.7] — 2026-07-17
 
 Duas melhorias na precisão das notas, as duas medidas contra 1444 charts feitos à mão.
@@ -147,6 +153,7 @@ Correções a partir de feedback da comunidade, validadas contra a [spec oficial
 
 Primeira release pública: pipeline completo (letra sincronizada, pitch, BPM, metadados, vídeo), instalador Windows e setup assistido do ambiente de IA.
 
+[0.3.8]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.8
 [0.3.7]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.7
 [0.3.6]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.6
 [0.3.5]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.5
