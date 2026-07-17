@@ -137,13 +137,60 @@ def allocate_syllable_durations(
     return [(boundaries[i], boundaries[i + 1]) for i in range(num_syllables)]
 
 
+# CALIBRAÇÃO DO MELISMA (17/07/2026) - os defaults de detect_melisma_notes
+# abaixo foram MEDIDOS contra 1444 charts feitos à mão do USDB, não escolhidos
+# no olho.
+#
+# O problema: produzíamos "~" em 15,2% das notas (mediana); os humanos fazem
+# 5,0%. Três vezes mais - e a issue #233 do UltraSinger mostra que excesso de
+# "~" irrita o jogador de verdade.
+#
+# A causa principal era `pitch_tolerance_semitones=1.0`: partia a sílaba na
+# DERIVA de pitch. Uma nota sustentada que escorrega ~3 semitons ao longo da
+# sílaba (glissando/portamento - coisa que cantor faz o tempo todo) virava
+# duas notas; com 2,0 de tolerância continua uma só. Verificado com deriva
+# sintética: a 3 st o limiar antigo parte, o novo não.
+#
+# NÃO era vibrato, embora fosse a hipótese óbvia (e a primeira que testei):
+# vibrato NUNCA parte a sílaba, em profundidade nenhuma, nem com tolerância
+# 1,0 - as micro-divisões que ele cria são curtas demais e o min_extension_s
+# já as fundia. Fica registrado pra ninguém "explicar" isso com vibrato de
+# novo.
+#
+# Varredura nas mesmas 20 músicas (mediana da fração de "~"):
+#     tol=1,0 sil=0,30 ext=0,15 -> 15,2%   (era isto)
+#     tol=2,0 sil=0,30 ext=0,15 -> 10,1%
+#     tol=3,0 sil=0,30 ext=0,15 ->  7,7%   (3 st = terça menor: perderia melisma real)
+#     tol=1,0 sil=0,45 ext=0,15 -> 10,4%
+#     tol=2,0 sil=0,45 ext=0,25 ->  6,5%   <- escolhido
+#
+# E a distribuição INTEIRA passou a bater, não só a mediana:
+#                mediana   média    p90     máx
+#     depois       6,5%    8,2%   16,6%   20,1%
+#     à mão        5,0%    7,3%   17,7%   67,1%
+# O p90 casar (16,6 vs 17,7) é o que mostra que a FORMA alinhou - acertar só a
+# mediana seria sorte.
+#
+# Cada valor tem razão musical, não é curva ajustada:
+#   - 2,0 st (um tom inteiro): acima do vibrato, abaixo de um salto real;
+#   - 0,45 s: sílaba mais curta que isso não está "sustentada";
+#   - 0,25 s: um "~" de 150 ms é curto demais pra se perceber como nota.
+#
+# Diferença que FICA e é esperada: 14% dos charts à mão não têm "~" nenhum
+# (charter que não usa a convenção); nós sempre produzimos algum, porque
+# medimos variação de pitch real. Não é erro - é o limite de medir vs. estilo.
+MELISMA_MIN_EXTENSION_S = 0.25
+MELISMA_PITCH_TOLERANCE_ST = 2.0
+MELISMA_MIN_SYLLABLE_S = 0.45
+
+
 def detect_melisma_notes(
     track: PitchTrack,
     syl_start: float,
     syl_end: float,
-    min_extension_s: float = 0.15,
-    pitch_tolerance_semitones: float = 1.0,
-    min_syllable_duration_for_melisma: float = 0.30,
+    min_extension_s: float = MELISMA_MIN_EXTENSION_S,
+    pitch_tolerance_semitones: float = MELISMA_PITCH_TOLERANCE_ST,
+    min_syllable_duration_for_melisma: float = MELISMA_MIN_SYLLABLE_S,
     max_voiced_gap_frames: float = 2.5,
 ) -> list[tuple[float, float]]:
     """

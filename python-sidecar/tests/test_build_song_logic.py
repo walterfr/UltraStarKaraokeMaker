@@ -92,15 +92,21 @@ def test_melisma_no_split_when_pitch_constant():
 def test_melisma_splits_on_sustained_pitch_jump():
     # 1ª metade da sílaba em 220Hz, 2ª metade em 440Hz (1 oitava = 12
     # semitons, bem acima da tolerância) - deve virar nota + "~".
-    timestamps = list(np.arange(0.025, 0.3, 0.05)) + list(np.arange(0.325, 0.6, 0.05))
-    pitch_hz = [220.0] * 6 + [440.0] * 6
-    track = _track(timestamps, pitch_hz=pitch_hz, voicing=[True] * 12)
+    #
+    # A sílaba era de 0,6 s quando o piso de extensão era 0,15 s. Com a
+    # calibração de 17/07/2026 o piso subiu pra 0,25 s, e cada metade daquele
+    # fixture media EXATAMENTE 0,25 s - encostava no limite e fundia por erro
+    # de float. Alongada pra 1,0 s: testa a mesma INTENÇÃO (salto grande de
+    # pitch parte a sílaba) sem ficar em cima do fio da navalha.
+    timestamps = list(np.arange(0.025, 0.5, 0.05)) + list(np.arange(0.525, 1.0, 0.05))
+    pitch_hz = [220.0] * 10 + [440.0] * 10
+    track = _track(timestamps, pitch_hz=pitch_hz, voicing=[True] * 20)
 
-    runs = detect_melisma_notes(track, 0.0, 0.6)
+    runs = detect_melisma_notes(track, 0.0, 1.0)
 
     assert len(runs) >= 2
     assert runs[0][0] == 0.0
-    assert runs[-1][1] == 0.6
+    assert runs[-1][1] == 1.0
     assert runs[0][1] < runs[-1][0]  # fronteiras distintas, não colapsadas
 
 
@@ -364,6 +370,72 @@ def test_gap_arredondado_e_sempre_multiplo_do_passo():
 
     for g in (0, 1, 4, 5, 9, 1927, 32399, 99999):
         assert round_gap_ms(g) % GAP_ROUND_MS == 0
+
+
+# --- calibracao do melisma contra charts a mao -----------------------------
+
+def test_melisma_calibrado_contra_charts_a_mao():
+    """
+    Trava a calibracao (17/07/2026), medida em 1444 charts do USDB:
+    produziamos "~" em 15,2% das notas (mediana) contra 5,0% dos humanos - 3x
+    mais, e a issue #233 do UltraSinger mostra que excesso irrita o jogador.
+
+    A causa era a tolerancia de 1 semitom: VIBRATO oscila mais que isso
+    sozinho, entao liamos vibrato como mudanca de nota. Nao "melhorar" estes
+    valores sem medir de novo contra a biblioteca gold.
+    """
+    from pipeline.build_song import (
+        MELISMA_MIN_EXTENSION_S,
+        MELISMA_MIN_SYLLABLE_S,
+        MELISMA_PITCH_TOLERANCE_ST,
+    )
+
+    # 2 st = um tom inteiro: acima do vibrato, abaixo de um salto real.
+    # Abaixo disso volta a pegar vibrato; 3 st ja e terca menor e perde melisma.
+    assert 1.5 <= MELISMA_PITCH_TOLERANCE_ST <= 2.5
+    # silaba mais curta que isso nao esta "sustentada"
+    assert MELISMA_MIN_SYLLABLE_S >= 0.40
+    # um "~" curto demais nao se percebe como nota
+    assert MELISMA_MIN_EXTENSION_S >= 0.20
+
+
+def test_silaba_curta_nunca_vira_melisma():
+    # o portao mais barato: abaixo do minimo, devolve o intervalo inteiro sem
+    # nem olhar o pitch
+    from pipeline.build_song import MELISMA_MIN_SYLLABLE_S
+
+    ts = list(np.arange(0.01, 1.0, 0.02))
+    track = _track(ts, pitch_hz=[220.0] * len(ts), voicing=[True] * len(ts))
+    curta = MELISMA_MIN_SYLLABLE_S - 0.05
+    assert detect_melisma_notes(track, 0.0, curta) == [(0.0, curta)]
+
+
+def test_deriva_de_pitch_nao_parte_a_nota_sustentada():
+    """
+    A CAUSA REAL do excesso de "~" (medida, 17/07/2026): uma nota sustentada
+    que ESCORREGA de pitch - glissando/portamento, coisa que cantor faz o
+    tempo todo - era partida em duas pela tolerancia de 1 semitom.
+
+    Este teste DISCRIMINA: com tol=1,0 (o valor antigo) a mesma silaba vira 2
+    notas; com o valor calibrado, 1. Sem isso o teste passaria nos dois e nao
+    provaria nada - foi o que aconteceu com o teste de vibrato que escrevi
+    antes (vibrato NUNCA parte a silaba, em profundidade nenhuma: as
+    micro-divisoes sao curtas demais e o min_extension_s ja as fundia).
+    """
+    t = np.arange(0.01, 1.2, 0.02)
+    semi = np.linspace(0, 3.0, len(t))          # sobe 3 semitons na silaba
+    hz = 220.0 * (2 ** (semi / 12.0))
+    track = _track(t, pitch_hz=hz, voicing=[True] * len(t))
+
+    # com o limiar ANTIGO, a deriva partia a nota
+    antigo = detect_melisma_notes(
+        track, 0.0, 1.2, min_extension_s=0.15,
+        pitch_tolerance_semitones=1.0, min_syllable_duration_for_melisma=0.30,
+    )
+    assert len(antigo) == 2, "o teste precisa discriminar - reveja o fixture"
+
+    # com o calibrado, continua uma nota sustentada
+    assert len(detect_melisma_notes(track, 0.0, 1.2)) == 1
 
 if __name__ == "__main__":
     import inspect
