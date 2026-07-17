@@ -335,6 +335,54 @@ def test_duracao_desconhecida_nao_conclui_nada(monkeypatch):
     assert library_replay.audio_chart_mismatch("x.mp3", _ChartFalso(999.0)) is None
 
 
+# --- portao 2: audio deslocado (offset de GAP), so visivel POS-alinhamento --
+
+def _offset_case(gold_starts, hyp_starts):
+    gold = [{"text": "w", "start": s, "end": s + 0.4} for s in gold_starts]
+    hyp = [{"text": "w", "start": s, "end": s + 0.4} for s in hyp_starts]
+    pairs = [(i, i) for i in range(len(gold_starts))]
+    return gold, hyp, pairs
+
+
+def test_offset_constante_e_deslocamento_de_dado():
+    # CASO REAL: Paul/Queen/Aerosmith - nosso = 1.00*gold + 67s. Duracao total
+    # bate (audio_chart_mismatch nao pega), mas TODO onset erra por 67s.
+    g = [3.0 * i for i in range(40)]
+    gold, hyp, pairs = _offset_case(g, [s + 67.0 for s in g])
+    motivo = library_replay.offset_data_mismatch(gold, hyp, pairs)
+    assert motivo and "deslocado" in motivo
+
+
+def test_offset_bem_alinhado_nao_dispara():
+    # w_1s cru ja e otimo -> nao ha offset a remover, mede-se normal
+    g = [3.0 * i for i in range(40)]
+    gold, hyp, pairs = _offset_case(g, [s + 0.1 for s in g])
+    assert library_replay.offset_data_mismatch(gold, hyp, pairs) is None
+
+
+def test_offset_alinhamento_quebrado_nao_e_confundido_com_dado():
+    # Whisper errou a letra: nuvem espalhada, nenhuma reta encaixa em 1s.
+    # Tem de continuar contando como FALHA NOSSA (retorna None aqui).
+    g = [3.0 * i for i in range(40)]
+    scatter = [((-1) ** i) * (2.0 + (i % 7)) for i in range(40)]  # 2..8s, +/-
+    gold, hyp, pairs = _offset_case(g, [gi + o for gi, o in zip(g, scatter)])
+    assert library_replay.offset_data_mismatch(gold, hyp, pairs) is None
+
+
+def test_offset_quebra_parcial_nao_dispara():
+    # metade certa na reta, metade espalhada -> o ajuste nao chega a 85%
+    g = [3.0 * i for i in range(40)]
+    h = [gi + (0.1 if i < 12 else ((-1) ** i) * 5.0) for i, gi in enumerate(g)]
+    gold, hyp, pairs = _offset_case(g, h)
+    assert library_replay.offset_data_mismatch(gold, hyp, pairs) is None
+
+
+def test_offset_poucos_pares_nao_conclui_nada():
+    # amostra pequena demais pra confiar no ajuste linear
+    gold, hyp, pairs = _offset_case([0.0, 3.0, 6.0], [67.0, 70.0, 73.0])
+    assert library_replay.offset_data_mismatch(gold, hyp, pairs) is None
+
+
 # --- pitch: o jogo compara modulo 12, e o gold nao manda na oitava ---------
 
 def _fake_pitch_track(midis, dur=1.0):

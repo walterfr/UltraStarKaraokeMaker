@@ -217,6 +217,51 @@ def _audio_duration(path: str) -> float | None:
         return None
 
 
+def offset_data_mismatch(gold: list[dict], hyp: list[dict],
+                         pairs: list[tuple[int, int]], *, min_pairs: int = 30,
+                         raw_ceiling: float = 0.5,
+                         fit_floor: float = 0.85) -> str | None:
+    """
+    Detecta o caso "áudio deslocado": o alinhamento está internamente CERTO,
+    mas o áudio baixado tem outro silêncio inicial (ou anda em velocidade um
+    pouco diferente) do que o charter cronometrou. Aí TODO onset erra pelo
+    mesmo offset e o w_1s desaba - sem o pipeline ter errado nada.
+
+    CASO REAL (n=60): Paul McCartney, Queen e Aerosmith pontuavam onset de
+    ~67 s como falha nossa; medindo, nosso ≈ 1,00*gold + 67 s - offset
+    CONSTANTE. O portão de duração (audio_chart_mismatch) não pega: a duração
+    total bate, o que difere é o offset INTERNO.
+
+    Devolve o motivo (string) se for deslocamento de dado; None se não.
+    Só dispara quando: (a) o w_1s CRU é ruim (< raw_ceiling) - senão mede-se
+    normal, não há offset a remover; (b) um ajuste linear h≈a*g+b, com a perto
+    de 1, deixa >= fit_floor das palavras dentro de 1 s; (c) o ajuste MELHORA
+    muito sobre o cru. Alinhamento genuinamente quebrado (Whisper errou a
+    letra) é uma nuvem espalhada - nenhuma reta a encaixa em 1 s -> não
+    dispara, e continua contando como falha nossa, que é o certo.
+    """
+    if len(pairs) < min_pairs:
+        return None
+    g = [gold[i]["start"] for i, _ in pairs]
+    h = [hyp[j]["start"] for _, j in pairs]
+    n = len(g)
+    raw_within = sum(1 for gi, hi in zip(g, h) if abs(hi - gi) <= 1.0) / n
+    if raw_within >= raw_ceiling:
+        return None  # já mede bem - não há deslocamento sistemático a remover
+    import numpy as np
+    a, b = (float(x) for x in np.polyfit(g, h, 1))
+    if not 0.85 <= a <= 1.18:
+        return None  # velocidade absurda: não é a mesma performance
+    resid = [hi - (a * gi + b) for gi, hi in zip(g, h)]
+    fit_within = sum(1 for r in resid if abs(r) <= 1.0) / n
+    if fit_within < fit_floor or (fit_within - raw_within) < 0.3:
+        return None
+    return (f"áudio deslocado do chart: removendo um offset linear "
+            f"(nosso ≈ {a:.2f}*gold {b:+.1f}s), {100 * fit_within:.0f}% das "
+            f"palavras caem em 1 s (cru: {100 * raw_within:.0f}%) - é outra "
+            f"edição/velocidade do áudio, não erro de alinhamento")
+
+
 def slugify(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_")[:80]
 
@@ -587,6 +632,9 @@ def _run_song(song: dict, run_dir: str, slug: str, device: str) -> dict:
     span = gwords[-1]["end"] - gwords[0]["start"]
     hyp = align_res["words"]
     pairs = match_words(gwords, hyp)
+    offset_problem = offset_data_mismatch(gwords, hyp, pairs)
+    if offset_problem:
+        raise UnmeasurableSong(offset_problem)
     return {
         "song": song["name"],
         "lang_group": song.get("lang_group"),
