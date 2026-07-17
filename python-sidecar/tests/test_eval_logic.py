@@ -274,6 +274,41 @@ def test_idioma_vazio_ou_desconhecido_devolve_none():
     assert library_replay.normalize_language("Klingon") is None
 
 
+# --- buckets de idioma no manifesto: pt/ja ganham bucket proprio ------------
+
+def _bucket(language_header):
+    code = library_replay.normalize_language(language_header) or "other"
+    return code if code in library_replay.BUCKET_LANGS else "other"
+
+
+def test_bucket_pt_e_ja_tem_bucket_proprio():
+    # pt e o 2o idioma mais comum e o que mais interessa (usuario BR); antes
+    # caia em "other". Vale pro codigo ISO, o nome e o qualificador BR.
+    assert _bucket("pt") == "pt"
+    assert _bucket("Portuguese") == "pt"
+    assert _bucket("Portuguese (Brazil)") == "pt"
+    assert _bucket("Japanese") == "ja"
+    assert _bucket("ja") == "ja"
+
+
+def test_bucket_en_es_seguem_com_bucket_e_resto_vira_other():
+    assert _bucket("English") == "en"
+    assert _bucket("Spanish") == "es"
+    # idiomas mapeados mas sem bucket proprio caem em other (sem sumir)
+    assert _bucket("French") == "other"
+    assert _bucket("German") == "other"
+    # desconhecido/vazio tambem
+    assert _bucket("Klingon") == "other"
+    assert _bucket("") == "other"
+
+
+def test_report_langs_sao_unicos_e_terminam_em_other():
+    # a ordem das linhas do relatorio; other e o balde final
+    assert library_replay.REPORT_LANGS[-1] == "other"
+    assert len(set(library_replay.REPORT_LANGS)) == len(library_replay.REPORT_LANGS)
+    assert set(library_replay.BUCKET_LANGS) == {"en", "es", "pt", "ja"}
+
+
 # --- portoes de qualidade de dado (nao e falha do pipeline) ----------------
 
 def _w(*textos):

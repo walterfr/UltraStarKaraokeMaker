@@ -72,6 +72,14 @@ LANG_CODES = {
 # #LANGUAGE dos dois jeitos - o nome por extenso E o código.
 _ISO_CODES = frozenset(LANG_CODES.values())
 
+# Idiomas com bucket próprio na amostragem estratificada e no relatório. pt e
+# ja são os dois mais comuns depois de en/es na biblioteca real (pt é o 2º, e
+# o que mais nos interessa - usuário BR); sem bucket próprio caíam em "other" e
+# sumiam da tabela, misturados com fr/de/it/etc. O resto vira "other". A ordem
+# aqui é a ordem das linhas do relatório.
+BUCKET_LANGS = ("en", "es", "pt", "ja")
+REPORT_LANGS = BUCKET_LANGS + ("other",)
+
 
 def normalize_language(raw: str | None) -> str | None:
     """
@@ -681,6 +689,12 @@ def run_song(song: dict, run_dir: str, device: str) -> None:
 
 # ---------- sampling ----------
 
+# Sobe quando o CONTEÚDO do manifesto muda de semântica (ex.: buckets de idioma
+# pt/ja) - senão um manifesto cacheado com o schema velho é reusado calado e a
+# mudança não pega. Bumpar aqui força o rescan da biblioteca.
+_MANIFEST_SCHEMA = 2
+
+
 def build_manifest(lib: str, runs_root: str) -> list[dict]:
     """Usable songs with lang_group + gold wpm; cached (one full-library parse)."""
     os.makedirs(runs_root, exist_ok=True)
@@ -688,7 +702,7 @@ def build_manifest(lib: str, runs_root: str) -> list[dict]:
     if os.path.exists(path):
         with open(path, encoding="utf-8") as f:
             m = json.load(f)
-        if m.get("lib") == lib:
+        if m.get("lib") == lib and m.get("schema") == _MANIFEST_SCHEMA:
             return m["songs"]
     songs = scan_library(lib)
     out = []
@@ -705,14 +719,18 @@ def build_manifest(lib: str, runs_root: str) -> list[dict]:
             span = gw[-1]["end"] - gw[0]["start"]
             if span < 60:
                 continue
-            code = LANG_CODES.get((chart.language or "").strip().lower(), "other")
+            # normalize_language (não o LANG_CODES cru) para pegar código ISO
+            # 'pt' e qualificador 'Portuguese (Brazil)' - senão o idioma mais
+            # comum depois do inglês cairia todo em "other".
+            code = normalize_language(chart.language) or "other"
             out.append({"name": s["name"], "mp3": s["mp3"], "gold": s["gold"],
-                        "lang_group": code if code in ("es", "en") else "other",
+                        "lang_group": code if code in BUCKET_LANGS else "other",
                         "wpm": round(len(gw) / (span / 60), 1)})
         except Exception:  # noqa: BLE001 - unparseable gold: not usable
             continue
     with open(path, "w", encoding="utf-8") as f:
-        json.dump({"lib": lib, "songs": out}, f, ensure_ascii=False)
+        json.dump({"lib": lib, "schema": _MANIFEST_SCHEMA, "songs": out}, f,
+                  ensure_ascii=False)
     log(f"manifest: {len(out)} usable songs (cached at {path})")
     return out
 
@@ -851,7 +869,7 @@ def aggregate(sample: list[dict], run_dir: str) -> None:
                                     ["w_1s", "onset", "interp", "p_2st",
                                      "p_2st12", "p_corr", "bpm_dev"]))
     med_line(ok, "ALL (median)")
-    for lg in ("es", "en", "other"):
+    for lg in REPORT_LANGS:
         rs = [r for r in ok if r["lang_group"] == lg]
         if rs:
             med_line(rs, f"lang={lg} (n={len(rs)})")
@@ -894,7 +912,7 @@ def main() -> int:
         run_dir = os.path.join(runs_root, f"replay-n{args.n}-seed{args.seed}")
     counts = ", ".join(
         f"{lg}={sum(1 for s in sample if s['lang_group'] == lg)}"
-        for lg in ("es", "en", "other"))
+        for lg in REPORT_LANGS)
     log(f"sample: {len(sample)} songs ({counts})")
 
     for sub in ("results", "cache"):
