@@ -6,6 +6,16 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 Cada versão tem um instalador pronto em **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — as notas de cada release trazem também as instruções de instalação.
 
+## [0.3.5] — 2026-07-16
+
+### Adicionado
+
+- **Faixas separadas de voz e instrumental no pacote** (opcional). Marcando a caixa, o pacote leva também a voz isolada e o playback, e o jogo passa a poder **controlar o volume da voz-guia separado do instrumental** — subir para aprender a música, zerar para cantar sozinho. A separação já acontecia de qualquer jeito (é como o app entende o canto); antes as faixas eram descartadas no fim. O pacote fica quase 3× maior, por isso a caixa vem desmarcada.
+
+### Corrigido
+
+- **O BPM manual voltou a ser literal.** Na v0.3.4 o valor digitado era ajustado junto com o automático. O campo existe para você mandar quando a detecção erra — então agora vai exatamente o que você digitou. Se o valor ficar fora da faixa que dá as notas mais precisas, o log só avisa, sem mexer no número.
+
 ## [0.3.4] — 2026-07-16
 
 Melhorias de qualidade do chart e um bug que quebrava pacotes em silêncio. Boa parte veio de revisar os projetos vizinhos ([UltraSinger](https://github.com/rakuri255/UltraSinger), [UltraStar-Creator](https://github.com/UltraStar-Deluxe/UltraStar-Creator), [usdb_syncer](https://github.com/bohning/usdb_syncer) e a [spec oficial](https://github.com/UltraStar-Deluxe/format)).
@@ -108,6 +118,7 @@ Correções a partir de feedback da comunidade, validadas contra a [spec oficial
 
 Primeira release pública: pipeline completo (letra sincronizada, pitch, BPM, metadados, vídeo), instalador Windows e setup assistido do ambiente de IA.
 
+[0.3.5]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.5
 [0.3.4]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.4
 [0.3.3]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.3
 [0.3.2]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.2
