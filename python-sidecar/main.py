@@ -281,6 +281,69 @@ def run_pipeline(
                 "mantendo o alinhamento no stem combinado do Demucs."
             )
 
+    # ETAPA 4c - 2ª SEPARAÇÃO ("outro sorteio do Demucs").
+    #
+    # O Demucs NÃO é determinístico: a MESMA entrada dá stems diferentes a cada
+    # rodada (medido por sha256 - 3 rodadas do mesmo .ogg, 3 hashes distintos).
+    # Quase sempre tanto faz, mas de vez em quando sai uma separação ruim, e o
+    # estrago é desproporcional: em "Supergrass - Alright" o Whisper ouviu
+    # "eat blond tea" no lugar de "keep our teeth", sobraram 20 âncoras de 183
+    # palavras e o alinhamento desabou (89% interpoladas). A MESMA música, com
+    # o Demucs rodado de novo, deu 0,5%. Ver issue #6.
+    #
+    # Não adianta tentar isso sempre: sorteio ruim é raro (1 em 19 na
+    # biblioteca gold medida) e uma 2ª separação custa 1-3 min de GPU. Então só
+    # rodamos quando o alinhamento claramente desabou - o mesmo corte do aviso
+    # ao usuário (ALIGNMENT_FAILED_PCT), que fica num vão VAZIO dos dados:
+    # música difícil chega a 16,8%, o caso patológico é 89%, e não há nada
+    # entre 20% e 50%.
+    #
+    # Por que DEPOIS do resgate (4b) e não antes: o resgate isola a voz
+    # principal A PARTIR do stem do Demucs. Se o stem está ruim, o isolado
+    # herda o problema - foi o que aconteceu no Supergrass (resgate tentou e
+    # deu exatamente os mesmos 89%). Ou seja, 4b não cobre este caso, e por
+    # isso 4c existe.
+    #
+    # Mesmo contrato do resgate: ganha quem tiver MENOS palavras interpoladas
+    # (sinal interno, sem ground truth) e qualquer falha é NÃO-FATAL.
+    interp_frac = alignment_stats(word_timings)["by_source"]["interpolated"] / max(len(word_timings), 1)
+    if interp_frac * 100 > ALIGNMENT_FAILED_PCT:
+        console.print(
+            f"[yellow]—[/yellow] {100*interp_frac:.0f}% das palavras interpoladas: o "
+            "alinhamento desabou. Separando o vocal de novo (a separação varia a cada "
+            "tentativa) e realinhando..."
+        )
+        debug_log(f"ETAPA 4c - 2a separacao: interp_frac={interp_frac:.2f}")
+        try:
+            stems2 = separate_vocals(source.audio_wav, work_path / "stems_retry", device=device)
+            retry_timings = align_lyrics_to_audio(
+                stems2.vocals, Path(lyrics_path), language=language, device=device,
+                synced_lyrics_path=Path(synced_lyrics_path) if synced_lyrics_path else None,
+            )
+            retry_interp = alignment_stats(retry_timings)["by_source"]["interpolated"]
+            base_interp = alignment_stats(word_timings)["by_source"]["interpolated"]
+            debug_log(f"ETAPA 4c - interpoladas: 1a separacao={base_interp} 2a={retry_interp}")
+            if retry_interp < base_interp:
+                word_timings = retry_timings
+                # o pitch tem que sair do MESMO stem que alinhou, senão as
+                # notas medem uma separação e apontam pra outra
+                stems = stems2
+                console.print(
+                    f"[green]OK[/green] A 2ª separação salvou: {base_interp} -> {retry_interp} "
+                    "palavras interpoladas."
+                )
+            else:
+                console.print(
+                    f"[dim]A 2ª separação não melhorou ({base_interp} -> {retry_interp} "
+                    "interpoladas) - mantendo a primeira.[/dim]"
+                )
+        except Exception as e:
+            debug_log(f"ETAPA 4c - falhou (não-fatal): {e}")
+            console.print(
+                f"[yellow]AVISO[/yellow] Não consegui separar o vocal de novo ({e}) - "
+                "mantendo o alinhamento que já temos."
+            )
+
     stats = alignment_stats(word_timings)
     by_source = stats["by_source"]
     interpolated_count = by_source["interpolated"]
