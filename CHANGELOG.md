@@ -6,6 +6,18 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 Cada versão tem um instalador pronto em **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — as notas de cada release trazem também as instruções de instalação.
 
+## [0.3.7] — 2026-07-17
+
+Duas melhorias na precisão das notas, as duas medidas contra 1444 charts feitos à mão.
+
+### Alterado
+
+- **Menos til (`~`) sobrando.** O `~` marca uma nota que sustenta e muda de altura dentro da mesma sílaba — mas o app estava exagerando: colocava `~` em três vezes mais notas que os charts feitos à mão. A causa era confundir uma nota que *escorrega* de altura (algo comum ao cantar) com uma mudança de nota de verdade. Agora a proporção de `~` está alinhada com o que os humanos fazem.
+
+### Corrigido
+
+- **Número na letra podia levar uma nota para o lugar errado.** Quando o app "ouvia" um número na música (ex.: "17") e a sua letra também trazia o número escrito como dígito, ele podia fixar uma nota num tempo inventado, com falsa confiança. Agora esse caso é detectado e a nota é medida do jeito certo. (Escrever o número por extenso na letra — "dezessete" — nunca foi afetado.)
+
 ## [0.3.6] — 2026-07-17
 
 ### Corrigido
@@ -135,6 +147,7 @@ Correções a partir de feedback da comunidade, validadas contra a [spec oficial
 
 Primeira release pública: pipeline completo (letra sincronizada, pitch, BPM, metadados, vídeo), instalador Windows e setup assistido do ambiente de IA.
 
+[0.3.7]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.7
 [0.3.6]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.6
 [0.3.5]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.5
 [0.3.4]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.4

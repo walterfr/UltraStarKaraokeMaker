@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Every version has a ready-to-use installer on **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — each release's notes also carry the install instructions.
 
+## [0.3.7] — 2026-07-17
+
+Two note-accuracy improvements, both measured against 1444 hand-made charts.
+
+### Changed
+
+- **Fewer stray tildes (`~`).** The `~` marks a note that holds and changes pitch within the same syllable — but the app was overdoing it: putting `~` on three times as many notes as hand-made charts do. The cause was mistaking a note that *slides* in pitch (common when singing) for an actual note change. The `~` proportion now matches what humans do.
+
+### Fixed
+
+- **A number in the lyrics could send a note to the wrong place.** When the app "heard" a number in the song (e.g. "17") and your lyrics also had it written as a digit, it could pin a note at an invented time with false confidence. That case is now detected and the note is measured correctly. (Writing the number out — "seventeen" — was never affected.)
+
 ## [0.3.6] — 2026-07-17
 
 ### Fixed
@@ -135,6 +147,7 @@ Fixes from community feedback, validated against the [official format spec](http
 
 First public release: the complete pipeline (synced lyrics, pitch, BPM, metadata, video), a Windows installer and assisted AI-environment setup.
 
+[0.3.7]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.7
 [0.3.6]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.6
 [0.3.5]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.5
 [0.3.4]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.4
