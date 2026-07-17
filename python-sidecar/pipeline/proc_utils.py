@@ -45,6 +45,31 @@ def ffmpeg_exe() -> str:
     return os.environ.get("USKMAKER_FFMPEG") or "ffmpeg"
 
 
+def ensure_ffmpeg_on_path() -> None:
+    """
+    Coloca a PASTA do ffmpeg embutido no PATH do processo.
+
+    Nossas chamadas usam ffmpeg_exe() (caminho absoluto), e o yt-dlp recebe
+    --ffmpeg-location - mas algumas bibliotecas chamam "ffmpeg"/"ffprobe" CRU
+    por subprocess, sem passar por nós: o `whisperx.load_audio` (Etapa 4) e o
+    `pyannote` (VAD). Quem não tem ffmpeg no PATH do sistema - a maioria, já que
+    o ponto do ffmpeg embutido é justamente não exigir isso - quebrava ali com
+    `FileNotFoundError: [WinError 2]`, MESMO com o ffmpeg embutido presente e
+    tudo antes (download, separação) funcionando.
+
+    Idempotente. Sem USKMAKER_FFMPEG (dev com ffmpeg no PATH), não faz nada.
+    """
+    ff = os.environ.get("USKMAKER_FFMPEG")
+    if not ff:
+        return
+    ff_dir = os.path.dirname(ff)
+    if not ff_dir:
+        return
+    parts = os.environ.get("PATH", "").split(os.pathsep)
+    if ff_dir not in parts:
+        os.environ["PATH"] = os.pathsep.join([ff_dir, *parts])
+
+
 def _print_captured(text: str) -> None:
     """
     Imprime um texto capturado de um subprocesso LINHA POR LINHA, nunca

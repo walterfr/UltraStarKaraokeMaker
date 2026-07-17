@@ -52,7 +52,7 @@ from pipeline.build_song import build_song
 from pipeline.download import download_background_video, get_source_audio
 from pipeline.filenames import sanitize_filename
 from pipeline.metadata import fetch_metadata
-from pipeline.proc_utils import ffmpeg_exe, run_subprocess
+from pipeline.proc_utils import ensure_ffmpeg_on_path, ffmpeg_exe, run_subprocess
 from pipeline.separate import isolate_lead_vocal, separate_vocals
 
 # Quando o stdout/stderr do Python não está conectado a um terminal real (é
@@ -227,6 +227,12 @@ def run_pipeline(
     requested_device = device
     device = resolve_device(device)
     debug_log(f"Device solicitado={requested_device!r} -> efetivo={device!r}")
+
+    # Põe o ffmpeg embutido no PATH ANTES da Etapa 4: o whisperx.load_audio e o
+    # pyannote chamam "ffmpeg" cru por subprocess, sem passar pelo ffmpeg_exe().
+    # Sem isto, quem não tem ffmpeg no PATH do sistema quebrava no alinhamento
+    # com FileNotFoundError [WinError 2], mesmo com o embutido presente.
+    ensure_ffmpeg_on_path()
 
     # Dueto: cruza a caixa com as tags P1:/P2: da letra e avisa se divergirem
     # (as tags são sempre removidas do texto cantado, marque a caixa ou não).

@@ -6,6 +6,13 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 Cada versão tem um instalador pronto em **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — as notas de cada release trazem também as instruções de instalação.
 
+## [Não lançado]
+
+### Corrigido
+
+- **Um link do YouTube baixava a playlist inteira.** Quando o link vinha com `&list=...` (o "Mix"/rádio automático que o YouTube adiciona sozinho, ou uma playlist), o app baixava a lista inteira — você colava um clipe e recebia uma dúzia de músicas. Agora baixa só o vídeo que você escolheu.
+- **Trava no alinhamento (Etapa 4) para quem não tem o ffmpeg no PATH do sistema.** A geração ia até a Etapa 4 e morria com um erro enorme (`WinError 2`, "o sistema não consegue encontrar o arquivo"). Causa: a biblioteca de alinhamento chamava o `ffmpeg` pelo nome, sem usar o ffmpeg que o app já traz embutido. Agora o ffmpeg embutido entra no caminho do processo antes do alinhamento — não é mais preciso ter ffmpeg instalado à parte. (O aviso barulhento sobre "torchcodec" que aparecia junto era inofensivo, não era a causa.)
+
 ## [0.4.0] — 2026-07-17
 
 ### Adicionado

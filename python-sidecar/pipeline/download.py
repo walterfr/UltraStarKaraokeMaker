@@ -46,6 +46,13 @@ def _yt_dlp_base_cmd() -> list[str]:
     # instalado no venv e é encontrado por sys.executable. Nome do módulo
     # usa underscore (yt_dlp), o comando usa hífen (yt-dlp).
     base = [sys.executable, "-m", "yt_dlp"]
+    # --no-playlist: um link de "watch" do YouTube costuma vir com "&list=..."
+    # (Mix/rádio automático, ou uma playlist de verdade). Sem esta flag, o
+    # yt-dlp baixa a LISTA INTEIRA - o usuário cola um clipe e recebe uma dúzia
+    # de músicas. O USKMaker sempre processa UMA música por URL, então baixar a
+    # lista nunca é o que se quer. Vai no comando BASE para valer em todos os
+    # downloads (áudio, vídeo e fundo).
+    base += ["--no-playlist"]
     # Aponta o yt-dlp para o ffmpeg EMBUTIDO do USKMaker quando houver (o
     # yt-dlp usa ffmpeg para extrair áudio e mesclar vídeo+áudio). Sem a var,
     # ele procura no PATH como antes. --ffmpeg-location aceita o caminho do
@@ -171,7 +178,7 @@ def download_background_video(url_or_query: str, out_dir: Path) -> Path | None:
 
     cmd = _yt_dlp_base_cmd() + [
         "-f", "bestvideo[ext=mp4][height<=1080]/bestvideo[height<=1080]/best[ext=mp4]/best",
-        "--no-playlist",
+        # --no-playlist agora está no comando base (_yt_dlp_base_cmd)
         "-o", output_template,
         url_or_query,
     ]
