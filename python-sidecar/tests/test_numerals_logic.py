@@ -13,6 +13,7 @@ from pipeline.align import (  # noqa: E402
     _alignment_tokens,
     _collapse_expanded_words,
     _syllable_weight,
+    _whisper_token_unreliable,
     compute_anchors,
 )
 
@@ -160,3 +161,46 @@ def test_peso_silabico_conta_o_que_se_canta():
 def test_peso_silabico_palavra_normal_inalterado():
     assert _syllable_weight("coração", "pt") == 3
     assert _syllable_weight("e", "pt") == 1
+
+
+# --- issue #8: digito na transcricao do Whisper vira ancora falsa ----------
+
+def test_digito_do_whisper_nao_vira_ancora():
+    """
+    CASO REAL (Joan Jett - I Love Rock-n-Roll): o Whisper escreve "17", o
+    wav2vec2 nao tem digito no vocabulario => timestamp lixo. Se a letra do
+    usuario tambem traz "17", o difflib casa EXATO e isso viraria uma ancora
+    (confianca maxima) com tempo inventado. O gate recusa a ancora -> a
+    palavra cai no realinhamento, que expande o numero.
+    """
+    whisper = [_ww("about", 10.0, 10.3), _ww("17", 10.4, 10.44), _ww("years", 11.0, 11.4)]
+    real = ["about", "17", "years"]
+
+    anchors = compute_anchors(whisper, real)
+
+    assert anchors[0] is not None, "'about' casa normalmente"
+    assert anchors[2] is not None, "'years' casa normalmente"
+    assert anchors[1] is None, "'17' do Whisper NAO pode virar ancora (timestamp lixo)"
+
+
+def test_gate_pega_digito_dentro_de_token_maior():
+    # "17th", "2nd" - o wav2vec2 tampouco alinha a parte numerica
+    assert _whisper_token_unreliable({"word": "17th"}) is True
+    assert _whisper_token_unreliable({"word": "2nd"}) is True
+
+
+def test_gate_nao_pega_palavra_normal():
+    # regressao: o caminho comum nao pode perder ancora
+    assert _whisper_token_unreliable({"word": "seventeen"}) is False
+    assert _whisper_token_unreliable({"word": "casa"}) is False
+    assert _whisper_token_unreliable({"word": ""}) is False
+
+
+def test_palavra_normal_ao_lado_de_digito_ainda_ancora():
+    # so o TOKEN com digito e recusado; os vizinhos seguem virando ancora
+    whisper = [_ww("meus", 1.0, 1.3), _ww("20", 1.4, 1.44), _ww("anos", 2.0, 2.4)]
+    real = ["meus", "20", "anos"]
+
+    anchors = compute_anchors(whisper, real)
+
+    assert [a is not None for a in anchors] == [True, False, True]

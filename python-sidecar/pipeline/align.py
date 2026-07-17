@@ -446,6 +446,32 @@ def _fuzzy_pairs(
     return pairs
 
 
+def _whisper_token_unreliable(word: dict) -> bool:
+    """
+    True se o TOKEN do Whisper contém dígito.
+
+    O vocabulário do wav2vec2 tem 46 tokens e NENHUM dígito (medido), então ao
+    "alinhar" um "17" ele não casa com frame de áudio nenhum e devolve um
+    timestamp lixo (o mesmo piscar de ~40 ms de f8c40a1). Uma âncora fundada
+    nesse timestamp é PIOR que âncora nenhuma: entra como nossa fonte de MAIOR
+    confiança (SOURCE_ANCHOR/FUZZY) com um tempo inventado, e envenena a
+    interpolação e a janela do realinhamento ao redor.
+
+    Recusar a âncora deixa a palavra cair no realinhamento (passe 3), que já
+    expande o número por extenso (ver _alignment_tokens) e mede direito.
+
+    CASO REAL medido (biblioteca gold, 1 em 8 músicas): "Joan Jett - I Love
+    Rock-n-Roll", o Whisper escreveu "17" ("about seventeen"). Achado ao
+    revisar o whisper-timestamped, que lista "converting numbers to words" como
+    desvantagem conhecida da abordagem wav2vec. Ver issue #8.
+
+    (Símbolos como "%"/"€" têm o mesmo problema mas são raros e não medidos -
+    ficam como gap conhecido menor; por isso o gate é só dígito, não um
+    "char fora do vocabulário".)
+    """
+    return any(c.isdigit() for c in word.get("word", ""))
+
+
 def compute_anchors(
     whisper_words: list[dict],
     real_words: list[str],
@@ -491,13 +517,19 @@ def compute_anchors(
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         if tag == "equal":
             for offset in range(i2 - i1):
-                anchors[j1 + offset] = _anchor_from(whisper_words[i1 + offset], SOURCE_ANCHOR)
+                w = whisper_words[i1 + offset]
+                if _whisper_token_unreliable(w):
+                    continue  # dígito no token -> timestamp lixo, ver função
+                anchors[j1 + offset] = _anchor_from(w, SOURCE_ANCHOR)
         elif tag == "replace":
             # O Whisper OUVIU algo neste trecho, só grafou diferente - se a
             # grafia for parecida, o evento acústico é o mesmo e o timestamp
             # medido vale ("cara" ouvido onde a letra diz "casa").
             for bi, bj in _fuzzy_pairs(whisper_norm[i1:i2], real_norm[j1:j2]):
-                anchors[j1 + bj] = _anchor_from(whisper_words[i1 + bi], SOURCE_FUZZY)
+                w = whisper_words[i1 + bi]
+                if _whisper_token_unreliable(w):
+                    continue
+                anchors[j1 + bj] = _anchor_from(w, SOURCE_FUZZY)
 
     _demote_suspicious_anchors(anchors, real_norm)
     return anchors
