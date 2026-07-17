@@ -6,6 +6,12 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 Cada versão tem um instalador pronto em **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — as notas de cada release trazem também as instruções de instalação.
 
+## [Não lançado]
+
+### Adicionado
+
+- **Modo dueto (duas vozes).** Marque a caixa **Dueto** e diga na letra quem canta cada trecho com uma tag no início da linha — `P1:`, `P2:` ou `P1&P2:` quando cantam juntos (linha sem tag continua com o cantor da anterior). O pacote sai no formato de dueto que a comunidade usa: headers `#P1`/`#P2` (os nomes vêm do artista, ex.: "Elton John & Kiki Dee"), o corpo em dois blocos `P1`/`P2` e o sufixo `[DUET]` no arquivo. As duas vozes já estão no vocal que o app isola — o alinhamento não muda, a tag só diz de quem é cada linha. Em dueto, o resgate por voz principal isolada é pulado (ele descartaria o segundo cantor).
+
 ## [0.3.8] — 2026-07-17
 
 ### Adicionado

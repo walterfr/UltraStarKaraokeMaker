@@ -205,6 +205,10 @@ struct PipelineInput {
     /// (#VOCALS/#INSTRUMENTAL). Opt-in: o pacote quase triplica de tamanho.
     #[serde(default)]
     with_stems: bool,
+    /// Modo dueto: o sidecar lê as tags P1:/P2:/P1&P2: da letra e escreve o
+    /// formato de dueto (#P1/#P2, blocos P1/P2, sufixo [DUET]). Opt-in.
+    #[serde(default)]
+    duet: bool,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -538,6 +542,7 @@ async fn run_pipeline(
         "bg_video_url": input.bg_video_url.as_deref().map(str::trim).filter(|s| !s.is_empty()),
         "clean_work": input.clean_work,
         "with_stems": input.with_stems,
+        "duet": input.duet,
         "synced_lyrics_path": synced_path.as_ref().map(|p| p.to_string_lossy().to_string()),
     });
     let job_line = serde_json::to_string(&job)

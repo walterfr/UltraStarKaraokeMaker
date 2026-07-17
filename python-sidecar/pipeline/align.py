@@ -105,30 +105,84 @@ class WordTiming:
     # fuzzy ou realinhamento de janela); False = interpolado/estimado.
     source: str = SOURCE_ANCHOR  # qual passe produziu o timestamp - ver
     # constantes SOURCE_* acima. Diagnóstico/revisão manual futura.
+    singer: int = 0  # 0 = solo/sem tag; 1 = P1; 2 = P2; 3 = ambos. Vem da
+    # tag P1:/P2:/P1&P2: no início da linha da letra (só usado em modo dueto).
 
 
-def _load_lyrics_words_with_line_ends(lyrics_path: Path) -> tuple[list[str], list[bool]]:
+# Tag de cantor no INÍCIO de uma linha da letra, para duetos: "P1:", "P2:",
+# "P1&P2:" (e variações "P1&2", "P1+P2", "P3", "both", "ambos"). Só o começo
+# da linha; o ":" é obrigatório pra não confundir com uma letra que comece com
+# "P1" de verdade. A tag é sempre REMOVIDA do texto cantado (mesmo fora do modo
+# dueto), pra "P1:" nunca virar uma palavra pro alinhador.
+_SINGER_TAG_RE = re.compile(
+    r"^\s*(p\s*1\s*&\s*p?\s*2|p\s*1\s*\+\s*p?\s*2|p\s*3|both|ambos|p\s*1|p\s*2)"
+    r"\s*:\s*",
+    re.IGNORECASE,
+)
+
+
+def _parse_singer_tag(line: str) -> tuple[int | None, str]:
     """
-    Lê o arquivo de letra e retorna duas listas paralelas:
-      - as palavras, na ordem em que aparecem (sem marcadores especiais)
+    Se a linha começa com uma tag de cantor, devolve (cantor, linha_sem_tag);
+    senão (None, linha). Cantor: 1=P1, 2=P2, 3=ambos.
+    """
+    m = _SINGER_TAG_RE.match(line)
+    if not m:
+        return None, line
+    tag = re.sub(r"\s+", "", m.group(1)).lower()
+    if "&" in tag or "+" in tag or tag in ("p3", "both", "ambos"):
+        singer = 3
+    elif tag == "p2":
+        singer = 2
+    else:  # p1
+        singer = 1
+    return singer, line[m.end():]
+
+
+def count_singer_tagged_lines(lyrics_path: Path) -> int:
+    """Quantas linhas da letra trazem uma tag de cantor explícita (P1:/P2:/
+    P1&P2:). Usado pra avisar quando a caixa de dueto está marcada mas a letra
+    não tem tag nenhuma - ou o contrário."""
+    text = lyrics_path.read_text(encoding="utf-8")
+    return sum(
+        1 for line in text.splitlines()
+        if _parse_singer_tag(line.strip())[0] is not None
+    )
+
+
+def _load_lyrics_words_with_line_ends(
+    lyrics_path: Path,
+) -> tuple[list[str], list[bool], list[int]]:
+    """
+    Lê o arquivo de letra e retorna três listas paralelas:
+      - as palavras, na ordem em que aparecem (sem tag de cantor)
       - um bool por palavra: True se ela é a ÚLTIMA palavra da sua linha
-        (ou seja, onde deve entrar um marcador de quebra de frase "-" no
-        .txt final do UltraStar).
+        (onde deve entrar um marcador de quebra de frase "-" no .txt final).
+      - um int por palavra: o cantor da linha (0 solo, 1 P1, 2 P2, 3 ambos).
+        Uma linha sem tag HERDA o cantor da anterior (você marca o começo de
+        cada parte e o resto continua); antes da 1ª tag, o padrão é P1. O
+        campo só é usado em modo dueto, mas as tags são sempre removidas.
     """
     text = lyrics_path.read_text(encoding="utf-8")
     words: list[str] = []
     line_ends: list[bool] = []
+    singers: list[int] = []
 
+    current = 1  # antes de qualquer tag, assume P1 (o dueto costuma abrir nele)
     for line in text.splitlines():
         line = line.strip()
         if not line:
             continue
+        tag, line = _parse_singer_tag(line)
+        if tag is not None:
+            current = tag
         line_words = line.split()
         for i, w in enumerate(line_words):
             words.append(w)
             line_ends.append(i == len(line_words) - 1)
+            singers.append(current)
 
-    return words, line_ends
+    return words, line_ends, singers
 
 
 _LRC_TS_RE = re.compile(r"\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]")
@@ -176,6 +230,9 @@ def _lyric_lines_with_start_index(lyrics_path: Path) -> list[tuple[str, int]]:
         line = line.strip()
         if not line:
             continue
+        # remove a tag de cantor pra o texto casar com o .lrc e os índices
+        # baterem com _load_lyrics_words_with_line_ends (que também remove)
+        _, line = _parse_singer_tag(line)
         line_words = line.split()
         if line_words:
             lines.append((line, word_idx))
@@ -1013,7 +1070,9 @@ def align_lyrics_to_audio(
             whisper_words.append(w)
 
     # 3) Âncoras exatas + fuzzy sobre a letra real.
-    real_words, line_end_flags = _load_lyrics_words_with_line_ends(lyrics_path)
+    real_words, line_end_flags, singer_flags = _load_lyrics_words_with_line_ends(
+        lyrics_path
+    )
     anchors = compute_anchors(whisper_words, real_words)
 
     # 3b) Âncoras de linha do .lrc (LRCLIB), se houver: primeiro DEMOVE
@@ -1049,8 +1108,9 @@ def align_lyrics_to_audio(
         if promoted:
             print(f"[INFO] Realinhamento de janela: {promoted} palavras medidas no 2º passe.")
 
-    for wt, is_end in zip(word_timings, line_end_flags):
+    for wt, is_end, singer in zip(word_timings, line_end_flags, singer_flags):
         wt.is_line_end = is_end
+        wt.singer = singer
 
     return word_timings
 

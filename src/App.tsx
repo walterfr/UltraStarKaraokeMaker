@@ -99,6 +99,7 @@ interface PersistedSettings {
   cleanWork: boolean;
   cleanExtras: boolean;
   withStems: boolean;
+  duet: boolean;
 }
 
 function loadSettings(): Partial<PersistedSettings> {
@@ -161,6 +162,7 @@ function App() {
   // então o pacote fica SEM a tela de revisão. Padrão desligado.
   const [cleanExtras, setCleanExtras] = useState(saved.cleanExtras ?? false);
   const [withStems, setWithStems] = useState(saved.withStems ?? false);
+  const [duet, setDuet] = useState(saved.duet ?? false);
   const [outDir, setOutDir] = useState(saved.outDir ?? "");
 
   // Letra sincronizada (.lrc) do LRCLIB: guardada crua e enviada ao pipeline,
@@ -238,9 +240,9 @@ function App() {
 
   // ------------------------------------------------ persistência leve
   useEffect(() => {
-    const settings: PersistedSettings = { sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems };
+    const settings: PersistedSettings = { sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet };
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  }, [sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems]);
+  }, [sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet]);
 
   useEffect(() => {
     (async () => {
@@ -464,6 +466,7 @@ function App() {
       bgVideoUrl: sourceMode === "file" && bgVideo ? bgVideoUrl.trim() || null : null,
       cleanWork,
       withStems,
+      duet,
     };
   }
 
@@ -954,6 +957,16 @@ function App() {
           {t("withStemsLabel")}
         </label>
         {withStems && <p className="field-hint">{t("withStemsHint")}</p>}
+        <label className="checkbox-line">
+          <input
+            type="checkbox"
+            checked={duet}
+            onChange={(e) => setDuet(e.target.checked)}
+            disabled={isRunning}
+          />
+          {t("duetLabel")}
+        </label>
+        {duet && <p className="field-hint">{t("duetHint")}</p>}
       </div>
 
       {queue.length > 0 && (

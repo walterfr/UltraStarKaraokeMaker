@@ -484,6 +484,9 @@ def build_notes(
                             # proveniência do timing (herdada da palavra inteira) -
                             # a tela de revisão usa para destacar notas estimadas.
                             score=wt.score,
+                            # cantor da linha (dueto): todas as notas de uma
+                            # palavra herdam o cantor dela.
+                            singer=wt.singer,
                         )
                     )
 
@@ -516,6 +519,9 @@ def build_song(
     background_filename: str | None = None,
     vocals_filename: str | None = None,
     instrumental_filename: str | None = None,
+    duet: bool = False,
+    p1_name: str | None = None,
+    p2_name: str | None = None,
 ) -> Song:
     pitch_extractor = PitchExtractor()
 
@@ -553,4 +559,7 @@ def build_song(
         instrumental_filename=instrumental_filename,
         notes=notes,
         phrase_breaks_after_index=phrase_breaks,
+        duet=duet,
+        p1_name=p1_name,
+        p2_name=p2_name,
     )

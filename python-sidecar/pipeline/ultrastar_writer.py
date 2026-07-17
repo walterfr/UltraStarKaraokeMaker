@@ -53,6 +53,9 @@ class Note:
     # acima: só diagnóstico pra tela de revisão, nunca vai pro .txt. Permite
     # sinalizar uma âncora MEDIDA (source != interpolated) mas com score
     # baixo - um match que existe mas é suspeito, diferente de "não medido".
+    singer: int = 0  # 0 = solo; 1 = P1; 2 = P2; 3 = ambos. Só relevante em
+    # modo dueto: decide em qual bloco (P1/P2) a nota é escrita. "Ambos" (3)
+    # vai nos DOIS blocos - os dois jogadores cantam a mesma nota.
 
 
 @dataclass
@@ -82,6 +85,12 @@ class Song:
     notes: list[Note] = field(default_factory=list)
     # índices em `notes` onde deve haver quebra de frase (fim de linha da letra)
     phrase_breaks_after_index: list[int] = field(default_factory=list)
+    # Dueto (opt-in): quando True, escreve os headers #P1/#P2 e o corpo em dois
+    # blocos ("P1" + notas do cantor 1, "P2" + notas do cantor 2), pela tag de
+    # cantor de cada nota. Nomes dos cantores (opcionais) vão nos headers.
+    duet: bool = False
+    p1_name: str | None = None
+    p2_name: str | None = None
 
     def to_txt(self) -> str:
         lines: list[str] = []
@@ -89,6 +98,12 @@ class Song:
         lines.append(f"#VERSION:{self.version}")
         lines.append(f"#TITLE:{self.title}")
         lines.append(f"#ARTIST:{self.artist}")
+        # Dueto: #P1/#P2 nomeiam os dois cantores. É a convenção que 100% dos
+        # duetos reais da comunidade (USDB) usam - a spec também aceita
+        # #DUETSINGERP1/P2, mas ninguém escreve assim.
+        if self.duet:
+            lines.append(f"#P1:{self.p1_name or 'P1'}")
+            lines.append(f"#P2:{self.p2_name or 'P2'}")
         lines.append(f"#MP3:{self.mp3_filename}")
         # #AUDIO é o MESMO arquivo do #MP3, duplicado de propósito: na spec v1
         # o #MP3 é obrigatório e o #AUDIO opcional, mas "implementações DEVEM
@@ -119,16 +134,40 @@ class Song:
         lines.append(f"#CREATOR:{self.creator}")
 
         phrase_break_set = set(self.phrase_breaks_after_index)
-        for i, note in enumerate(self.notes):
-            lines.append(
-                f"{note.note_type} {note.start_beat} {note.duration_beats} {note.pitch} {note.text}"
-            )
-            if i in phrase_break_set and i + 1 < len(self.notes):
-                next_start = self.notes[i + 1].start_beat
-                lines.append(f"- {next_start}")
+        if self.duet:
+            # Dois blocos: "P1" + notas do cantor 1, "P2" + notas do cantor 2.
+            # Cada bloco carrega beats ABSOLUTOS (cobre a música inteira); o
+            # player sobrepõe os dois pelo beat. Notas "ambos" (3) entram nos
+            # dois. É a estrutura dos duetos reais (Elton John, Stan, etc.).
+            lines.append("P1")
+            lines.extend(self._body_lines(phrase_break_set, {1, 3}))
+            lines.append("P2")
+            lines.extend(self._body_lines(phrase_break_set, {2, 3}))
+        else:
+            lines.extend(self._body_lines(phrase_break_set, None))
 
         lines.append("E")
         return "\n".join(lines)
+
+    def _body_lines(self, phrase_break_set: set[int],
+                    singers: set[int] | None) -> list[str]:
+        """
+        Linhas do corpo (notas + quebras "-") para um subconjunto de cantores.
+        `singers=None` => todas as notas (modo solo). A quebra de frase só é
+        emitida quando há uma PRÓXIMA nota no MESMO bloco - senão um "-" órfão
+        no fim do bloco quebraria a rolagem.
+        """
+        block = [(i, n) for i, n in enumerate(self.notes)
+                 if singers is None or n.singer in singers]
+        out: list[str] = []
+        for pos, (i, note) in enumerate(block):
+            out.append(
+                f"{note.note_type} {note.start_beat} {note.duration_beats} "
+                f"{note.pitch} {note.text}"
+            )
+            if i in phrase_break_set and pos + 1 < len(block):
+                out.append(f"- {block[pos + 1][1].start_beat}")
+        return out
 
     @staticmethod
     def _format_number(value: float) -> str:

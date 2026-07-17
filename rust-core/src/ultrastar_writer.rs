@@ -41,6 +41,11 @@ pub struct Note {
     /// pra tela de revisão, nunca vai pro .txt. Opcional pelo mesmo motivo.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub score: Option<f64>,
+    /// Cantor da nota em modo dueto: 0 solo, 1 P1, 2 P2, 3 ambos. Decide em
+    /// qual bloco (P1/P2) a nota é escrita; "ambos" vai nos dois. Ignorado
+    /// fora do modo dueto. Opcional para compatibilidade com JSONs antigos.
+    #[serde(default)]
+    pub singer: i64,
 }
 
 fn default_note_type() -> String {
@@ -84,6 +89,15 @@ pub struct Song {
     /// Índices em `notes` onde deve haver quebra de frase (fim de linha da letra)
     #[serde(default)]
     pub phrase_breaks_after_index: Vec<usize>,
+    /// Dueto (opt-in): quando true, escreve os headers #P1/#P2 e o corpo em
+    /// dois blocos ("P1" + notas do cantor 1, "P2" + notas do cantor 2), pela
+    /// tag `singer` de cada nota. Ver ultrastar_writer.py (o oráculo).
+    #[serde(default)]
+    pub duet: bool,
+    #[serde(default)]
+    pub p1_name: Option<String>,
+    #[serde(default)]
+    pub p2_name: Option<String>,
 }
 
 fn default_version() -> String {
@@ -130,6 +144,18 @@ impl Song {
         lines.push(format!("#VERSION:{}", self.version));
         lines.push(format!("#TITLE:{}", self.title));
         lines.push(format!("#ARTIST:{}", self.artist));
+        // Dueto: #P1/#P2 nomeiam os cantores. É a convenção da comunidade
+        // (USDB); a spec também aceita #DUETSINGERP1/P2, mas ninguém usa.
+        if self.duet {
+            lines.push(format!(
+                "#P1:{}",
+                self.p1_name.as_deref().unwrap_or("P1")
+            ));
+            lines.push(format!(
+                "#P2:{}",
+                self.p2_name.as_deref().unwrap_or("P2")
+            ));
+        }
         lines.push(format!("#MP3:{}", self.mp3_filename));
         // #AUDIO é o mesmo arquivo do #MP3, escrito de propósito em duplicata.
         // Na spec v1 (a publicada) o #MP3 é OBRIGATÓRIO e o #AUDIO é opcional
@@ -174,19 +200,47 @@ impl Song {
         let phrase_break_set: HashSet<usize> =
             self.phrase_breaks_after_index.iter().cloned().collect();
 
-        for (i, note) in self.notes.iter().enumerate() {
-            lines.push(format!(
-                "{} {} {} {} {}",
-                note.note_type, note.start_beat, note.duration_beats, note.pitch, note.text
-            ));
-            if phrase_break_set.contains(&i) && i + 1 < self.notes.len() {
-                let next_start = self.notes[i + 1].start_beat;
-                lines.push(format!("- {}", next_start));
-            }
+        if self.duet {
+            // Dois blocos, com beats absolutos cada; o player os sobrepõe pelo
+            // beat. Notas "ambos" (3) entram nos dois. Espelha o to_txt do
+            // Python (o oráculo de regressão byte-a-byte).
+            lines.push("P1".to_string());
+            lines.extend(self.body_lines(&phrase_break_set, Some(&[1, 3])));
+            lines.push("P2".to_string());
+            lines.extend(self.body_lines(&phrase_break_set, Some(&[2, 3])));
+        } else {
+            lines.extend(self.body_lines(&phrase_break_set, None));
         }
 
         lines.push("E".to_string());
         lines.join("\n")
+    }
+
+    /// Linhas do corpo (notas + quebras "-") para um subconjunto de cantores.
+    /// `singers=None` => todas as notas (solo). A quebra só sai quando há uma
+    /// PRÓXIMA nota no MESMO bloco - senão um "-" órfão quebra a rolagem.
+    fn body_lines(&self, phrase_break_set: &HashSet<usize>,
+                  singers: Option<&[i64]>) -> Vec<String> {
+        let block: Vec<(usize, &Note)> = self
+            .notes
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| match singers {
+                None => true,
+                Some(s) => s.contains(&n.singer),
+            })
+            .collect();
+        let mut out: Vec<String> = Vec::new();
+        for (pos, (i, note)) in block.iter().enumerate() {
+            out.push(format!(
+                "{} {} {} {} {}",
+                note.note_type, note.start_beat, note.duration_beats, note.pitch, note.text
+            ));
+            if phrase_break_set.contains(i) && pos + 1 < block.len() {
+                out.push(format!("- {}", block[pos + 1].1.start_beat));
+            }
+        }
+        out
     }
 
     /// Grava o .txt em disco. Usa `\n` puro (LF), igual ao writer Python

@@ -89,6 +89,8 @@ const STRINGS = {
     cleanExtrasHint: "Remove também o song_data.json — os pacotes ficarão SEM a tela de revisão. Deixe desmarcado se quiser revisar depois.",
     withStemsLabel: "Incluir faixas separadas de voz e instrumental no pacote",
     withStemsHint: "Permite ao jogo controlar o volume da voz-guia separado do instrumental (subir para aprender, zerar para cantar sozinho). O pacote fica quase 3x maior. A separação já é feita de qualquer jeito — isto só a inclui no pacote.",
+    duetLabel: "Dueto (duas vozes)",
+    duetHint: "Marque para gerar um dueto. Na letra, comece as linhas de cada cantor com uma tag: \"P1: ...\", \"P2: ...\" ou \"P1&P2: ...\" quando cantam juntos. Uma linha sem tag continua com o cantor da anterior. O pacote sai no formato de dueto (#P1/#P2, blocos P1/P2, sufixo [DUET]).",
 
     // ---- validação ----
     valNeedYoutube: "Informe o link do YouTube.",
@@ -280,6 +282,8 @@ const STRINGS = {
     cleanExtrasHint: "This also removes song_data.json — packages will have NO review screen. Leave unchecked if you want to review later.",
     withStemsLabel: "Include separate vocal and instrumental tracks in the package",
     withStemsHint: "Lets the game control the guide vocal's volume separately from the instrumental (turn it up to learn, off to sing solo). Makes the package almost 3x bigger. The separation happens anyway — this just includes it.",
+    duetLabel: "Duet (two voices)",
+    duetHint: "Tick this to make a duet. In the lyrics, start each singer's lines with a tag: \"P1: ...\", \"P2: ...\", or \"P1&P2: ...\" when they sing together. A line with no tag stays with the previous singer. The package comes out in duet format (#P1/#P2, P1/P2 blocks, [DUET] suffix).",
 
     valNeedYoutube: "Enter the YouTube link.",
     valNeedFile: "Select a local audio/video file.",

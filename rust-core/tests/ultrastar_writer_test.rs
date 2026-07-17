@@ -111,6 +111,57 @@ fn no_overlap_in_clean_fixture() {
 }
 
 #[test]
+fn duet_writes_p1_p2_headers_and_two_blocks() {
+    let mut song = load_fixture();
+    song.duet = true;
+    song.p1_name = Some("Elton".to_string());
+    song.p2_name = Some("Kiki".to_string());
+    // atribui cantores: nota 0 -> P1, nota 1 -> ambos, nota 2 -> P2
+    song.notes[0].singer = 1;
+    song.notes[1].singer = 3;
+    song.notes[2].singer = 2;
+    for n in song.notes.iter_mut().skip(3) {
+        n.singer = 1;
+    }
+    let txt = song.to_txt();
+
+    // headers de dueto, na convenção da comunidade (#P1/#P2), entre ARTIST e MP3
+    assert!(txt.contains("#ARTIST:Rita Lee\n#P1:Elton\n#P2:Kiki\n#MP3:"),
+            "headers de dueto ausentes ou fora de posição.\n{}", txt);
+    // corpo em dois blocos
+    let p1 = txt.find("\nP1\n").expect("bloco P1 ausente");
+    let p2 = txt.find("\nP2\n").expect("bloco P2 ausente");
+    assert!(p1 < p2, "P1 deve vir antes de P2");
+    // a nota "ambos" (índice 1) aparece nos DOIS blocos
+    let both_line = format!(
+        "{} {} {} {} {}",
+        song.notes[1].note_type, song.notes[1].start_beat,
+        song.notes[1].duration_beats, song.notes[1].pitch, song.notes[1].text
+    );
+    assert_eq!(txt.matches(&both_line).count(), 2,
+               "nota 'ambos' deveria aparecer nos dois blocos.\n{}", txt);
+    // a nota só-P2 (índice 2) NÃO aparece no bloco P1
+    let p2_only = format!(
+        "{} {} {} {} {}",
+        song.notes[2].note_type, song.notes[2].start_beat,
+        song.notes[2].duration_beats, song.notes[2].pitch, song.notes[2].text
+    );
+    let p1_block = &txt[p1..p2];
+    assert!(!p1_block.contains(&p2_only),
+            "nota exclusiva do P2 vazou pro bloco P1.\n{}", p1_block);
+    assert!(txt.trim_end().ends_with('E'), "um único 'E' no fim");
+}
+
+#[test]
+fn solo_output_unchanged_without_duet_flag() {
+    // regressão: sem duet, nada de #P1/#P2 nem marcadores P1/P2
+    let song = load_fixture();
+    let txt = song.to_txt();
+    assert!(!txt.contains("#P1:"), "solo não pode ter #P1");
+    assert!(!txt.contains("\nP1\n"), "solo não pode ter bloco P1");
+}
+
+#[test]
 fn format_number_matches_python_convention() {
     // Espelha exatamente Song._format_number do python-sidecar:
     // inteiro exato -> sem decimais; senão -> sempre 2 casas decimais.

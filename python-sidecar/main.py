@@ -42,7 +42,11 @@ from pathlib import Path
 import soundfile as sf
 from rich.console import Console
 
-from pipeline.align import align_lyrics_to_audio, alignment_stats
+from pipeline.align import (
+    align_lyrics_to_audio,
+    alignment_stats,
+    count_singer_tagged_lines,
+)
 from pipeline.beatgrid import detect_bpm
 from pipeline.build_song import build_song
 from pipeline.download import download_background_video, get_source_audio
@@ -166,6 +170,23 @@ def convert_to_ogg(source_wav: Path, dest_ogg: Path, quality: int = 6) -> None:
     run_subprocess(cmd)
 
 
+def split_duet_artists(artist: str) -> tuple[str | None, str | None]:
+    """
+    Tenta separar o campo #ARTIST em dois nomes para os headers #P1/#P2 do
+    dueto (ex.: "Elton John & Kiki Dee" -> ("Elton John", "Kiki Dee")). Cobre
+    os separadores comuns dos duetos reais: "&", "feat.", "ft.", "x", ",", "/".
+    Se não achar dois nomes, devolve (None, None) e o writer usa "P1"/"P2".
+    """
+    for sep in (" & ", " feat. ", " feat ", " ft. ", " ft ", " x ", " X ",
+                " vs. ", " vs ", " and ", " And ", " e ", ", ", " / ", "/"):
+        if sep in artist:
+            a, _, b = artist.partition(sep)
+            a, b = a.strip(), b.strip()
+            if a and b:
+                return a, b
+    return None, None
+
+
 def run_pipeline(
     url: str | None,
     file: str | None,
@@ -183,6 +204,7 @@ def run_pipeline(
     clean_work: bool = False,
     synced_lyrics_path: str | None = None,
     with_stems: bool = False,
+    duet: bool = False,
 ):
     global _debug_log_path
 
@@ -205,6 +227,23 @@ def run_pipeline(
     requested_device = device
     device = resolve_device(device)
     debug_log(f"Device solicitado={requested_device!r} -> efetivo={device!r}")
+
+    # Dueto: cruza a caixa com as tags P1:/P2: da letra e avisa se divergirem
+    # (as tags são sempre removidas do texto cantado, marque a caixa ou não).
+    tagged_lines = count_singer_tagged_lines(Path(lyrics_path))
+    if duet and tagged_lines == 0:
+        console.print(
+            "[yellow]AVISO[/yellow] Modo dueto marcado, mas a letra não tem "
+            "nenhuma tag [bold]P1:[/bold]/[bold]P2:[/bold]. Marque o início de "
+            "cada parte (ex.: \"P1: ...\", \"P2: ...\", \"P1&P2: ...\"). Sem "
+            "tags, o pacote sai com um cantor só."
+        )
+    elif tagged_lines > 0 and not duet:
+        console.print(
+            "[yellow]AVISO[/yellow] A letra traz tags P1:/P2:, mas a caixa de "
+            "dueto está desmarcada. As tags serão removidas e o pacote sai como "
+            "solo. Marque \"Dueto\" para gerar as duas vozes."
+        )
     if device == "cpu" and requested_device != "cpu":
         console.print(
             "[yellow]AVISO[/yellow] GPU NVIDIA/CUDA não disponível — o processamento "
@@ -276,7 +315,17 @@ def run_pipeline(
     # qualidade, não precisa de ground truth). NÃO-FATAL: qualquer falha
     # (download do modelo ~900MB, etc.) mantém o resultado que já temos.
     interp_frac = alignment_stats(word_timings)["by_source"]["interpolated"] / max(len(word_timings), 1)
-    if interp_frac > 0.10:
+    if interp_frac > 0.10 and duet:
+        # Em dueto, o resgate 4b é CONTRAPRODUCENTE: isolate_lead_vocal isola a
+        # voz PRINCIPAL, o que descartaria o 2º cantor - exatamente o que o
+        # dueto precisa manter. O 4c (2ª separação Demucs completa, abaixo)
+        # preserva as duas vozes e segue valendo.
+        debug_log(f"ETAPA 4b - PULADA (modo dueto): interp_frac={interp_frac:.2f}")
+        console.print(
+            f"[dim]{100*interp_frac:.0f}% interpoladas, mas em modo dueto o resgate por "
+            "voz principal isolada é pulado (descartaria o 2º cantor).[/dim]"
+        )
+    elif interp_frac > 0.10:
         console.print(
             f"[yellow]—[/yellow] {100*interp_frac:.0f}% das palavras interpoladas - tentando resgate "
             "com a voz principal isolada do coro/apoio..."
@@ -462,6 +511,10 @@ def run_pipeline(
     # ("AC/DC", "Song 2: Live") - ver pipeline/filenames.py. O título/artista
     # ORIGINAIS seguem intactos para os headers e as buscas de metadado.
     file_base = sanitize_filename(f"{artist} - {title}")
+    # Sufixo " [DUET]" no padrão da comunidade (USDB) - o "[DUET]" é adicionado
+    # DEPOIS do sanitize (que removeria os colchetes), igual a "[CO]"/"[BG]".
+    if duet:
+        file_base = f"{file_base} [DUET]"
 
     # Nomes no padrão UltraStar profissional: "[CO]" (capa) e "[BG]" (fundo).
     cover_path = out_path / f"{file_base} [CO].jpg"
@@ -545,6 +598,10 @@ def run_pipeline(
             debug_log(f"Falha ao converter stems: {e}")
             console.print(f"[yellow]AVISO[/yellow] Não consegui incluir as faixas separadas: {e}")
 
+    # Nomes dos cantores para os headers #P1/#P2, derivados do #ARTIST
+    # ("Elton John & Kiki Dee" -> "Elton John" / "Kiki Dee"). Só em dueto.
+    p1_name, p2_name = split_duet_artists(artist) if duet else (None, None)
+
     song = build_song(
         title=title,
         artist=artist,
@@ -561,6 +618,9 @@ def run_pipeline(
         background_filename=background_filename,
         vocals_filename=vocals_filename,
         instrumental_filename=instrumental_filename,
+        duet=duet,
+        p1_name=p1_name,
+        p2_name=p2_name,
     )
     debug_log("ETAPA 6 - build_song concluído, escrevendo .txt")
 
@@ -631,6 +691,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--clean-work", action="store_true", help="Remover a pasta _work (intermediários) ao final")
     parser.add_argument("--with-stems", action="store_true", help="Incluir faixas separadas voz/instrumental no pacote (#VOCALS/#INSTRUMENTAL) - quase triplica o tamanho")
+    parser.add_argument("--duet", action="store_true", help="Modo dueto: lê as tags P1:/P2:/P1&P2: da letra e escreve o formato de dueto (#P1/#P2, blocos P1/P2, [DUET])")
     parser.add_argument(
         "--synced-lyrics",
         default=None,
@@ -655,6 +716,7 @@ if __name__ == "__main__":
             bg_video_url=args.bg_video_url,
             clean_work=args.clean_work,
             with_stems=args.with_stems,
+            duet=args.duet,
             synced_lyrics_path=args.synced_lyrics,
         )
     except Exception:
