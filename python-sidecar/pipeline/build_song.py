@@ -240,6 +240,34 @@ GOLDEN_FRACTION_DEFAULT = 0.05
 # mais fina - ver beatgrid.py) o mesmo "2" passaria a significar ~136 ms e
 # dobraria notas curtas demais, mudando o critério sem ninguém pedir. Em
 # tempo, o critério é o mesmo em qualquer BPM.
+# Passo de arredondamento do #GAP, em milissegundos.
+#
+# Gravávamos o valor cru (ex.: "#GAP:1927"), o que sugere precisão de 1 ms que
+# não existe: o GAP vem do início da 1ª palavra medida pelo alinhador, cujo
+# erro típico é de dezenas de ms (medido na biblioteca gold: onset mediano de
+# 88 ms). Milissegundo ali é ruído com cara de exatidão.
+#
+# 10 ms é a convenção da comunidade - o UltraSinger tem a mesma issue (#29,
+# "Round #GAP to nearest 10 ms", fechada: "More accuracy is not needed IMHO").
+# E é seguro: 10 ms está MUITO abaixo do limiar de percepção de dessincronia
+# (~25 ms), então o arredondamento não é audível.
+GAP_ROUND_MS = 10
+
+
+def round_gap_ms(gap_ms: int) -> int:
+    """
+    Arredonda o #GAP para o múltiplo de GAP_ROUND_MS mais próximo.
+
+    Usa `int(x + 0.5)` em vez de `round()` porque o round() do Python é
+    BANCÁRIO (arredonda .5 para o par mais próximo): round(192.5) devolve 192,
+    não 193. Aqui a diferença é de 5 ms - irrelevante pro áudio, mas o
+    comportamento surpreende quem lê. É a mesma pegadinha que já mordeu o
+    orçamento das notas douradas (`int(fraction*len + 0.5)`), então vale a
+    consistência.
+    """
+    return int(gap_ms / GAP_ROUND_MS + 0.5) * GAP_ROUND_MS
+
+
 GOLDEN_MIN_DURATION_S = 0.27
 
 
@@ -452,7 +480,7 @@ def build_song(
     # em beat negativo (o seconds_to_beat satura em 0). O gap_ms recebido (hoje
     # sempre 0) entra como ajuste fino adicional sobre esse offset.
     first_start = min((wt.start for wt in word_timings), default=0.0)
-    effective_gap_ms = max(0, round(first_start * 1000)) + gap_ms
+    effective_gap_ms = round_gap_ms(max(0, round(first_start * 1000)) + gap_ms)
 
     notes, phrase_breaks = build_notes(word_timings, vocals_wav_path, grid, effective_gap_ms, pitch_extractor)
 

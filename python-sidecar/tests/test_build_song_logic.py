@@ -331,6 +331,40 @@ def test_dourada_minima_nunca_e_zero():
 
     assert golden_min_beats(BeatGrid(bpm=1.0)) >= 1
 
+
+# --- #GAP arredondado ------------------------------------------------------
+
+def test_gap_arredonda_para_10ms():
+    """
+    Gravavamos o GAP cru (ex.: 1927), sugerindo precisao de 1 ms que nao
+    existe - ele vem do inicio da 1a palavra medida pelo alinhador, cujo erro
+    tipico e de dezenas de ms (onset mediano de 88 ms na biblioteca gold).
+    10 ms e a convencao da comunidade (UltraSinger #29) e fica MUITO abaixo do
+    limiar de percepcao (~25 ms), entao nao e audivel.
+    """
+    from pipeline.build_song import round_gap_ms
+
+    assert round_gap_ms(1927) == 1930
+    assert round_gap_ms(1924) == 1920
+    assert round_gap_ms(1925) == 1930  # meio pra cima
+    assert round_gap_ms(0) == 0
+
+
+def test_gap_arredondado_nunca_muda_mais_que_meio_passo():
+    # o arredondamento nao pode introduzir erro perceptivel: no maximo 5 ms,
+    # contra os ~25 ms do limiar de percepcao
+    from pipeline.build_song import GAP_ROUND_MS, round_gap_ms
+
+    for g in range(0, 5000, 7):
+        assert abs(round_gap_ms(g) - g) <= GAP_ROUND_MS / 2
+
+
+def test_gap_arredondado_e_sempre_multiplo_do_passo():
+    from pipeline.build_song import GAP_ROUND_MS, round_gap_ms
+
+    for g in (0, 1, 4, 5, 9, 1927, 32399, 99999):
+        assert round_gap_ms(g) % GAP_ROUND_MS == 0
+
 if __name__ == "__main__":
     import inspect
     failed = 0
