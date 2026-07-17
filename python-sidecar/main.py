@@ -64,6 +64,22 @@ sys.stderr.reconfigure(encoding="utf-8", line_buffering=True)
 
 console = Console()
 
+# Acima desta fração de palavras ESTIMADAS, o alinhamento não achou onde
+# ancorar e o pacote sai fora de sincronia - deixa de ser "vale revisar" e
+# vira "provavelmente não presta".
+#
+# O corte NÃO é chute. Medido na biblioteca gold (19 músicas, harness):
+#     mediana de interpoladas ........  1,9%
+#     pior caso LEGÍTIMO ............. 16,8%  (Joan Jett - I Love Rock-n-Roll)
+#     caso patológico ................ 89,1%  (Supergrass - Alright, issue #6)
+#     entre 20% e 50% ................ NADA
+# O vão é vazio: música difícil e alinhamento quebrado não se misturam. 50%
+# fica no meio do vazio, longe dos dois lados - então não há falso positivo
+# plausível, e mesmo assim há folga de sobra pro caso patológico.
+#
+# A UI usa o mesmo corte sobre notes_estimated/notes_total (App.tsx).
+ALIGNMENT_FAILED_PCT = 50.0
+
 _debug_log_path: Path | None = None
 
 
@@ -282,6 +298,33 @@ def run_pipeline(
             "(não foi possível medi-las no áudio, nem no 2º passe) - "
             f"maiores sequências seguidas: {stats['interpolated_runs']}."
         )
+        # Acima de metade estimada não é "vale revisar", é OUTRA COISA: o
+        # alinhamento não achou onde ancorar e o pacote sai fora de sincronia.
+        # Tratar isso com o mesmo aviso amarelo de 5% é entregar lixo calado.
+        #
+        # CAUSA (medida, issue #6): o Demucs NÃO é determinístico - a mesma
+        # entrada dá stems diferentes (3 hashes distintos do mesmo .ogg). Uma
+        # separação ruim faz o Whisper ouvir errado ("eat blond tea" no lugar
+        # de "keep our teeth" em "Supergrass - Alright"), sobram 20 âncoras de
+        # 183 palavras e o alinhamento desaba: 89% interpoladas. Rodando de
+        # novo, a mesma música deu 0,5%. Por isso o conselho é REGERAR - não é
+        # "esta música é difícil", é um dado ruim que a próxima tentativa
+        # provavelmente não repete.
+        if pct > ALIGNMENT_FAILED_PCT:
+            console.print(
+                f"[bold red]ATENÇÃO[/bold red] A MAIORIA das palavras ({pct:.0f}%) é "
+                "estimativa - o alinhamento não conseguiu reconhecer o canto nesta "
+                "música. O pacote provavelmente sai fora de sincronia."
+            )
+            console.print(
+                "    [yellow]VALE GERAR ESTA MÚSICA DE NOVO: a separação de voz do Demucs "
+                "varia a cada tentativa (mesma entrada, saída diferente - verificado por "
+                "hash), e uma separação ruim derruba o alinhamento inteiro. Normalmente a "
+                "2ª tentativa funciona. Se repetir, confira se a letra bate com ESTA "
+                "gravação (versão ao vivo, remix e refrão escrito uma vez só atrapalham)."
+                "[/yellow]"
+            )
+            debug_log(f"ALINHAMENTO FALHOU: {pct:.1f}% interpoladas")
 
     # Checagem de cobertura: avisa se a letra termina muito antes do áudio
     # (refrão repetido escrito só uma vez - erro comum de letras "(2x)").

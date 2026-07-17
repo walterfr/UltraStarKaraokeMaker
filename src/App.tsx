@@ -1092,6 +1092,18 @@ function App() {
                 </strong>
               )}
             </p>
+            {/* Quando a MAIORIA das notas é estimada, o app não conseguiu
+                reconhecer o canto e o pacote provavelmente está fora de
+                sincronia - dizer isso é mais honesto que entregar calado com
+                um badge igual ao de 5%. Ver issue #6. */}
+            {result.notesTotal > 0 &&
+              result.notesEstimated / result.notesTotal > 0.5 && (
+                <p className="field-hint warn">
+                  ⚠ {t("resultAlignFailed", {
+                    pct: Math.round((100 * result.notesEstimated) / result.notesTotal),
+                  })}
+                </p>
+              )}
             <p className="result-paths">
               {result.txtPath}
               <br />

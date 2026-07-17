@@ -140,6 +140,12 @@ const STRINGS = {
     resultSuccess: "Pacote gerado com sucesso!",
     resultNotesMeasured: "{n} notas medidas no áudio",
     resultNotesEstimated: " · {n} estimadas — vale revisar",
+    resultAlignFailed:
+      "{pct}% das notas são estimativas: o app não conseguiu reconhecer o canto nesta música, " +
+      "então o pacote provavelmente está fora de sincronia. Vale gerar esta música de novo: " +
+      "a separação da voz varia a cada tentativa, e normalmente a segunda funciona. " +
+      "Se repetir, confira se a letra bate com esta gravação (versão ao vivo, remix e refrão " +
+      "escrito uma vez só atrapalham).",
     resultReview: "Revisar alinhamento",
     resultOpenFolder: "Abrir pasta",
     resultNewSong: "Nova música",
@@ -318,6 +324,12 @@ const STRINGS = {
     resultSuccess: "Package generated successfully!",
     resultNotesMeasured: "{n} notes measured from audio",
     resultNotesEstimated: " · {n} estimated — worth reviewing",
+    resultAlignFailed:
+      "{pct}% of the notes are guesses: the app couldn't make out the singing in this song, " +
+      "so the package is probably out of sync. Worth generating this song again: the vocal " +
+      "separation varies between attempts, and a second try usually works. If it happens again, " +
+      "check that the lyrics match this recording (live versions, remixes and a chorus written " +
+      "only once all cause it).",
     resultReview: "Review alignment",
     resultOpenFolder: "Open folder",
     resultNewSong: "New song",
