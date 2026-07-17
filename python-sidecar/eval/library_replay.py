@@ -106,6 +106,18 @@ def normalize_language(raw: str | None) -> str | None:
     return None
 
 
+# O console do Windows decodifica em cp1252, e nomes de música/mensagens de
+# erro trazem caractere que não cabe lá (apóstrofo tipográfico, acento, CJK,
+# ou o próprio U+FFFD de um chart já corrompido na origem). Sem isto, o print
+# levanta UnicodeEncodeError - e o pior é ONDE isso acontece: no log do
+# except, MASCARANDO o erro de verdade com um erro de codificação. Aconteceu
+# de verdade rodando a biblioteca real (16/07/2026). Mesmo fix do main.py.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+
 def log(msg: str) -> None:
     print(f"[replay] {msg}", flush=True)
 
