@@ -80,6 +80,34 @@ console = Console()
 # A UI usa o mesmo corte sobre notes_estimated/notes_total (App.tsx).
 ALIGNMENT_FAILED_PCT = 50.0
 
+# Piso de "word-recall" do Whisper: a fração da letra que o Whisper reconheceu
+# de verdade (âncoras exatas + fuzzy, ANTES do realinhamento). Abaixo disto, o
+# Whisper não entendeu o suficiente da música, e as âncoras que ele COLOCOU têm
+# boa chance de estar nas palavras erradas.
+#
+# Por que precisa existir SEPARADO do interp_frac (medido no lote n=60, 17/07):
+# há um modo de falha "ancorado com CONFIANÇA mas ERRADO" que o interp_frac não
+# vê. Ex.: "Paul McCartney - No More Lonely Nights" alinhou com interp=0,01
+# (quase tudo ancorado) mas 67 s fora do lugar - o Whisper ouviu outra coisa e
+# ancorou nela. O interp_frac mede "quanto NÃO ancorou"; o word-recall mede
+# "quão pouco do que ancorou veio da letra de verdade". São buracos diferentes.
+#
+# Corte 0,60, escolhido pela CURVA medida (n=60), não arredondando no olho.
+# As 5 falhas reais têm wrecall 0,16-0,589; as 51 boas, mediana 0,89. A curva:
+#     <0,58: pega 3/5 reais, 1 falso-positivo
+#     <0,60: pega 5/5 reais, 2 falsos-positivos   <- patamar: 0,60 fica logo
+#     <0,65: pega 5/5 reais, 3 falsos-positivos       acima do pior real (0,589)
+#     <0,70: pega 5/5 reais, 5 falsos-positivos
+# 0,60 é o ponto onde pega TODAS as falhas com o mínimo de falso positivo.
+# O viés é DE PROPÓSITO pra capturar: o aviso é suave ("vale conferir"), então
+# um falso positivo custa um olhar do usuário, mas um falso negativo deixa um
+# pacote quebrado passar calado. Os 2 falsos positivos são vocais gritados/
+# rápidos (ex.: System of a Down - "Chop Suey!", wrecall 0,48 mas alinhamento
+# ótimo) - o realinhamento salva, mas o word-recall não sabe disso.
+# (Os 3 casos de wrecall ALTO que pareciam falha eram mismatch de GAP
+# gold/áudio, não erro do pipeline - não disparam, corretamente.)
+WHISPER_RECALL_FLOOR = 0.60
+
 _debug_log_path: Path | None = None
 
 
@@ -388,6 +416,28 @@ def run_pipeline(
                 "[/yellow]"
             )
             debug_log(f"ALINHAMENTO FALHOU: {pct:.1f}% interpoladas")
+
+    # Aviso "ancorado mas ERRADO" (issue nova, achado no n=60): independente do
+    # interp. Quando o Whisper reconheceu POUCO da letra (word-recall baixo), as
+    # âncoras que ele colocou podem estar nas palavras erradas - e isso passa
+    # batido pelo aviso de interpolação (a música pode estar quase toda
+    # "ancorada", só que no lugar errado).
+    measured = by_source["anchor"] + by_source["fuzzy"]
+    wrecall = measured / max(len(word_timings), 1)
+    if wrecall < WHISPER_RECALL_FLOOR and pct <= ALIGNMENT_FAILED_PCT:
+        # o "pct <= ..." evita avisar duas vezes a mesma música (se o interp já
+        # disparou o alarme forte acima, não repete)
+        console.print(
+            f"[bold red]ATENÇÃO[/bold red] O reconhecimento da letra ficou baixo "
+            f"({100*wrecall:.0f}% das palavras) - o Whisper pode ter entendido outra "
+            "coisa e ancorado no lugar errado. O pacote pode sair fora de sincronia."
+        )
+        console.print(
+            "    [yellow]Vale conferir a sincronia e, se estiver ruim, GERAR DE NOVO "
+            "(a separação de voz varia a cada tentativa). Confira também se a letra bate "
+            "com ESTA gravação.[/yellow]"
+        )
+        debug_log(f"WORD-RECALL BAIXO: {100*wrecall:.0f}% (âncoras podem estar erradas)")
 
     # Checagem de cobertura: avisa se a letra termina muito antes do áudio
     # (refrão repetido escrito só uma vez - erro comum de letras "(2x)").

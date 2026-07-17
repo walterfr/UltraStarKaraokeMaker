@@ -28,6 +28,7 @@ interface PipelineResult {
   genre: string | null;
   notesTotal: number;
   notesEstimated: number;
+  notesWhisperAnchored: number;
 }
 
 interface EnvCheck {
@@ -1101,6 +1102,22 @@ function App() {
                 <p className="field-hint warn">
                   ⚠ {t("resultAlignFailed", {
                     pct: Math.round((100 * result.notesEstimated) / result.notesTotal),
+                  })}
+                </p>
+              )}
+            {/* Aviso "ancorado mas ERRADO" (achado no lote n=60): quando o
+                Whisper reconheceu POUCO da letra, ele pode ter ancorado nas
+                palavras erradas. É um buraco diferente do de cima (que é
+                excesso de estimativa) — este pega o pacote "quase todo
+                ancorado, mas fora de sincronia". Só mostra se o aviso forte
+                acima NÃO disparou (senão seria redundante). Ver
+                WHISPER_RECALL_FLOOR no main.py. */}
+            {result.notesTotal > 0 &&
+              result.notesEstimated / result.notesTotal <= 0.5 &&
+              result.notesWhisperAnchored / result.notesTotal < 0.6 && (
+                <p className="field-hint warn">
+                  ⚠ {t("resultLowRecall", {
+                    pct: Math.round((100 * result.notesWhisperAnchored) / result.notesTotal),
                   })}
                 </p>
               )}

@@ -146,6 +146,10 @@ const STRINGS = {
       "a separação da voz varia a cada tentativa, e normalmente a segunda funciona. " +
       "Se repetir, confira se a letra bate com esta gravação (versão ao vivo, remix e refrão " +
       "escrito uma vez só atrapalham).",
+    resultLowRecall:
+      "O app reconheceu só {pct}% da letra na música — pode ter entendido outra coisa e " +
+      "colocado as notas no lugar errado. Vale conferir a sincronia; se estiver ruim, gere de " +
+      "novo (a separação da voz varia a cada tentativa) e confira se a letra bate com esta gravação.",
     resultReview: "Revisar alinhamento",
     resultOpenFolder: "Abrir pasta",
     resultNewSong: "Nova música",
@@ -330,6 +334,10 @@ const STRINGS = {
       "separation varies between attempts, and a second try usually works. If it happens again, " +
       "check that the lyrics match this recording (live versions, remixes and a chorus written " +
       "only once all cause it).",
+    resultLowRecall:
+      "The app only recognized {pct}% of the lyrics in the song — it may have heard something " +
+      "else and placed the notes in the wrong spots. Worth checking the sync; if it's off, generate " +
+      "again (the vocal separation varies between attempts) and check the lyrics match this recording.",
     resultReview: "Review alignment",
     resultOpenFolder: "Open folder",
     resultNewSong: "New song",

@@ -410,3 +410,40 @@ if __name__ == "__main__":
                 print(f"FALHOU: {name}: {e}")
     print("FALHAS:", failed)
     sys.exit(1 if failed else 0)
+
+
+# --- word-recall: aviso "ancorado mas errado" (achado no n=60) --------------
+
+def test_word_recall_constante_no_patamar_medido():
+    """
+    Trava o corte do WHISPER_RECALL_FLOOR na posicao MEDIDA (n=60), nao no olho.
+    Curva: <0,58 pega 3/5 falhas; <0,60 pega 5/5 com 2 falsos-positivos; subir
+    mais so adiciona falso-positivo. 0,60 fica logo acima do pior real (0,589).
+    O vies e DE PROPOSITO pra capturar (aviso suave: FP custa um olhar, FN
+    deixa pacote quebrado passar calado). Nao "otimizar" sem re-medir na gold.
+    """
+    from main import WHISPER_RECALL_FLOOR
+
+    # as 5 falhas reais do n=60 tinham wrecall 0,162 a 0,589 -> todas < 0,60
+    assert WHISPER_RECALL_FLOOR > 0.589
+    # mas nao tao alto a ponto de pegar as boas em massa (mediana 0,89)
+    assert WHISPER_RECALL_FLOOR < 0.75
+
+
+def test_word_recall_e_ancora_mais_fuzzy_sobre_total():
+    """
+    O sinal e (anchor+fuzzy)/total - as palavras que o Whisper reconheceu de
+    verdade. Realign e interpolated NAO contam: sao justamente o que pode ter
+    ido pro lugar errado. Espelha o calculo do Rust (notes_whisper_anchored).
+    """
+    from pipeline.align import (SOURCE_ANCHOR, SOURCE_FUZZY, SOURCE_REALIGN,
+                                SOURCE_INTERPOLATED, WordTiming, alignment_stats)
+
+    def wt(src):
+        return WordTiming(word="x", start=0.0, end=0.1, score=0.9, source=src)
+
+    timings = [wt(SOURCE_ANCHOR), wt(SOURCE_FUZZY), wt(SOURCE_REALIGN),
+               wt(SOURCE_INTERPOLATED), wt(SOURCE_ANCHOR)]
+    bs = alignment_stats(timings)["by_source"]
+    wrecall = (bs["anchor"] + bs["fuzzy"]) / len(timings)
+    assert wrecall == 0.6  # 3 de 5 (2 anchor + 1 fuzzy)

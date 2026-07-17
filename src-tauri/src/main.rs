@@ -225,6 +225,10 @@ struct PipelineResult {
     // (interpoladas). Vêm do campo `source` de cada nota do song_data.json.
     notes_total: usize,
     notes_estimated: usize,
+    /// Notas ancoradas por âncora exata/fuzzy do Whisper. A UI deriva o
+    /// "word-recall" (anchored/total): baixo = Whisper reconheceu pouco da
+    /// letra, âncoras podem estar erradas (alinhamento confiante mas errado).
+    notes_whisper_anchored: usize,
 }
 
 /// Caminho do ffmpeg EMBUTIDO do USKMaker (`%LOCALAPPDATA%\USKMaker\bin\ffmpeg.exe`),
@@ -633,6 +637,16 @@ async fn run_pipeline(
         .iter()
         .filter(|n| n.source.as_deref() == Some("interpolated"))
         .count();
+    // Notas medidas por ÂNCORA do Whisper (exata ou fuzzy), antes do
+    // realinhamento. A UI usa isto pro "word-recall": quando poucas notas
+    // vieram de âncora do Whisper, ele reconheceu pouco da letra e pode ter
+    // ancorado no lugar errado - um alinhamento "confiante mas errado" que a
+    // contagem de interpoladas não pega (ver WHISPER_RECALL_FLOOR no main.py).
+    let notes_whisper_anchored = song
+        .notes
+        .iter()
+        .filter(|n| matches!(n.source.as_deref(), Some("anchor") | Some("fuzzy")))
+        .count();
 
     Ok(PipelineResult {
         txt_path: txt_path.to_string_lossy().to_string(),
@@ -643,6 +657,7 @@ async fn run_pipeline(
         genre: song.genre.clone(),
         notes_total,
         notes_estimated,
+        notes_whisper_anchored,
     })
 }
 
