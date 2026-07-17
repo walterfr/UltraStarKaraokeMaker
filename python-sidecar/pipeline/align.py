@@ -551,11 +551,17 @@ def timings_from_anchors(
     anchors: list[Anchor | None],
     real_words: list[str],
     language: str = "pt",
+    audio_end: float | None = None,
 ) -> list[WordTiming]:
     """
     Passe 4 (fallback final): converte âncoras em WordTiming, interpolando
     as palavras sem âncora entre as âncoras vizinhas com peso proporcional
     ao nº estimado de sílabas. Processa gap a gap (não palavra a palavra).
+
+    `audio_end` (segundos) limita o encadeamento pra frente ao fim da música.
+    Sem ele o comportamento é o antigo - útil pros testes puros, mas quem
+    tiver o áudio à mão deve passar: ver o caso "Supergrass - Alright" no
+    comentário lá embaixo.
     """
     n = len(real_words)
     results: list[WordTiming | None] = [None] * n
@@ -603,10 +609,27 @@ def timings_from_anchors(
                 t += dur
         elif prev_idx >= 0:
             # fim da música sem âncora seguinte: encadeia para frente a
-            # partir da última âncora, ~0.15s por sílaba
+            # partir da última âncora, ~0.15s por sílaba.
+            #
+            # O encadeamento é limitado pelo FIM DO ÁUDIO quando ele é
+            # conhecido. Sem isso a corrente vaza pra fora da música: no caso
+            # real "Supergrass - Alright" (medido no harness), o Whisper
+            # transcreveu tão mal ("eat blond tea" no lugar de "keep our
+            # teeth") que só a última frase virou âncora - e as 163 palavras
+            # seguintes foram encadeadas até 207,6s num áudio de 199s. Nota
+            # depois do fim da música é lixo objetivo: o jogo mostra nota sem
+            # ter o que cantar. Quando não cabe, comprime pra caber - continua
+            # sendo estimativa ruim (é interpolação), mas ao menos DENTRO da
+            # música.
             t = anchors[prev_idx][1]
-            for k, w in zip(run, weights):
-                dur = min(0.8, max(0.2, 0.15 * w))
+            durs = [min(0.8, max(0.2, 0.15 * w)) for w in weights]
+            if audio_end is not None:
+                sobra = audio_end - t
+                preciso = sum(durs)
+                if preciso > sobra > 0:
+                    fator = sobra / preciso
+                    durs = [d * fator for d in durs]
+            for k, dur in zip(run, durs):
                 results[k] = WordTiming(
                     word=real_words[k], start=t, end=t + dur,
                     score=0.0, anchored=False, source=SOURCE_INTERPOLATED,
@@ -626,10 +649,14 @@ def timings_from_anchors(
                 t = start
         else:
             # nenhuma âncora em toda a música - não deveria acontecer (o
-            # realinhamento de janela cobre esse caso antes), evita crash
+            # realinhamento de janela cobre esse caso antes), evita crash.
+            # Mesmo limite do caso acima: não vazar pra fora do áudio.
             t = 0.0
-            for k, w in zip(run, weights):
-                dur = min(0.8, max(0.2, 0.15 * w))
+            durs = [min(0.8, max(0.2, 0.15 * w)) for w in weights]
+            if audio_end is not None and sum(durs) > audio_end > 0:
+                fator = audio_end / sum(durs)
+                durs = [d * fator for d in durs]
+            for k, dur in zip(run, durs):
                 results[k] = WordTiming(
                     word=real_words[k], start=t, end=t + dur,
                     score=0.0, anchored=False, source=SOURCE_INTERPOLATED,
@@ -975,7 +1002,11 @@ def align_lyrics_to_audio(
         if seeded:
             print(f"[INFO] Âncoras de linha do .lrc: {seeded} inícios de linha semeados.")
 
-    word_timings = timings_from_anchors(anchors, real_words, language)
+    # o fim do áudio limita o encadeamento das palavras sem âncora - sem isso
+    # a interpolação vaza pra depois da música (ver timings_from_anchors)
+    word_timings = timings_from_anchors(
+        anchors, real_words, language, audio_end=len(audio) / 16000.0
+    )
 
     # 4) Realinhamento acústico das janelas ainda interpoladas (reusa o
     #    modelo wav2vec2 já carregado).

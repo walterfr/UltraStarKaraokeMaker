@@ -352,6 +352,51 @@ def test_demote_anchors_conflicting_with_lrc_catches_tail_of_last_line():
     assert anchors[0] is not None  # não mexe no que está plausível
 
 
+
+# --- interpolacao nao pode vazar pra fora do audio -------------------------
+
+def test_interpolacao_nao_passa_do_fim_do_audio():
+    """
+    CASO REAL medido no harness ("Supergrass - Alright"): o Whisper transcreveu
+    tao mal ("eat blond tea" no lugar de "keep our teeth") que so a ultima
+    frase virou ancora, e as 163 palavras seguintes foram encadeadas ate
+    207,6s num audio de 199s. Nota depois do fim da musica e lixo objetivo: o
+    jogo mostra nota sem ter o que cantar.
+    """
+    from pipeline.align import timings_from_anchors
+
+    # uma ancora no fim, e 20 palavras sem ancora depois dela
+    anchors = [(100.0, 100.5, 0.9, "anchor")] + [None] * 20
+    palavras = ["ancorada"] + [f"palavra{i}" for i in range(20)]
+
+    t = timings_from_anchors(anchors, palavras, "pt", audio_end=105.0)
+
+    assert max(x.end for x in t) <= 105.0 + 1e-6, (
+        f"vazou para {max(x.end for x in t):.2f}s num audio de 105s"
+    )
+    # e continua monotonico e sem duracao negativa
+    assert all(x.end >= x.start for x in t)
+    assert all(a.start <= b.start for a, b in zip(t, t[1:]))
+
+
+def test_sem_audio_end_mantem_o_comportamento_antigo():
+    # os testes puros nao tem audio; a assinatura tem que continuar servindo
+    from pipeline.align import timings_from_anchors
+
+    anchors = [(100.0, 100.5, 0.9, "anchor")] + [None] * 3
+    t = timings_from_anchors(anchors, ["a", "b", "c", "d"], "pt")
+    assert t[-1].end > 100.5
+
+
+def test_audio_end_nao_encolhe_quando_ja_cabe():
+    # se a corrente cabe no audio, nada de compressao artificial
+    from pipeline.align import timings_from_anchors
+
+    anchors = [(10.0, 10.5, 0.9, "anchor")] + [None] * 3
+    largo = timings_from_anchors(anchors, ["a", "b", "c", "d"], "pt", audio_end=300.0)
+    livre = timings_from_anchors(anchors, ["a", "b", "c", "d"], "pt")
+    assert [x.end for x in largo] == [x.end for x in livre]
+
 if __name__ == "__main__":
     import inspect
     failed = 0
