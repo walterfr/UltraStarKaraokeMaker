@@ -8,14 +8,25 @@
 #   python -m venv venv
 #   .\venv\Scripts\Activate.ps1
 #   pip install --upgrade pip
-#   pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu126
+#   pip install "torch~=2.8.0" "torchaudio~=2.8.0" "torchvision~=0.23.0" --index-url https://download.pytorch.org/whl/cu126
 #   pip install -r requirements.txt
 #   pip install "audio-separator[gpu]>=0.44.0"   # [cpu] se nao tiver GPU NVIDIA
 #
-# NOTA: não fixar a versão do torch - deixe o pip resolver a versão mais
-# recente compatível com o Python instalado e com o build CUDA escolhido
-# (aqui usamos cu126, correspondente ao driver testado). Fixar versões
-# antigas quebra em Python 3.12+, que não tem wheels para elas.
+# O PIN DO TORCH ACIMA É OBRIGATÓRIO - e este comentário já disse o contrário.
+#
+# A versão antiga dizia "não fixar a versão do torch, deixe o pip resolver a
+# mais recente". Isso QUEBRA a instalação numa máquina limpa: sem pin, o
+# índice CUDA instala o mais novo (hoje 2.13.0+cu126, ~2,5 GB), e aí o
+# whisperx (abaixo) exige torch~=2.8.0 - então o pip/uv SUBSTITUI o torch
+# CUDA pelo torch 2.8.0 do PyPI, que no Windows é build de CPU. O usuário
+# baixa 2,5 GB de CUDA e fica sem GPU, e o setup ainda culpa o driver dele.
+#
+# Não víamos porque este venv foi criado quando o índice servia a série 2.8
+# (o 2.8.0+cu126 satisfaz ~=2.8.0 - versão local do PEP 440). O bug nasceu
+# quando o índice passou de 2.8. Achado no teste de máquina limpa (17/07/2026).
+#
+# O pin acompanha o requires_dist do whisperx. AO ATUALIZAR O WHISPERX,
+# conferir e alinhar os dois - inclusive em scripts/setup-sidecar.ps1.
 #
 # Verifique antes: `nvidia-smi` deve mostrar um driver CUDA recente.
 # Depois de instalar, confirme com:

@@ -178,8 +178,31 @@ if (Test-Path $ffmpegExe) {
 # ---------------------------------------------------------------------------
 # 6. Instalar dependencias via uv (o passo demorado - downloads grandes)
 # ---------------------------------------------------------------------------
+# O TORCH E PINADO NA SERIE QUE O WHISPERX EXIGE (torch~=2.8.0), e isso NAO
+# e capricho - sem o pin a instalacao sai QUEBRADA numa maquina limpa:
+#
+#   1. sem pin, este passo instalava o mais novo do indice CUDA (hoje
+#      torch 2.13.0+cu126) - ~2,5 GB de download;
+#   2. o passo seguinte (requirements.txt) traz o whisperx, que exige
+#      torch~=2.8.0. O uv entao SUBSTITUI o torch recem-instalado pelo
+#      torch 2.8.0 do PyPI - que no Windows e build de CPU;
+#   3. resultado: o usuario baixa 2,5 GB de CUDA e fica SEM GPU. Pior: a
+#      validacao no fim deste script dizia "GPU detectada mas o torch nao esta
+#      enxergando CUDA (verifique o driver)" - culpando o driver dele por um
+#      bug NOSSO.
+#
+# Nao aparecia aqui porque o venv de dev foi criado quando o indice ainda
+# servia a serie 2.8 (o pin do whisperx era satisfeito pelo 2.8.0+cu126 -
+# versao local do PEP 440 satisfaz ~=2.8.0). O bug nasceu quando o indice
+# passou de 2.8, e atinge quem instala HOJE. Achado no teste de maquina limpa
+# (uv --python-preference only-managed), 17/07/2026.
+#
+# AO ATUALIZAR O WHISPERX: conferir o requires_dist dele e alinhar estes pins.
+# Se divergirem, volta o mesmo estrago silencioso.
+$torchPin = @("torch~=2.8.0", "torchaudio~=2.8.0", "torchvision~=0.23.0")
+
 Write-Step "Instalando torch ($(if ($hasNvidia) {'CUDA cu126'} else {'CPU'})) - pode demorar varios minutos"
-& $uvExe pip install --python "$venvPython" torch torchaudio torchvision --index-url $torchIndex
+& $uvExe pip install --python "$venvPython" @torchPin --index-url $torchIndex
 if ($LASTEXITCODE -ne 0) { Fail "Falha ao instalar o torch." }
 
 Write-Step "Instalando as demais dependencias do pipeline"
