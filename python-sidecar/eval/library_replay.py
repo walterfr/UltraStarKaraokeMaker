@@ -122,6 +122,101 @@ def log(msg: str) -> None:
     print(f"[replay] {msg}", flush=True)
 
 
+class UnmeasurableSong(Exception):
+    """
+    A música não dá pra medir, e a culpa NÃO é do pipeline.
+
+    Existe pra separar duas coisas que o harness misturava: "o USKMaker errou"
+    de "esta entrada da biblioteca está torta". Sem essa distinção, o agregado
+    culpa o pipeline por dado ruim - e foi exatamente o que aconteceu na
+    primeira rodada real (ver os detectores abaixo).
+    """
+
+
+# Idiomas cuja escrita NÃO é latina. Se a letra do chart vem em alfabeto
+# latino nesses idiomas, ela está romanizada.
+_NON_LATIN_SCRIPT = frozenset({"ja", "ko", "zh", "ru"})
+
+
+def is_romanized_chart(language: str, gwords: list[dict]) -> bool:
+    """
+    Chart de idioma de escrita não-latina com a letra em ROMAJI/romanização.
+
+    CASO REAL ("Abingdon boys school - Innocent sorrow (TV)"): o chart diz
+    #LANGUAGE:Japanese, mas a letra é "Sake ta mune no kizuguchi ni". Mandamos
+    language='ja' pro whisper, que transcreve em kana/kanji - zero caractere em
+    comum com o alfabeto latino, nenhuma âncora possível. Resultado: w_1s
+    0.000, onset 35 s, 89% interpoladas - como se o pipeline tivesse falhado,
+    quando o que está errado é a premissa.
+
+    Romanizar chart ja/ko é convenção da comunidade (é o que dá pra cantar),
+    então isto não é raro. Medir esses charts exigiria transliterar a saída do
+    whisper - até lá, pular com o motivo explícito é mais honesto que reportar
+    zero.
+    """
+    if language not in _NON_LATIN_SCRIPT:
+        return False
+    texto = "".join(w["text"] for w in gwords[:40])
+    letras = [c for c in texto if c.isalpha()]
+    if not letras:
+        return False
+    latinas = sum(1 for c in letras if ord(c) < 0x250)  # latim + latim estendido
+    return latinas / len(letras) > 0.8
+
+
+def audio_chart_mismatch(audio_path: str, chart) -> str | None:
+    """
+    Devolve o motivo se o áudio claramente não é a versão que o chart mede.
+
+    O critério é o CONCLUSIVO: se o chart tem nota depois do fim do áudio, ele
+    não cabe - é outra edição da música, ponto. (Um áudio mais LONGO que o
+    chart é normal: outro, aplausos, fade.)
+
+    CASO REAL: "RuPaul - Supermodel" tem chart até 270,4 s e áudio de 248,5 s;
+    o harness pontuava onset de 50 s como se fosse erro nosso. A biblioteca do
+    usdb_syncer pega o áudio do YouTube, e o vídeo pode ser uma edição
+    diferente da que o charter cronometrou.
+
+    Não conclui nada quando não dá pra ler a duração - na dúvida, mede.
+    """
+    try:
+        fim_chart = chart.beat_to_time(
+            max(n.start_beat + n.duration for line in chart.lines for n in line.notes)
+        )
+    except ValueError:
+        return None
+    dur = _audio_duration(audio_path)
+    if dur is None:
+        return None
+    # tolerância: o chart pode legitimamente terminar em cima do fim do áudio
+    if fim_chart > dur + 2.0:
+        return (
+            f"áudio não bate com o chart: o chart vai até {fim_chart:.1f}s mas o "
+            f"áudio tem {dur:.1f}s - é outra versão da música"
+        )
+    return None
+
+
+def _audio_duration(path: str) -> float | None:
+    """Duração em segundos via ffprobe; None se não der pra saber."""
+    import subprocess
+
+    from pipeline.proc_utils import ffmpeg_exe
+
+    ffprobe = ffmpeg_exe().replace("ffmpeg", "ffprobe")
+    try:
+        out = subprocess.run(
+            [ffprobe, "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=nw=1:nk=1", path],
+            capture_output=True, text=True, timeout=60,
+        )
+        if out.returncode != 0:
+            return None
+        return float(out.stdout.strip())
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
 def slugify(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_")[:80]
 
@@ -442,6 +537,14 @@ def _run_song(song: dict, run_dir: str, slug: str, device: str) -> dict:
     language = normalize_language(chart.language)
     if not language:
         raise ValueError(f"unmapped gold #LANGUAGE {chart.language!r}")
+    if is_romanized_chart(language, gwords):
+        raise UnmeasurableSong(
+            f"chart romanizado: #LANGUAGE={chart.language!r} mas a letra está em "
+            f"alfabeto latino - o whisper transcreveria em outro sistema de escrita"
+        )
+    audio_problem = audio_chart_mismatch(song["mp3"], chart)
+    if audio_problem:
+        raise UnmeasurableSong(audio_problem)
     notes = gold_notes(chart)
     cache = Path(run_dir) / "cache" / slug
     cache.mkdir(parents=True, exist_ok=True)
@@ -485,10 +588,17 @@ def run_song(song: dict, run_dir: str, device: str) -> None:
         res = _run_song(song, run_dir, slug, device)
         with open(rj, "w", encoding="utf-8") as f:
             json.dump(res, f, ensure_ascii=False, indent=1, default=float)
+    except UnmeasurableSong as e:
+        # NÃO é falha do pipeline: a entrada da biblioteca é que não permite
+        # medir. Fica marcado no .error.json pra não sumir do relatório nem
+        # ser confundido com erro nosso.
+        log(f"       PULADA (dado, não pipeline): {e}")
+        with open(ej, "w", encoding="utf-8") as f:
+            json.dump({"error": str(e), "unmeasurable": True}, f, ensure_ascii=False)
     except Exception as e:  # noqa: BLE001 - one bad song must not kill the run
         log(f"       FAILED: {e!r}")
         with open(ej, "w", encoding="utf-8") as f:
-            json.dump({"error": repr(e)}, f)
+            json.dump({"error": repr(e)}, f, ensure_ascii=False)
     try:
         import torch
         torch.cuda.empty_cache()
@@ -585,7 +695,10 @@ FLAT_FIELDS = ["song", "lang_group", "wpm", "n_gold_words",
                "onset_p90_ms", "bias_ms", "end_med_ms", "interp_frac",
                "rescue_tried", "rescue_won",
                "pitch_coverage", "pitch_within_2st", "pitch_corr",
-               "bpm_est", "bpm_mult", "bpm_dev", "error"]
+               "bpm_est", "bpm_mult", "bpm_dev", "error",
+               # True = a música foi pulada por problema de DADO (chart
+               # romanizado, áudio de outra versão), não por erro do pipeline.
+               "unmeasurable"]
 
 KEY_METRICS = ["within_1s", "onset_med_ms", "interp_frac",
                "pitch_within_2st", "pitch_corr", "bpm_dev"]
@@ -624,7 +737,9 @@ def aggregate(sample: list[dict], run_dir: str) -> None:
                 row.update(_flat(json.load(f)))
         elif os.path.exists(ej):
             with open(ej, encoding="utf-8") as f:
-                row["error"] = json.load(f).get("error")
+                err = json.load(f)
+            row["error"] = err.get("error")
+            row["unmeasurable"] = bool(err.get("unmeasurable"))
         else:
             row["error"] = "not run"
         rows.append(row)
@@ -636,7 +751,10 @@ def aggregate(sample: list[dict], run_dir: str) -> None:
         w.writerows(rows)
 
     ok = [r for r in rows if r.get("recall") is not None]
-    failed = [r for r in rows if r.get("error")]
+    # "pulada por dado" NÃO conta como falha nossa - misturar as duas coisas
+    # faz o relatório culpar o pipeline por biblioteca torta.
+    unmeasurable = [r for r in rows if r.get("unmeasurable")]
+    failed = [r for r in rows if r.get("error") and not r.get("unmeasurable")]
 
     def med_line(rs, label):
         parts = [f"  {label:24s}"]
@@ -646,7 +764,9 @@ def aggregate(sample: list[dict], run_dir: str) -> None:
         print("".join(parts))
 
     print(f"\n=== library replay summary ({len(ok)} scored, {len(failed)} failed,"
-          f" {len(rows)} total) ===")
+          f" {len(unmeasurable)} skipped (data), {len(rows)} total) ===")
+    for r in unmeasurable:
+        print(f"  [dado] {r['song'][:44]}: {r['error']}")
     print("  " + " " * 24 + "".join(f"{h:>9s}" for h in
                                     ["w_1s", "onset", "interp", "p_2st",
                                      "p_corr", "bpm_dev"]))

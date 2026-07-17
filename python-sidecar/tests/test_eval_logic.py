@@ -273,6 +273,67 @@ def test_idioma_vazio_ou_desconhecido_devolve_none():
     assert library_replay.normalize_language(None) is None
     assert library_replay.normalize_language("Klingon") is None
 
+
+# --- portoes de qualidade de dado (nao e falha do pipeline) ----------------
+
+def _w(*textos):
+    return [{"text": t} for t in textos]
+
+
+def test_romaji_detecta_chart_japones_romanizado():
+    """
+    CASO REAL: "Abingdon boys school - Innocent sorrow (TV)" diz
+    #LANGUAGE:Japanese mas a letra e romaji. Mandavamos 'ja' pro whisper, que
+    transcreve em kana/kanji -> zero ancora, w_1s 0.000, 89% interpoladas,
+    como se o PIPELINE tivesse falhado.
+    """
+    gw = _w("Sake", "ta", "mune", "no", "kizuguchi", "ni", "Afure", "nagareru")
+    assert library_replay.is_romanized_chart("ja", gw) is True
+
+
+def test_romaji_nao_dispara_em_letra_japonesa_de_verdade():
+    gw = _w("咲", "いた", "胸", "の", "傷口", "に")
+    assert library_replay.is_romanized_chart("ja", gw) is False
+
+
+def test_romaji_nao_dispara_em_idioma_de_escrita_latina():
+    # ingles/espanhol/portugues sao latinos por natureza - o portao nao pode
+    # engolir a biblioteca inteira
+    gw = _w("Dancing", "Queen", "young", "and", "sweet")
+    assert library_replay.is_romanized_chart("en", gw) is False
+    assert library_replay.is_romanized_chart("pt", gw) is False
+
+
+class _ChartFalso:
+    """Chart minimo com o necessario pro detector de duracao."""
+    def __init__(self, fim_s):
+        self._fim = fim_s
+        n = type("N", (), {"start_beat": 0, "duration": 100})()
+        self.lines = [type("L", (), {"notes": [n]})()]
+
+    def beat_to_time(self, beat):
+        return self._fim
+
+
+def test_audio_mais_curto_que_o_chart_e_versao_errada(monkeypatch):
+    # CASO REAL: RuPaul - Supermodel, chart ate 270.4s, audio de 248.5s.
+    # O chart nao CABE: e outra edicao. Pontuavamos 50s de onset como erro nosso.
+    monkeypatch.setattr(library_replay, "_audio_duration", lambda p: 248.5)
+    motivo = library_replay.audio_chart_mismatch("x.mp3", _ChartFalso(270.4))
+    assert motivo and "outra versão" in motivo
+
+
+def test_audio_mais_longo_que_o_chart_e_normal(monkeypatch):
+    # outro/aplausos/fade depois da ultima nota - nao e problema
+    monkeypatch.setattr(library_replay, "_audio_duration", lambda p: 236.7)
+    assert library_replay.audio_chart_mismatch("x.mp3", _ChartFalso(230.7)) is None
+
+
+def test_duracao_desconhecida_nao_conclui_nada(monkeypatch):
+    # na duvida, MEDE - o portao so age quando tem prova
+    monkeypatch.setattr(library_replay, "_audio_duration", lambda p: None)
+    assert library_replay.audio_chart_mismatch("x.mp3", _ChartFalso(999.0)) is None
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0
