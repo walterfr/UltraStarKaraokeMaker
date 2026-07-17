@@ -334,6 +334,58 @@ def test_duracao_desconhecida_nao_conclui_nada(monkeypatch):
     monkeypatch.setattr(library_replay, "_audio_duration", lambda p: None)
     assert library_replay.audio_chart_mismatch("x.mp3", _ChartFalso(999.0)) is None
 
+
+# --- pitch: o jogo compara modulo 12, e o gold nao manda na oitava ---------
+
+def _fake_pitch_track(midis, dur=1.0):
+    """Frames de F0 constante por nota, um segundo cada."""
+    import numpy as np
+    t, hz, v = [], [], []
+    for i, m in enumerate(midis):
+        for k in range(10):
+            t.append(i * dur + k * dur / 10)
+            hz.append(440.0 * (2 ** ((m - 69) / 12.0)))
+            v.append(True)
+    return np.array(t), np.array(hz), np.array(v)
+
+
+def test_pitch_oitava_errada_pune_no_absoluto_mas_nao_no_mod12():
+    """
+    A spec v1 diz: "Game implementations MAY decide to compare pitches
+    independently of the octave (i.e. compare pitches modulo 12)". Ou seja a
+    OITAVA do gold nao e verdade fundamental - o charter escreve a que quiser.
+
+    CASO REAL (Shakira - Estoy aqui): o erro cru se agrupa em multiplos exatos
+    de oitava (64 notas em -12, 54 em -24) - o contorno bate, a oitava nao.
+    """
+    import numpy as np
+    # gold: contorno 0,+4,+7,+4,0... (UltraStar: 0 = C4 = MIDI 60)
+    contorno = [0, 4, 7, 4, 0, 4, 7, 4, 0, 4, 7, 4]
+    notes = [(float(i), float(i) + 0.9, p) for i, p in enumerate(contorno)]
+    # nos medimos o MESMO contorno, uma oitava abaixo
+    t, hz, v = _fake_pitch_track([60 + p - 12 for p in contorno])
+
+    m = library_replay.pitch_metrics(notes, t, hz, v)
+
+    # a mediana some dos dois lados, entao uma oitava CONSTANTE ja seria
+    # absorvida - o que este teste trava e a metrica mod12 existir e bater
+    assert m["within_2st_mod12"] == 1.0
+    assert m["contour_corr"] > 0.99
+
+
+def test_pitch_mod12_nao_perdoa_nota_errada():
+    # o mod12 nao pode virar desculpa: nota errada (nao oitava) continua errada
+    import numpy as np
+    contorno = [0, 4, 7, 4, 0, 4, 7, 4, 0, 4, 7, 4]
+    notes = [(float(i), float(i) + 0.9, p) for i, p in enumerate(contorno)]
+    # medimos um contorno INVERTIDO (nada a ver com oitava)
+    t, hz, v = _fake_pitch_track([60 - p for p in contorno])
+
+    m = library_replay.pitch_metrics(notes, t, hz, v)
+
+    assert m["within_2st_mod12"] < 0.6
+    assert m["contour_corr"] < 0
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

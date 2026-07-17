@@ -405,8 +405,29 @@ def timing_stats(gold: list[dict], hyp: list[dict],
 
 
 def pitch_metrics(notes: list[tuple], times, hz, voicing) -> dict:
-    """SwiftF0 voiced-median MIDI inside *gold* note boundaries vs gold pitch
-    (relative, medians subtracted)."""
+    """
+    SwiftF0 voiced-median MIDI inside *gold* note boundaries vs gold pitch
+    (relative, medians subtracted).
+
+    Reporta DUAS taxas de acerto, e a diferença entre elas importa:
+
+    - `within_2st`: comparação absoluta (a de sempre).
+    - `within_2st_mod12`: distância CIRCULAR de 12 semitons, que é como o
+      jogo compara. A spec v1 é explícita: "Game implementations MAY decide to
+      compare pitches independently of the octave (i.e. compare pitches
+      modulo 12)". Ou seja, a OITAVA ABSOLUTA DO GOLD NÃO É VERDADE
+      FUNDAMENTAL - o charter escreve a oitava que quiser porque o jogo não
+      liga, e punir nossa medição por discordar dela mede a preferência dele,
+      não a nossa qualidade.
+
+    MEDIDO (Shakira - Estoy aquí): o erro cru se agrupa em múltiplos exatos de
+    oitava (64 notas em -12, 54 em -24) - o contorno bate, a oitava não.
+    within_2st 0.181 -> 0.430 no mod12.
+
+    Na mediana das 20 músicas o efeito é pequeno (0.878 -> 0.895), então isto
+    NÃO é desculpa geral: "Nelly Furtado - Maneater" fica em 0.025 mesmo
+    mod12, e continua sem explicação (ver issue #7).
+    """
     gold_p, est_m = [], []
     for s, e, p in notes:
         mask = (times >= s) & (times < e) & voicing & (hz > 0)
@@ -422,6 +443,10 @@ def pitch_metrics(notes: list[tuple], times, hz, voicing) -> dict:
         g -= np.median(g)
         c -= np.median(c)
         out["within_2st"] = round(float(np.mean(np.abs(g - c) <= 2)), 3)
+        # distância circular em 12 semitons = como o jogo compara (ver docstring)
+        d = np.abs(c - g) % 12.0
+        d = np.minimum(d, 12.0 - d)
+        out["within_2st_mod12"] = round(float(np.mean(d <= 2)), 3)
         out["contour_corr"] = (round(float(np.corrcoef(g, c)[0, 1]), 3)
                                if g.std() and c.std() else 0.0)
     return out
@@ -694,14 +719,15 @@ FLAT_FIELDS = ["song", "lang_group", "wpm", "n_gold_words",
                "recall", "within_1s", "onset_med_ms", "onset_mae_ms",
                "onset_p90_ms", "bias_ms", "end_med_ms", "interp_frac",
                "rescue_tried", "rescue_won",
-               "pitch_coverage", "pitch_within_2st", "pitch_corr",
+               "pitch_coverage", "pitch_within_2st", "pitch_within_2st_mod12",
+               "pitch_corr",
                "bpm_est", "bpm_mult", "bpm_dev", "error",
                # True = a música foi pulada por problema de DADO (chart
                # romanizado, áudio de outra versão), não por erro do pipeline.
                "unmeasurable"]
 
 KEY_METRICS = ["within_1s", "onset_med_ms", "interp_frac",
-               "pitch_within_2st", "pitch_corr", "bpm_dev"]
+               "pitch_within_2st", "pitch_within_2st_mod12", "pitch_corr", "bpm_dev"]
 
 
 def _flat(r: dict) -> dict:
@@ -719,7 +745,9 @@ def _flat(r: dict) -> dict:
         "interp_frac": a.get("interp_frac"),
         "rescue_tried": resc.get("tried"), "rescue_won": resc.get("won"),
         "pitch_coverage": pi.get("coverage"),
-        "pitch_within_2st": pi.get("within_2st"), "pitch_corr": pi.get("contour_corr"),
+        "pitch_within_2st": pi.get("within_2st"),
+        "pitch_within_2st_mod12": pi.get("within_2st_mod12"),
+        "pitch_corr": pi.get("contour_corr"),
         "bpm_est": bp.get("est"), "bpm_mult": bp.get("mult"), "bpm_dev": bp.get("dev"),
     }
 
@@ -767,9 +795,13 @@ def aggregate(sample: list[dict], run_dir: str) -> None:
           f" {len(unmeasurable)} skipped (data), {len(rows)} total) ===")
     for r in unmeasurable:
         print(f"  [dado] {r['song'][:44]}: {r['error']}")
+    # os rótulos TÊM que espelhar KEY_METRICS, na mesma ordem - o med_line
+    # imprime por KEY_METRICS, e um cabeçalho fora de sincronia faz a tabela
+    # inteira mentir em silêncio (aconteceu ao adicionar o p_2st12).
+    assert len(KEY_METRICS) == 7, "cabeçalho abaixo precisa acompanhar KEY_METRICS"
     print("  " + " " * 24 + "".join(f"{h:>9s}" for h in
                                     ["w_1s", "onset", "interp", "p_2st",
-                                     "p_corr", "bpm_dev"]))
+                                     "p_2st12", "p_corr", "bpm_dev"]))
     med_line(ok, "ALL (median)")
     for lg in ("es", "en", "other"):
         rs = [r for r in ok if r["lang_group"] == lg]
