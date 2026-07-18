@@ -6,6 +6,12 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 Cada versão tem um instalador pronto em **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — as notas de cada release trazem também as instruções de instalação.
 
+## [Não lançado]
+
+### Alterado
+
+- **Nova interface: a janela virou um workspace de duas colunas e não rola mais.** À esquerda ficam a música e a letra (que agora ocupa toda a altura disponível); à direita, o pacote (idioma, BPM, pasta e opções) em cartões. O botão **Gerar** fica sempre visível numa barra fixa embaixo — antes era preciso rolar a página inteira para alcançá-lo. Durante a geração, a coluna da direita mostra só o progresso; ao terminar, só o resultado. Em janelas estreitas as colunas se empilham sozinhas. As opções ganharam rótulos curtos com a explicação no tooltip, para caberem numa linha.
+
 ## [0.4.1] — 2026-07-17
 
 ### Corrigido

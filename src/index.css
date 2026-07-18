@@ -933,3 +933,155 @@ button:focus-visible {
 .field-hint.warn {
   color: #d98a3d;
 }
+
+/* =========================================================================
+   WORKSPACE (v0.4.x) — layout de 2 colunas sem rolagem de página.
+   A janela vira um app-shell de altura fixa: header (1 linha) + workspace
+   (esquerda = a música, direita = o pacote) + barra de ação fixa. Só a letra
+   e a coluna direita rolam internamente. Em telas estreitas colapsa para 1
+   coluna com rolagem de página normal. Este bloco vem por último de propósito:
+   sobrepõe as regras antigas de coluna única sem precisar reescrevê-las.
+   ========================================================================= */
+html, body { height: 100%; }
+body { overflow: hidden; }
+#root { max-width: none; margin: 0; padding: 0; height: 100vh; }
+
+.app-shell {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 20px 16px;
+  box-sizing: border-box;
+}
+
+/* --- header de 1 linha, com chips de ambiente --- */
+.app-shell > .app-header { flex: none; }
+.app-header h1 { font-size: 1.15rem; margin: 0; }
+.header-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.env-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  font-size: 0.66rem;
+  padding: 2.5px 8px;
+  border-radius: 20px;
+  border: 1px solid #23402c;
+  background: #17231b;
+  color: #7fc98f;
+  white-space: nowrap;
+}
+.chip.gpu { background: #171d2e; color: #8fa8ff; border-color: #26315a; }
+.chip.muted { background: #201a17; color: #c99a7f; border-color: #402c23; }
+
+/* first-run: banner de ambiente incompleto empurra o workspace, tudo bem */
+.app-shell > .env-problems,
+.app-shell > .info-box { flex: none; margin: 0; }
+
+/* --- as duas colunas --- */
+.workspace {
+  flex: 1;
+  display: flex;
+  gap: 16px;
+  min-height: 0;
+}
+.ws-left {
+  flex: 1.5;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  transition: opacity 0.15s ease;
+}
+.ws-left.dim { opacity: 0.5; pointer-events: none; }
+/* a letra é a protagonista: ocupa toda a altura que sobrar */
+.ws-left .lyrics-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-bottom: 0;
+}
+.ws-left .lyrics-group textarea {
+  flex: 1;
+  min-height: 0;
+  resize: none;
+}
+
+.ws-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  gap: 10px;
+  padding-right: 4px;
+}
+/* ordem visual (independe da ordem no DOM): alertas > progresso/resultado >
+   configuração > fila > log */
+.ws-right > .error-box,
+.ws-right > .info-box { order: 0; margin: 0; }
+.ws-right > .steps-list,
+.ws-right > .result-box { order: 1; margin: 0; }
+.ws-right > .card { order: 2; }
+.ws-right > .queue-panel { order: 3; margin: 0; }
+.ws-right > .log-details { order: 4; margin: 0; }
+
+/* cartões da coluna direita */
+.card {
+  background: #17171f;
+  border: 1px solid #26262f;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.card-title {
+  margin: 0 0 9px;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #8a8a98;
+}
+.card .field-group:last-child,
+.card .row:last-child { margin-bottom: 0; }
+.card .row { margin-bottom: 0.8rem; }
+.options-card { display: flex; flex-direction: column; gap: 2px; }
+.options-card .checkbox-line { margin-top: 0.35rem; }
+
+/* --- barra de ação fixa no rodapé --- */
+.actionbar {
+  flex: none;
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+  padding-top: 12px;
+  border-top: 1px solid #23232e;
+}
+.actionbar .submit-button { flex: 1; margin-top: 0; }
+.actionbar .clear-button,
+.actionbar .cancel-button { margin-top: 0; }
+
+/* a lista de etapas e a fila ganham cara de cartão na coluna direita */
+.ws-right > .steps-list,
+.ws-right > .queue-panel {
+  background: #17171f;
+  border: 1px solid #26262f;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+/* --- responsivo: em janela estreita, colapsa para 1 coluna --- */
+@media (max-width: 760px) {
+  body { overflow: auto; }
+  #root { height: auto; }
+  .app-shell { height: auto; min-height: 100vh; }
+  .workspace { flex-direction: column; min-height: 0; }
+  .ws-left, .ws-right { overflow: visible; min-height: 0; }
+  .ws-left .lyrics-group textarea { flex: none; min-height: 150px; }
+  .actionbar {
+    position: sticky;
+    bottom: 0;
+    background: #121218;
+    margin: 0 -20px -16px;
+    padding: 12px 20px 14px;
+  }
+}

@@ -669,7 +669,7 @@ function App() {
   const seconds = String(elapsed % 60).padStart(2, "0");
 
   return (
-    <div>
+    <div className="app-shell">
       {splashState !== "gone" && (
         <div className={`splash ${splashState === "fade" ? "fade" : ""}`}>
           <LogoMark size={72} />
@@ -720,9 +720,23 @@ function App() {
         </div>
       )}
 
-      <div className="app-header">
-        <h1>USKMaker</h1>
+      <header className="app-header">
+        <div className="header-left">
+          <h1>USKMaker</h1>
+          {env && envProblems.length === 0 && (
+            <div className="env-chips" title={t("subtitle")}>
+              <span className="chip ok">✓ {t("envAI")}</span>
+              <span className="chip ok">✓ ffmpeg{env.vorbisOk ? " · vorbis" : ""}</span>
+              <span className={env.gpuName ? "chip gpu" : "chip muted"}>
+                {env.gpuName ? t("envGpu", { name: env.gpuName }) : t("envNoGpu")}
+              </span>
+            </div>
+          )}
+        </div>
         <div className="header-actions">
+          <button className="link-button" onClick={pickPackageToReview} disabled={isRunning}>
+            {t("reviewExisting")}
+          </button>
           <div className="lang-toggle" role="group" aria-label="Idioma / Language">
             <button className={lang === "pt" ? "active" : ""} onClick={() => setLang("pt")}>
               PT
@@ -735,20 +749,7 @@ function App() {
             i
           </button>
         </div>
-      </div>
-      <p className="subtitle">
-        {t("subtitle")}{" "}
-        <button className="link-button" onClick={pickPackageToReview} disabled={isRunning}>
-          {t("reviewExisting")}
-        </button>
-      </p>
-
-      {env && envProblems.length === 0 && (
-        <p className="env-strip ok">
-          ✓ {t("envAI")} &nbsp;·&nbsp; ✓ ffmpeg{env.vorbisOk ? " (vorbis)" : ""} &nbsp;·&nbsp;{" "}
-          {env.gpuName ? t("envGpu", { name: env.gpuName }) : t("envNoGpu")}
-        </p>
-      )}
+      </header>
       {envProblems.length > 0 && (
         <div className="error-box env-problems">
           <strong>{t("envIncomplete")}</strong>
@@ -785,6 +786,8 @@ function App() {
       )}
       {setupDone && env?.sidecarOk && <div className="info-box">{t("setupDone")}</div>}
 
+      <div className="workspace">
+      <section className={`ws-left${isRunning ? " dim" : ""}`}>
       <div className="source-toggle">
         <button
           className={sourceMode === "youtube" ? "active" : ""}
@@ -812,7 +815,7 @@ function App() {
             placeholder="https://www.youtube.com/watch?v=..."
             disabled={isRunning}
           />
-          <label className="checkbox-line">
+          <label className="checkbox-line" title={t("withVideoTip")}>
             <input
               type="checkbox"
               checked={withVideo}
@@ -831,7 +834,7 @@ function App() {
               {t("browse")}
             </button>
           </div>
-          <label className="checkbox-line">
+          <label className="checkbox-line" title={t("bgVideoTip")}>
             <input
               type="checkbox"
               checked={bgVideo}
@@ -864,7 +867,7 @@ function App() {
       </div>
       {tagsMsg && <p className="field-hint">🎵 {tagsMsg}</p>}
 
-      <div className="field-group">
+      <div className="field-group lyrics-group">
         <label>
           {t("lyricsLabel")}
           {lyricsInfo.lines > 0 && (
@@ -898,6 +901,13 @@ function App() {
         ))}
       </div>
 
+      </section>
+
+      <aside className="ws-right">
+      {!isRunning && !result && (
+      <>
+      <div className="card">
+      <h3 className="card-title">{t("sectionPackage")}</h3>
       <div className="row">
         <div className="field-group">
           <label>{t("languageLabel")}</label>
@@ -928,7 +938,12 @@ function App() {
           </button>
         </div>
         <p className="field-hint">{t("outDirHint")}</p>
-        <label className="checkbox-line">
+      </div>
+      </div>
+
+      <div className="card options-card">
+        <h3 className="card-title">{t("sectionOptions")}</h3>
+        <label className="checkbox-line" title={t("cleanWorkHint")}>
           <input
             type="checkbox"
             checked={cleanWork}
@@ -968,6 +983,8 @@ function App() {
         </label>
         {duet && <p className="field-hint">{t("duetHint")}</p>}
       </div>
+      </>
+      )}
 
       {queue.length > 0 && (
         <div className="queue-panel">
@@ -1023,31 +1040,6 @@ function App() {
               </li>
             ))}
           </ul>
-        </div>
-      )}
-
-      {!isRunning ? (
-        <div className="running-actions">
-          <button className="submit-button" onClick={handleGenerate}>
-            {queue.some((it) => it.status === "pending")
-              ? t("generateQueue", { n: queue.filter((it) => it.status === "pending").length })
-              : t("generate")}
-          </button>
-          <button className="clear-button" onClick={addToQueue} title={t("queueAdd")}>
-            {t("queueAdd")}
-          </button>
-          <button className="clear-button" onClick={handleClear} title={t("clearConfirm")}>
-            {t("clearFields")}
-          </button>
-        </div>
-      ) : (
-        <div className="running-actions">
-          <button className="submit-button" disabled>
-            {t("generating", { time: `${minutes}:${seconds}` })}
-          </button>
-          <button className="cancel-button" onClick={handleCancel} disabled={cancelling}>
-            {cancelling ? t("cancelling") : t("cancel")}
-          </button>
         </div>
       )}
 
@@ -1153,6 +1145,33 @@ function App() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+      </aside>
+      </div>
+
+      {!isRunning ? (
+        <div className="actionbar">
+          <button className="submit-button" onClick={handleGenerate}>
+            {queue.some((it) => it.status === "pending")
+              ? t("generateQueue", { n: queue.filter((it) => it.status === "pending").length })
+              : t("generate")}
+          </button>
+          <button className="clear-button" onClick={addToQueue} title={t("queueAdd")}>
+            {t("queueAdd")}
+          </button>
+          <button className="clear-button" onClick={handleClear} title={t("clearConfirm")}>
+            {t("clearFields")}
+          </button>
+        </div>
+      ) : (
+        <div className="actionbar">
+          <button className="submit-button" disabled>
+            {t("generating", { time: `${minutes}:${seconds}` })}
+          </button>
+          <button className="cancel-button" onClick={handleCancel} disabled={cancelling}>
+            {cancelling ? t("cancelling") : t("cancel")}
+          </button>
         </div>
       )}
     </div>
