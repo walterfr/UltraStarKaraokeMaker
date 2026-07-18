@@ -1001,6 +1001,31 @@ body { overflow: hidden; }
   min-height: 0;
   margin-bottom: 0;
 }
+/* cabeçalho da letra numa linha só: rótulo + contagem à esquerda,
+   status + botão LRCLIB à direita (o mockup) */
+.lyrics-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.35rem;
+  min-height: 28px;
+}
+.lyrics-head label { margin-bottom: 0; cursor: help; }
+.lyrics-head .lyrics-count { float: none; }
+.lyrics-head-spacer { flex: 1; }
+.tip-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  margin-left: 6px;
+  border: 1px solid #4a4a58;
+  border-radius: 50%;
+  color: #8a8a98;
+  font-size: 0.6rem;
+  vertical-align: 1px;
+}
 .ws-left .lyrics-group textarea {
   flex: 1;
   min-height: 0;
@@ -1060,14 +1085,24 @@ body { overflow: hidden; }
 .actionbar .clear-button,
 .actionbar .cancel-button { margin-top: 0; }
 
-/* a lista de etapas e a fila ganham cara de cartão na coluna direita */
+/* a lista de etapas, a fila e o log ganham cara de cartão na coluna direita */
 .ws-right > .steps-list,
-.ws-right > .queue-panel {
+.ws-right > .queue-panel,
+.ws-right > .log-details {
   background: #17171f;
   border: 1px solid #26262f;
   border-radius: 8px;
   padding: 10px 12px;
 }
+.ws-right > .log-details summary {
+  font-size: 0.72rem;
+  color: #8a8a98;
+}
+.ws-right > .log-details .log-console {
+  max-height: 180px;
+}
+/* o logo desenhado alinha com o título no header de 1 linha */
+.header-left svg { display: block; flex: none; }
 
 /* --- responsivo: em janela estreita, colapsa para 1 coluna --- */
 @media (max-width: 760px) {

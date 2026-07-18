@@ -244,6 +244,35 @@ function App() {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   }, [sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet]);
 
+  // ------------------------------------------------ SÓ EM DEV: preview de estado
+  // Abre a UI num estado simulado sem precisar do backend Tauri, para inspecionar
+  // as telas de "gerando"/"resultado" no browser (http://localhost:1423/?uiState=…).
+  // import.meta.env.DEV garante que este bloco NUNCA entra no build de produção.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const s = new URLSearchParams(window.location.search).get("uiState");
+    if (!s) return;
+    if (s === "running") {
+      setIsRunning(true);
+      setCurrentStep(4);
+      startedAtRef.current = Date.now() - 222_000; // cronômetro em ~3:42
+      setLogs(Array.from({ length: 40 }, (_, i) => `[demo] linha de log ${i + 1} — alinhando…`));
+    } else if (s === "result") {
+      setLogs(Array.from({ length: 12 }, (_, i) => `[demo] linha de log ${i + 1}`));
+      setResult({
+        txtPath: "D:\\Karaoke\\Songs\\Pitty - Admirável Chip Novo\\Pitty - Admirável Chip Novo.txt",
+        audioPath: "D:\\Karaoke\\Songs\\Pitty - Admirável Chip Novo\\Pitty - Admirável Chip Novo.ogg",
+        outDir: "D:\\Karaoke\\Songs\\Pitty - Admirável Chip Novo",
+        coverPath: null,
+        year: 2003,
+        genre: "Rock",
+        notesTotal: 408,
+        notesEstimated: 5,
+        notesWhisperAnchored: 380,
+      });
+    }
+  }, []);
+
   useEffect(() => {
     (async () => {
       try {
@@ -722,6 +751,7 @@ function App() {
 
       <header className="app-header">
         <div className="header-left">
+          <LogoMark size={22} />
           <h1>USKMaker</h1>
           {env && envProblems.length === 0 && (
             <div className="env-chips" title={t("subtitle")}>
@@ -734,7 +764,7 @@ function App() {
           )}
         </div>
         <div className="header-actions">
-          <button className="link-button" onClick={pickPackageToReview} disabled={isRunning}>
+          <button className="mini-button" onClick={pickPackageToReview} disabled={isRunning}>
             {t("reviewExisting")}
           </button>
           <div className="lang-toggle" role="group" aria-label="Idioma / Language">
@@ -868,8 +898,11 @@ function App() {
       {tagsMsg && <p className="field-hint">🎵 {tagsMsg}</p>}
 
       <div className="field-group lyrics-group">
-        <label>
-          {t("lyricsLabel")}
+        <div className="lyrics-head">
+          <label title={t("lyricsTip")}>
+            {t("lyricsLabel")}
+            <span className="tip-mark" aria-hidden="true">?</span>
+          </label>
           {lyricsInfo.lines > 0 && (
             <span className="lyrics-count">
               {t("lyricsCount", {
@@ -879,14 +912,13 @@ function App() {
               })}
             </span>
           )}
-        </label>
-        <div className="lyrics-toolbar">
-          <button className="mini-button" onClick={searchLyrics} disabled={isRunning || lyricsSearching}>
-            {lyricsSearching ? t("searchingLyrics") : t("searchLyrics")}
-          </button>
+          <span className="lyrics-head-spacer" />
           {lyricsSearchMsg && (
             <span className={`lyrics-status ${lyricsSearchMsg.kind}`}>{lyricsSearchMsg.text}</span>
           )}
+          <button className="mini-button" onClick={searchLyrics} disabled={isRunning || lyricsSearching}>
+            {lyricsSearching ? t("searchingLyrics") : t("searchLyrics")}
+          </button>
         </div>
         <textarea
           value={lyricsText}

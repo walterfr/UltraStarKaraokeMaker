@@ -54,7 +54,8 @@ const STRINGS = {
     fileFilterName: "Áudio/Vídeo",
 
     // ---- letra ----
-    lyricsLabel: "Letra da música (uma linha por frase cantada) — repita refrões por extenso, tantas vezes quanto forem cantados",
+    lyricsLabel: "Letra da música",
+    lyricsTip: "Uma linha por frase cantada. Repita refrões por extenso, tantas vezes quanto forem cantados — não use \"(2x)\".",
     lyricsPlaceholder: "Cole a letra aqui...\nUma linha por frase/verso.\nRefrões repetidos devem ser colados de novo, por extenso.",
     lyricsCount: "{lines} {lineWord} · {words} palavras",
     searchLyrics: "Buscar letra (LRCLIB)",
@@ -253,7 +254,8 @@ const STRINGS = {
     bgVideoUrlPlaceholder: "Music video link (optional — leave blank for automatic search by artist + title)",
     fileFilterName: "Audio/Video",
 
-    lyricsLabel: "Song lyrics (one line per sung phrase) — write repeated choruses out in full, as many times as they are sung",
+    lyricsLabel: "Song lyrics",
+    lyricsTip: "One line per sung phrase. Write repeated choruses out in full, as many times as they are sung — don't use \"(2x)\".",
     lyricsPlaceholder: "Paste the lyrics here...\nOne line per phrase/verse.\nRepeated choruses must be pasted again, in full.",
     lyricsCount: "{lines} {lineWord} · {words} words",
     searchLyrics: "Search lyrics (LRCLIB)",
