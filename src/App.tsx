@@ -853,6 +853,7 @@ function App() {
               disabled={isRunning}
             />
             {t("withVideoLabel")}
+            <span className="tip-mark" aria-hidden="true">?</span>
           </label>
         </div>
       ) : (
@@ -872,6 +873,7 @@ function App() {
               disabled={isRunning}
             />
             {t("bgVideoLabel")}
+            <span className="tip-mark" aria-hidden="true">?</span>
           </label>
           {bgVideo && (
             <input
@@ -950,7 +952,10 @@ function App() {
           </select>
         </div>
         <div className="field-group">
-          <label>{t("bpmLabel")}</label>
+          <label title={t("bpmTip")}>
+            {t("bpmLabel")}
+            <span className="tip-mark" aria-hidden="true">?</span>
+          </label>
           <input
             type="number"
             value={bpm}
@@ -973,8 +978,31 @@ function App() {
       </div>
       </div>
 
+      {/* Ordem do mockup: recursos do pacote primeiro (dueto, faixas), limpeza
+          por último. Cada opção leva um "?" com a explicação completa no hover
+          (title no label inteiro = alvo grande) — nada de parágrafo permanente. */}
       <div className="card options-card">
         <h3 className="card-title">{t("sectionOptions")}</h3>
+        <label className="checkbox-line" title={t("duetHint")}>
+          <input
+            type="checkbox"
+            checked={duet}
+            onChange={(e) => setDuet(e.target.checked)}
+            disabled={isRunning}
+          />
+          {t("duetLabel")}
+          <span className="tip-mark" aria-hidden="true">?</span>
+        </label>
+        <label className="checkbox-line" title={t("withStemsHint")}>
+          <input
+            type="checkbox"
+            checked={withStems}
+            onChange={(e) => setWithStems(e.target.checked)}
+            disabled={isRunning}
+          />
+          {t("withStemsLabel")}
+          <span className="tip-mark" aria-hidden="true">?</span>
+        </label>
         <label className="checkbox-line" title={t("cleanWorkHint")}>
           <input
             type="checkbox"
@@ -983,8 +1011,9 @@ function App() {
             disabled={isRunning}
           />
           {t("cleanWorkLabel")}
+          <span className="tip-mark" aria-hidden="true">?</span>
         </label>
-        <label className="checkbox-line">
+        <label className="checkbox-line" title={t("cleanExtrasHint")}>
           <input
             type="checkbox"
             checked={cleanExtras}
@@ -992,28 +1021,8 @@ function App() {
             disabled={isRunning}
           />
           {t("cleanExtrasLabel")}
+          <span className="tip-mark" aria-hidden="true">?</span>
         </label>
-        {cleanExtras && <p className="field-hint warn">⚠ {t("cleanExtrasHint")}</p>}
-        <label className="checkbox-line">
-          <input
-            type="checkbox"
-            checked={withStems}
-            onChange={(e) => setWithStems(e.target.checked)}
-            disabled={isRunning}
-          />
-          {t("withStemsLabel")}
-        </label>
-        {withStems && <p className="field-hint">{t("withStemsHint")}</p>}
-        <label className="checkbox-line">
-          <input
-            type="checkbox"
-            checked={duet}
-            onChange={(e) => setDuet(e.target.checked)}
-            disabled={isRunning}
-          />
-          {t("duetLabel")}
-        </label>
-        {duet && <p className="field-hint">{t("duetHint")}</p>}
       </div>
       </>
       )}
@@ -1076,21 +1085,24 @@ function App() {
       )}
 
       {(isRunning || (currentStep > 0 && !result)) && (
-        <ol className="steps-list">
-          {STEP_KEYS.map((step, i) => {
-            const n = i + 1;
-            const state = n < currentStep ? "done" : n === currentStep && isRunning ? "running" : "pending";
-            return (
-              <li key={n} className={`step ${state}`}>
-                <span className="step-icon">
-                  {state === "done" ? "✓" : state === "running" ? <span className="spinner" /> : "○"}
-                </span>
-                <span className="step-label">{t(step.label)}</span>
-                <span className="step-hint">{state === "running" ? t(step.hint) : ""}</span>
-              </li>
-            );
-          })}
-        </ol>
+        <div className="card steps-card">
+          <h3 className="card-title">{t("generating", { time: `${minutes}:${seconds}` })}</h3>
+          <ol className="steps-list">
+            {STEP_KEYS.map((step, i) => {
+              const n = i + 1;
+              const state = n < currentStep ? "done" : n === currentStep && isRunning ? "running" : "pending";
+              return (
+                <li key={n} className={`step ${state}`}>
+                  <span className="step-icon">
+                    {state === "done" ? "✓" : state === "running" ? <span className="spinner" /> : "○"}
+                  </span>
+                  <span className="step-label">{t(step.label)}</span>
+                  <span className="step-hint">{state === "running" ? t(step.hint) : ""}</span>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
       )}
 
       {cancelled && <div className="info-box">{t("cancelledInfo")}</div>}
@@ -1159,16 +1171,22 @@ function App() {
                 </p>
               )}
             <p className="result-paths">
-              {result.txtPath}
-              <br />
-              {result.audioPath}
+              <span className="path-line" title={result.txtPath}>{result.txtPath}</span>
+              <span className="path-line" title={result.audioPath}>{result.audioPath}</span>
             </p>
-            <div className="result-actions">
-              {!resultCleaned && (
-                <button className="submit-button compact" onClick={() => setReviewDir(result.outDir)}>
-                  {t("resultReview")}
-                </button>
-              )}
+          </div>
+        </div>
+      )}
+      {result && (
+        <div className="card next-card">
+          <h3 className="card-title">{t("sectionNext")}</h3>
+          <div className="next-actions">
+            {!resultCleaned && (
+              <button className="submit-button compact" onClick={() => setReviewDir(result.outDir)}>
+                {t("resultReview")}
+              </button>
+            )}
+            <div className="next-row">
               <button className="secondary" onClick={openOutputFolder}>
                 {t("resultOpenFolder")}
               </button>

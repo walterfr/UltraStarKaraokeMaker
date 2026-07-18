@@ -1046,11 +1046,15 @@ body { overflow: hidden; }
    configuração > fila > log */
 .ws-right > .error-box,
 .ws-right > .info-box { order: 0; margin: 0; }
-.ws-right > .steps-list,
+.ws-right > .steps-card,
 .ws-right > .result-box { order: 1; margin: 0; }
 .ws-right > .card { order: 2; }
 .ws-right > .queue-panel { order: 3; margin: 0; }
 .ws-right > .log-details { order: 4; margin: 0; }
+/* os cards de progresso e de "e agora?" vêm ANTES da config/fila (a regra
+   genérica .card acima daria order 2 - estas vêm depois no CSS e vencem) */
+.ws-right > .steps-card { order: 1; }
+.ws-right > .next-card { order: 1; }
 
 /* cartões da coluna direita */
 .card {
@@ -1085,8 +1089,7 @@ body { overflow: hidden; }
 .actionbar .clear-button,
 .actionbar .cancel-button { margin-top: 0; }
 
-/* a lista de etapas, a fila e o log ganham cara de cartão na coluna direita */
-.ws-right > .steps-list,
+/* a fila e o log ganham cara de cartão na coluna direita */
 .ws-right > .queue-panel,
 .ws-right > .log-details {
   background: #17171f;
@@ -1094,15 +1097,45 @@ body { overflow: hidden; }
   border-radius: 8px;
   padding: 10px 12px;
 }
+/* o cabeçalho da fila no mesmo tom dos títulos de card */
+.ws-right .queue-head strong {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #8a8a98;
+  font-weight: 600;
+}
 .ws-right > .log-details summary {
   font-size: 0.72rem;
   color: #8a8a98;
 }
 .ws-right > .log-details .log-console {
-  max-height: 180px;
+  max-height: 220px;
+  /* linhas de log podem ser longas (caminhos, ffmpeg) - quebram no lugar de
+     criar rolagem horizontal na coluna inteira */
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* etapas dentro do card de progresso */
+.steps-card .steps-list { margin: 0; padding: 0; border: none; background: none; }
+/* "E agora?": revisar em destaque, o resto lado a lado */
+.next-actions { display: flex; flex-direction: column; gap: 8px; }
+.next-actions .submit-button.compact { width: 100%; margin-top: 0; }
+.next-row { display: flex; gap: 8px; }
+.next-row .secondary { flex: 1; }
+/* caminhos do pacote truncados com reticências (o caminho completo fica no
+   tooltip) - sem isto, 2 caminhos longos viravam 6 linhas no card verde */
+.path-line {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* o logo desenhado alinha com o título no header de 1 linha */
 .header-left svg { display: block; flex: none; }
+/* nada na coluna direita pode criar rolagem horizontal */
+.ws-right { overflow-x: hidden; }
 
 /* --- responsivo: em janela estreita, colapsa para 1 coluna --- */
 @media (max-width: 760px) {
