@@ -6,7 +6,11 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 Cada versão tem um instalador pronto em **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — as notas de cada release trazem também as instruções de instalação.
 
-## [Não lançado]
+## [0.5.0] — 2026-07-18
+
+### Corrigido
+
+- **Quando o "Configurar ambiente de IA" falhava, ele escondia o motivo.** A tela mostrava só `Traceback (most recent call last):` e parava ali — sem dizer qual biblioteca falhou nem qual foi o erro, deixando "rode de novo" como única saída. A causa era do próprio script: no PowerShell do Windows, a primeira linha de erro do Python virava uma falha fatal e o resto do diagnóstico era descartado. Agora cada biblioteca é testada em separado e, quando alguma falha, o setup diz **qual** e mostra o **fim do traceback** (onde está o erro de verdade). De quebra, um simples aviso (como o do "torchcodec") não reprova mais uma biblioteca que carregou bem.
 
 ### Alterado
 
@@ -172,6 +176,7 @@ Correções a partir de feedback da comunidade, validadas contra a [spec oficial
 
 Primeira release pública: pipeline completo (letra sincronizada, pitch, BPM, metadados, vídeo), instalador Windows e setup assistido do ambiente de IA.
 
+[0.5.0]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.5.0
 [0.4.1]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.4.1
 [0.4.0]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.4.0
 [0.3.8]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.3.8
