@@ -222,24 +222,67 @@ if ($LASTEXITCODE -ne 0) { Fail "Falha ao instalar audio-separator[$sepExtra] (o
 # ---------------------------------------------------------------------------
 Write-Step "Validando a instalacao"
 
-$cudaCheck = & $venvPython -c "import torch; print(torch.cuda.is_available())"
-if ($hasNvidia -and $cudaCheck.Trim() -ne "True") {
+# (mesma blindagem PS 5.1 da validacao de imports abaixo: EAP=Continue na
+# captura e veredicto pelo exit code, senao um stderr do torch mata o script)
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+$cudaOut = & $venvPython -c "import torch; print(torch.cuda.is_available())" 2>&1 | ForEach-Object { "$_" }
+$cudaExit = $LASTEXITCODE
+$ErrorActionPreference = $prevEAP
+if ($cudaExit -ne 0) {
+    Write-Host "    [FALHOU] import torch - fim do traceback:" -ForegroundColor Red
+    $cudaOut | Select-Object -Last 15 | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
+    Fail "O torch nao importou - o ambiente NAO esta pronto. A causa esta nas linhas acima."
+}
+$cudaCheck = ($cudaOut | Where-Object { $_ -match '^(True|False)$' } | Select-Object -Last 1)
+if ($hasNvidia -and $cudaCheck -ne "True") {
     Write-Warn2 "GPU NVIDIA detectada mas o torch nao esta enxergando CUDA (verifique o driver)."
 } else {
-    Write-Ok "torch instalado (CUDA disponivel: $($cudaCheck.Trim()))"
+    Write-Ok "torch instalado (CUDA disponivel: $cudaCheck)"
 }
 
-& $venvPython -c "import whisperx, demucs, librosa, mutagen, audio_separator.separator" 2>$null
-if ($LASTEXITCODE -eq 0) {
+# Cada modulo e testado SEPARADO e com o stderr capturado de forma segura.
+#
+# HISTORICO (17/07/2026, relato real): a versao anterior importava tudo numa
+# linha so com "2>`$null" - e no Windows PowerShell 5.1, com
+# `$ErrorActionPreference = "Stop"` + redirecionamento de stderr, a PRIMEIRA
+# linha que o python escreve no stderr vira um NativeCommandError TERMINANTE.
+# Resultado: o usuario via so "Traceback (most recent call last):" e nada mais
+# - nem qual modulo falhou, nem a excecao. O resto do traceback ia pro `$null`.
+# Mesma familia do bug da v0.3.2 (diagnostico que esconde a causa).
+#
+# Regras aqui: (a) EAP=Continue durante a captura (stderr vira ErrorRecord
+# inofensivo, "$_" o transforma em texto); (b) veredicto SO pelo exit code -
+# um WARNING no stderr (ex.: o aviso de torchcodec do pyannote) NAO pode
+# reprovar um import que funcionou; (c) na falha, mostrar o FIM do traceback,
+# que e onde mora a excecao real.
+$pipelineModules = @('whisperx', 'demucs', 'librosa', 'mutagen', 'audio_separator.separator')
+$failedModules = @()
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+foreach ($mod in $pipelineModules) {
+    $importOut = & $venvPython -c "import $mod" 2>&1 | ForEach-Object { "$_" }
+    if ($LASTEXITCODE -eq 0) {
+        Write-Ok "import $mod"
+    } else {
+        $failedModules += $mod
+        Write-Host "    [FALHOU] import $mod - fim do traceback:" -ForegroundColor Red
+        $importOut | Select-Object -Last 15 | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
+    }
+}
+$ErrorActionPreference = $prevEAP
+
+if ($failedModules.Count -eq 0) {
     Write-Ok "Bibliotecas do pipeline importadas com sucesso."
 } else {
     # FALHA (nao aviso): sem estas bibliotecas o app NAO gera - o sidecar morre
     # no import, antes de conseguir escrever qualquer log. Terminar aqui com
     # banner verde foi exatamente o que confundiu um usuario (16/07/2026).
     Fail @"
-Alguma biblioteca do pipeline nao importou - o ambiente NAO esta pronto.
+Estas bibliotecas nao importaram: $($failedModules -join ', ') - o ambiente NAO esta pronto.
 
-Rode este setup de novo. Se persistir, abra uma issue com o log acima.
+A causa esta nas linhas de traceback acima (a ultima linha e a excecao).
+Rode este setup de novo. Se persistir, abra uma issue anexando essas linhas.
 "@
 }
 

@@ -107,7 +107,30 @@ Pillow>=10.0.0
 # runtime por causa disso, o ajuste é ou atualizar o demucs ou aplicar um
 # patch pontual no código dele, não voltar pro numpy 1.x (o whisperx não
 # aceita mais isso).
-numpy>=2.1.0
+#
+# TETO <2.5: guarda contra uma resolução que o próprio numba proíbe.
+#
+# O `librosa` puxa `numba`, e o numba declara `numpy<2.5,>=1.22`. Com o numpy
+# 2.5 já no PyPI, "numpy sem teto" permite uma resolução em que, para caber o
+# numpy novo, o numba REGRIDE até 0.53.1 (de 2021) + llvmlite 0.36.0 - que nem
+# instalam em Python 3.12 ("Cannot install on Python version 3.12"). O teto
+# torna explícito um limite que já é real, e deixa a resolução determinística.
+#
+# MEDIDO (18/07/2026, venv limpo com uv):
+#   `uv pip compile` sem teto -> numpy 2.5.1 + numba 0.53.1 (resolução QUEBRADA)
+#   `uv pip compile` com teto -> numpy 2.4.6 + numba 0.66.0 (OK)
+#
+# HONESTIDADE SOBRE O ESCOPO: isto NÃO é (comprovadamente) a causa da falha de
+# import relatada por um usuário em 18/07/2026. Na reprodução fiel daquele
+# cenário (torch -> requirements SEM teto -> audio-separator[gpu]) o
+# `uv pip install` escolheu numpy 2.4.6 + numba 0.66.0 e os cinco imports
+# passaram. Ou seja: o caminho de INSTALL resolve certo hoje; quem erra é o
+# caminho de COMPILE. O teto entra como higiene/determinismo, não como
+# conserto daquele bug - cuja causa real segue desconhecida até o log
+# detalhado do setup (ver a validação em scripts/setup-sidecar.ps1).
+#
+# Ao subir o numba (quando ele aceitar numpy 2.5+), subir este teto junto.
+numpy>=2.1.0,<2.5
 soundfile>=0.12.1
 ffmpeg-python>=0.2.0
 pydub>=0.25.1
