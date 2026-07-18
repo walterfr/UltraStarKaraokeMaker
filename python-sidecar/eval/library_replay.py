@@ -897,6 +897,11 @@ def main() -> int:
                          "overrides --n/--seed sampling")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--aggregate-only", action="store_true")
+    # Um lote de UM idioma só. Amostragem estratificada dá poucas músicas dos
+    # buckets pequenos (pt é 108/1427 => ~5 num n=60), e cinco músicas não
+    # concluem nada. Com --lang o bucket vira o universo e a amostra é dele.
+    ap.add_argument("--lang", default=None, choices=list(REPORT_LANGS),
+                    help="mede só um bucket de idioma (ex.: --lang pt)")
     args = ap.parse_args()
 
     runs_root = str(_HERE.parents[0] / "eval_runs")
@@ -904,12 +909,20 @@ def main() -> int:
     if not manifest:
         return 2
 
+    if args.lang:
+        manifest = [s for s in manifest if s["lang_group"] == args.lang]
+        log(f"filtro de idioma: {args.lang} -> {len(manifest)} músicas no universo")
+        if not manifest:
+            log(f"nenhuma música no bucket {args.lang}")
+            return 2
+
     if args.seed_set:
         sample = seed_set_sample(args.seed_set, manifest)
         run_dir = os.path.join(runs_root, "replay-seedset")
     else:
         sample, _ = stratified_sample(manifest, args.n, args.seed)
-        run_dir = os.path.join(runs_root, f"replay-n{args.n}-seed{args.seed}")
+        suffix = f"-{args.lang}" if args.lang else ""
+        run_dir = os.path.join(runs_root, f"replay-n{args.n}-seed{args.seed}{suffix}")
     counts = ", ".join(
         f"{lg}={sum(1 for s in sample if s['lang_group'] == lg)}"
         for lg in REPORT_LANGS)
