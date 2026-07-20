@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Every version has a ready-to-use installer on **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — each release's notes also carry the install instructions.
 
+## [0.5.1] — 2026-07-19
+
+### Fixed
+
+- **Some songs failed to generate with the error `cannot access local variable 'pct'`.** It happened precisely with the songs the app aligned **perfectly** (no guessed words) — clean recordings. A programming mistake crashed the app right after alignment, while assembling the quality warnings. Fixed; those songs generate normally now. (Bug present since v0.3.8.)
+
 ## [0.5.0] — 2026-07-18
 
 ### Fixed
@@ -176,6 +182,7 @@ Fixes from community feedback, validated against the [official format spec](http
 
 First public release: the complete pipeline (synced lyrics, pitch, BPM, metadata, video), a Windows installer and assisted AI-environment setup.
 
+[0.5.1]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.5.1
 [0.5.0]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.5.0
 [0.4.1]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.4.1
 [0.4.0]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.4.0
