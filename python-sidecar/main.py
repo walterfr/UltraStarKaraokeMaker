@@ -437,8 +437,8 @@ def run_pipeline(
         f"{by_source['lrc']} início de linha (.lrc) / "
         f"{interpolated_count} interpoladas (estimadas)[/dim]"
     )
+    pct = 100 * interpolated_count / max(len(word_timings), 1)
     if interpolated_count:
-        pct = 100 * interpolated_count / len(word_timings)
         console.print(
             f"[yellow]AVISO[/yellow] {pct:.1f}% das palavras ficaram interpoladas "
             "(não foi possível medi-las no áudio, nem no 2º passe) - "
