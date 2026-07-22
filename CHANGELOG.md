@@ -6,6 +6,12 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 Cada versão tem um instalador pronto em **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — as notas de cada release trazem também as instruções de instalação.
 
+## [Não lançado]
+
+### Adicionado
+
+- **41 idiomas de música, não mais só 3.** O seletor "Idioma da música" trazia apenas português, inglês e espanhol — quem tinha música em croata, coreano, alemão, japonês etc. ficava sem opção (forçar o inglês dava resultado ruim). Agora o seletor lista os 41 idiomas que o app consegue alinhar palavra a palavra. Para idiomas de escrita não-latina (coreano, japonês, russo, árabe…), escreva a letra na escrita nativa (한국어, não romanizado) — um aviso aparece ao escolher esses. *(O motor já suportava todos; faltava a opção na tela.)*
+
 ## [0.5.1] — 2026-07-19
 
 ### Corrigido

@@ -128,6 +128,61 @@ const STEP_KEYS: { label: StrKey; hint: StrKey }[] = [
   { label: "step6", hint: "step6Hint" },
 ];
 
+// Idiomas que o whisperx alinha por palavra (DEFAULT_ALIGN_MODELS_TORCH/HF).
+// Só estes têm modelo de alinhamento; fora daqui a Etapa 4 quebra. Nome no
+// próprio idioma (endônimo) - nome de idioma dispensa tradução. pt/en/es no
+// topo (comuns), resto alfabético. Ver python-sidecar align + whisperx.
+const LANGUAGES: { code: string; name: string }[] = [
+  { code: "pt", name: "Português" },
+  { code: "en", name: "English" },
+  { code: "es", name: "Español" },
+  { code: "ar", name: "العربية" },
+  { code: "ca", name: "Català" },
+  { code: "cs", name: "Čeština" },
+  { code: "da", name: "Dansk" },
+  { code: "de", name: "Deutsch" },
+  { code: "el", name: "Ελληνικά" },
+  { code: "eu", name: "Euskara" },
+  { code: "fa", name: "فارسی" },
+  { code: "fi", name: "Suomi" },
+  { code: "fr", name: "Français" },
+  { code: "gl", name: "Galego" },
+  { code: "he", name: "עברית" },
+  { code: "hi", name: "हिन्दी" },
+  { code: "hr", name: "Hrvatski" },
+  { code: "hu", name: "Magyar" },
+  { code: "id", name: "Bahasa Indonesia" },
+  { code: "it", name: "Italiano" },
+  { code: "ja", name: "日本語" },
+  { code: "ka", name: "ქართული" },
+  { code: "ko", name: "한국어" },
+  { code: "lv", name: "Latviešu" },
+  { code: "ml", name: "മലയാളം" },
+  { code: "nl", name: "Nederlands" },
+  { code: "nn", name: "Nynorsk" },
+  { code: "no", name: "Norsk" },
+  { code: "pl", name: "Polski" },
+  { code: "ro", name: "Română" },
+  { code: "ru", name: "Русский" },
+  { code: "sk", name: "Slovenčina" },
+  { code: "sl", name: "Slovenščina" },
+  { code: "sv", name: "Svenska" },
+  { code: "te", name: "తెలుగు" },
+  { code: "tl", name: "Tagalog" },
+  { code: "tr", name: "Türkçe" },
+  { code: "uk", name: "Українська" },
+  { code: "ur", name: "اردو" },
+  { code: "vi", name: "Tiếng Việt" },
+  { code: "zh", name: "中文" },
+];
+
+// Idiomas de escrita NÃO-latina: aqui a letra precisa ser digitada no script
+// nativo (한국어, 日本語, кириллица...), não romanizada - o Whisper transcreve no
+// script nativo e o casamento com a letra falha se ela vier romanizada.
+const NON_LATIN_LANGS = new Set([
+  "ar", "el", "fa", "he", "hi", "ja", "ka", "ko", "ml", "ru", "te", "uk", "ur", "zh",
+]);
+
 function LogoMark({ size = 40 }: { size?: number }) {
   // marca simples e própria: microfone estilizado + estrela (UltraStar)
   return (
@@ -946,10 +1001,13 @@ function App() {
         <div className="field-group">
           <label>{t("languageLabel")}</label>
           <select value={language} onChange={(e) => setLanguage(e.target.value)} disabled={isRunning}>
-            <option value="pt">{t("langPt")}</option>
-            <option value="en">{t("langEn")}</option>
-            <option value="es">{t("langEs")}</option>
+            {LANGUAGES.map((l) => (
+              <option key={l.code} value={l.code}>{l.name}</option>
+            ))}
           </select>
+          {NON_LATIN_LANGS.has(language) && (
+            <p className="field-hint">{t("langNonLatinHint")}</p>
+          )}
         </div>
         <div className="field-group">
           <label title={t("bpmTip")}>

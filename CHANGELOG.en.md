@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Every version has a ready-to-use installer on **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — each release's notes also carry the install instructions.
 
+## [Unreleased]
+
+### Added
+
+- **41 song languages, no longer just 3.** The "Song language" selector offered only Portuguese, English and Spanish — anyone with a song in Croatian, Korean, German, Japanese, etc. had no option (forcing English gave poor results). It now lists all 41 languages the app can align word-by-word. For non-Latin-script languages (Korean, Japanese, Russian, Arabic…), type the lyrics in the native script (한국어, not romanized) — a hint shows when you pick one. *(The engine already supported them all; the screen was just missing the option.)*
+
 ## [0.5.1] — 2026-07-19
 
 ### Fixed
