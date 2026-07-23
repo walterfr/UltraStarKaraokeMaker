@@ -6,6 +6,12 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 Cada versão tem um instalador pronto em **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — as notas de cada release trazem também as instruções de instalação.
 
+## [0.9.0] — 2026-07-23
+
+### Adicionado
+
+- **Modo backtrack (só instrumental).** Nas opções, marque **Backtrack** e o áudio do pacote sai **sem a voz-guia** — só o instrumental, para cantar por cima (karaokê de verdade). Usa a separação de voz que o app já faz na geração, então não custa tempo a mais. A qualidade é a da separação: pode sobrar um resíduo de voz aqui e ali. O alinhamento e as notas não mudam — só o áudio empacotado.
+
 ## [0.8.0] — 2026-07-23
 
 ### Adicionado
@@ -208,6 +214,7 @@ Correções a partir de feedback da comunidade, validadas contra a [spec oficial
 
 Primeira release pública: pipeline completo (letra sincronizada, pitch, BPM, metadados, vídeo), instalador Windows e setup assistido do ambiente de IA.
 
+[0.9.0]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.9.0
 [0.8.0]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.8.0
 [0.7.1]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.7.1
 [0.7.0]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.7.0
