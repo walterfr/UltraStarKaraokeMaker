@@ -5,6 +5,7 @@ import { open as openDialog, ask } from "@tauri-apps/api/dialog";
 import { writeText } from "@tauri-apps/api/clipboard";
 import { fetch as httpFetch, ResponseType } from "@tauri-apps/api/http";
 import { appWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/api/notification";
 import { getVersion } from "@tauri-apps/api/app";
 import ReviewScreen from "./review/ReviewScreen";
 import { useI18n, StrKey } from "./i18n";
@@ -604,15 +605,33 @@ function App() {
 
   // Processa em série todos os itens `pending` da lista fornecida. Cancelar
   // interrompe a fila; um erro em uma música NÃO derruba as demais.
+  // Notificação nativa de término. Só dispara com a janela FORA de foco — se o
+  // usuário está olhando a tela, é ruído. Best-effort: qualquer falha (permissão
+  // negada, etc.) é ignorada. Nunca notifica cancelamento (o usuário fez).
+  async function notifyDone(body: string) {
+    try {
+      if (await appWindow.isFocused()) return;
+      let ok = await isPermissionGranted();
+      if (!ok) ok = (await requestPermission()) === "granted";
+      if (ok) sendNotification({ title: "USKMaker", body });
+    } catch {
+      /* notificação é secundária - nunca deve quebrar a geração */
+    }
+  }
+
   async function processQueue(list: QueueItem[]) {
     setIsRunning(true);
     setCancelling(false);
     // Músicas concluídas com sucesso nesta rodada (id + pasta) — usadas na
     // limpeza opcional dos auxiliares ao fim da fila (cleanExtras).
     const doneItems: { id: number; dir: string }[] = [];
+    let failCount = 0;
+    let cancelledInRun = false;
+    let lastLabel = "";
     setResultCleaned(false);
     for (const item of list) {
       if (item.status !== "pending") continue;
+      lastLabel = `${item.artist} - ${item.title}`;
       patchItem(item.id, { status: "running" });
       setResult(null);
       setError(null);
@@ -635,11 +654,13 @@ function App() {
           patchItem(item.id, { status: "cancelled" });
           setCancelled(true);
           setCurrentStep(0);
+          cancelledInRun = true;
           break; // cancelamento interrompe a fila inteira
         }
         const msg = typeof err === "string" ? err : t("unknownError");
         patchItem(item.id, { status: "error", error: msg });
         setError(msg);
+        failCount++;
         // segue para o próximo item (uma música ruim não trava o lote)
       }
     }
@@ -662,6 +683,18 @@ function App() {
     setIsRunning(false);
     setCancelling(false);
     appWindow.setTitle("USKMaker");
+
+    // Avisa que terminou (janela fora de foco). Cancelamento não avisa.
+    if (!cancelledInRun) {
+      const okCount = doneItems.length;
+      const total = okCount + failCount;
+      if (total === 1) {
+        notifyDone(okCount ? t("notifDoneOne", { song: lastLabel })
+                           : t("notifFailOne", { song: lastLabel }));
+      } else if (total > 1) {
+        notifyDone(t("notifDoneQueue", { ok: okCount, fail: failCount }));
+      }
+    }
   }
 
   async function handleGenerate() {
