@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Every version has a ready-to-use installer on **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — each release's notes also carry the install instructions.
 
+## [0.8.0] — 2026-07-23
+
+### Added
+
+- **A "Generate again" button.** On the result screen, generates the same song again without retyping anything. Handy when the vocal separation comes out bad on one attempt — it varies each run, and the next one usually improves.
+- **The result screen now explains when to use "Review".** Many people didn't realize Review fixes a broken section **without generating again** — so tweaking the lyrics and regenerating kept ruining parts that were already good. A hint on the button now makes it clear: to fix specific bits, use Review (adjusts the notes without re-separating the vocal); regenerating is for when the whole separation came out bad.
+
 ## [0.7.1] — 2026-07-22
 
 ### Fixed
@@ -201,6 +208,7 @@ Fixes from community feedback, validated against the [official format spec](http
 
 First public release: the complete pipeline (synced lyrics, pitch, BPM, metadata, video), a Windows installer and assisted AI-environment setup.
 
+[0.8.0]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.8.0
 [0.7.1]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.7.1
 [0.7.0]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.7.0
 [0.6.0]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.6.0

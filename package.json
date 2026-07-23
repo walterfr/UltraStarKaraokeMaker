@@ -1,7 +1,7 @@
 {
   "name": "uskmaker",
   "private": true,
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "USKMaker - gerador de pacotes de karaokê UltraStar com IA (sincronização de letra, pitch e BPM automáticos)",
   "author": "Walter",
   "license": "MIT",

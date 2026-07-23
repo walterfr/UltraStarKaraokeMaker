@@ -6,6 +6,13 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 Cada versão tem um instalador pronto em **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — as notas de cada release trazem também as instruções de instalação.
 
+## [0.8.0] — 2026-07-23
+
+### Adicionado
+
+- **Botão "Gerar de novo".** Na tela de resultado, gera a mesma música outra vez sem redigitar nada. Útil quando a separação da voz sai ruim numa tentativa — ela varia a cada geração, e a próxima costuma melhorar.
+- **A tela de resultado agora explica quando usar "Revisar".** Muita gente não percebia que a Revisão conserta um trecho quebrado **sem gerar de novo** — então mexer na letra e regerar acabava estragando partes que já estavam boas. Agora há uma dica no botão deixando claro: para acertar pedaços específicos, use Revisar (ajusta as notas sem re-separar a voz); regenerar é para quando a separação inteira saiu ruim.
+
 ## [0.7.1] — 2026-07-22
 
 ### Corrigido
@@ -201,6 +208,7 @@ Correções a partir de feedback da comunidade, validadas contra a [spec oficial
 
 Primeira release pública: pipeline completo (letra sincronizada, pitch, BPM, metadados, vídeo), instalador Windows e setup assistido do ambiente de IA.
 
+[0.8.0]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.8.0
 [0.7.1]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.7.1
 [0.7.0]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.7.0
 [0.6.0]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.6.0
