@@ -32,6 +32,18 @@ interface PipelineResult {
   notesWhisperAnchored: number;
 }
 
+// Análise de assets de um pacote na tela de revisão (comando Rust analyze_package).
+interface PackageAnalysis {
+  found: boolean;
+  source: "ours" | "txt" | "none";
+  title: string;
+  artist: string;
+  hasCover: boolean;
+  hasBg: boolean;
+  hasVideo: boolean;
+  txtPath: string | null;
+}
+
 interface EnvCheck {
   sidecarOk: boolean;
   sidecarMsg: string;
@@ -247,6 +259,9 @@ function App() {
   const [elapsed, setElapsed] = useState(0);
   const [env, setEnv] = useState<EnvCheck | null>(null);
   const [reviewDir, setReviewDir] = useState<string | null>(null);
+  const [analysis, setAnalysis] = useState<(PackageAnalysis & { dir: string }) | null>(null);
+  const [fetchingAssets, setFetchingAssets] = useState(false);
+  const [assetMsg, setAssetMsg] = useState<string | null>(null);
 
   // Setup in-app do ambiente de IA (uv + ffmpeg + libs), quando não configurado.
   const [settingUp, setSettingUp] = useState(false);
@@ -325,6 +340,12 @@ function App() {
         notesTotal: 408,
         notesEstimated: 5,
         notesWhisperAnchored: 380,
+      });
+    } else if (s === "assets") {
+      setAnalysis({
+        found: true, source: "txt", title: "Beat Acelerado", artist: "Metrô",
+        hasCover: true, hasBg: false, hasVideo: false,
+        txtPath: "D:\\x\\Metrô - Beat Acelerado.txt", dir: "D:\\x",
       });
     }
   }, []);
@@ -766,13 +787,92 @@ function App() {
 
   async function pickPackageToReview() {
     const selected = await openDialog({ directory: true, multiple: false });
-    if (typeof selected === "string") {
-      setReviewDir(selected);
+    if (typeof selected !== "string") return;
+    setAssetMsg(null);
+    const a = await invoke<PackageAnalysis>("analyze_package", { dir: selected });
+    if (!a.found) {
+      // nem song_data.json nem .txt: não é pacote UltraStar
+      setError(t("reviewNoPackage"));
+      return;
+    }
+    setAnalysis({ ...a, dir: selected });
+  }
+
+  // Baixa os assets que faltam e re-analisa (para o painel refletir o que veio).
+  async function downloadMissingAssets() {
+    if (!analysis) return;
+    const want = [
+      !analysis.hasCover && "cover",
+      !analysis.hasBg && "bg",
+      !analysis.hasVideo && "video",
+    ].filter(Boolean).join(",");
+    if (!want) return;
+    setFetchingAssets(true);
+    setAssetMsg(t("assetDownloading"));
+    try {
+      const r = await invoke<{ cover: string | null; bg: string | null; video: string | null; errors: string[] }>(
+        "fetch_package_assets",
+        { dir: analysis.dir, title: analysis.title, artist: analysis.artist, want, lang },
+      );
+      const got = [r.cover && "capa", r.bg && "fundo", r.video && "vídeo"].filter(Boolean);
+      const a = await invoke<PackageAnalysis>("analyze_package", { dir: analysis.dir });
+      setAnalysis({ ...a, dir: analysis.dir });
+      setAssetMsg(
+        got.length
+          ? t("assetGot", { got: got.join(", ") }) + (r.errors.length ? ` · ${r.errors.join(" · ")}` : "")
+          : (r.errors.join(" · ") || t("assetNone")),
+      );
+    } catch (e) {
+      setAssetMsg(typeof e === "string" ? e : t("unknownError"));
+    } finally {
+      setFetchingAssets(false);
     }
   }
 
   if (reviewDir) {
     return <ReviewScreen outDir={reviewDir} onClose={() => setReviewDir(null)} />;
+  }
+
+  // Painel de análise do pacote escolhido: sugere baixar capa/fundo/vídeo que
+  // faltam, e (só para pacotes nossos, com song_data.json) abre o editor de notas.
+  if (analysis) {
+    const missing = [
+      !analysis.hasCover && t("assetCover"),
+      !analysis.hasBg && t("assetBg"),
+      !analysis.hasVideo && t("assetVideo"),
+    ].filter(Boolean) as string[];
+    return (
+      <div className="asset-panel">
+        <h2>{analysis.artist || "—"} — {analysis.title || "—"}</h2>
+        <p className="subtitle">
+          {analysis.source === "txt" ? t("reviewThirdParty") : t("reviewOurs")}
+        </p>
+        <ul className="asset-list">
+          <li className={analysis.hasCover ? "have" : "miss"}>{analysis.hasCover ? "✓" : "○"} {t("assetCover")}</li>
+          <li className={analysis.hasBg ? "have" : "miss"}>{analysis.hasBg ? "✓" : "○"} {t("assetBg")}</li>
+          <li className={analysis.hasVideo ? "have" : "miss"}>{analysis.hasVideo ? "✓" : "○"} {t("assetVideo")}</li>
+        </ul>
+        {assetMsg && <p className="field-hint">{assetMsg}</p>}
+        <div className="asset-actions">
+          {missing.length > 0 && (
+            <button className="submit-button compact" onClick={downloadMissingAssets} disabled={fetchingAssets}>
+              {fetchingAssets ? t("assetDownloading") : t("assetDownloadMissing", { list: missing.join(", ") })}
+            </button>
+          )}
+          {analysis.source === "ours" && (
+            <button className="secondary" onClick={() => { setReviewDir(analysis.dir); setAnalysis(null); }}>
+              {t("assetEditNotes")}
+            </button>
+          )}
+          <button className="secondary" onClick={() => invoke("open_folder", { path: analysis.dir, lang })}>
+            {t("resultOpenFolder")}
+          </button>
+          <button className="secondary" onClick={() => { setAnalysis(null); setAssetMsg(null); }}>
+            {t("aboutClose")}
+          </button>
+        </div>
+      </div>
+    );
   }
 
   const envProblems: string[] = [];

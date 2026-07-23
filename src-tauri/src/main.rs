@@ -129,6 +129,8 @@ fn tr(lang: &str, key: &str) -> &'static str {
         "setup_spawn" => if en { "Error starting the setup: {err}" } else { "Erro ao iniciar o setup: {err}" },
         "setup_failed" => if en { "Setup failed. See the log at '{log}'." } else { "O setup falhou. Veja o log em '{log}'." },
         "read_tags" => if en { "Error reading the file's tags: {err}" } else { "Erro ao ler as tags do arquivo: {err}" },
+        "fetch_assets" => if en { "Error downloading assets: {err}" } else { "Erro ao baixar os complementos: {err}" },
+        "fetch_assets_failed" => if en { "Asset download failed (is the AI environment set up?): {err}" } else { "O download dos complementos falhou (o ambiente de IA foi configurado?): {err}" },
         "deps_missing" => if en { "The AI environment is incomplete: the libraries {mods} are missing (the setup didn't finish). Run 'Set up AI environment' again." } else { "O ambiente de IA está incompleto: faltam as bibliotecas {mods} (o setup não terminou). Rode 'Configurar ambiente de IA' de novo." },
         _ => "",
     }
@@ -862,6 +864,122 @@ struct ReviewData {
     out_dir: String,
 }
 
+// ---------------------------------------------------------------------------
+// Análise de assets de um pacote (capa/fundo/vídeo) para sugerir download na
+// tela de revisão. Funciona COM song_data.json (nosso pacote) OU só com o .txt
+// (pacote de terceiro) - neste caso lê apenas os HEADERS do .txt, sem parsear
+// as notas (isso exigiria um parser UltraStar completo, fora de escopo).
+// ---------------------------------------------------------------------------
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PackageAnalysis {
+    /// Achou song_data.json OU um .txt de chart na pasta.
+    found: bool,
+    /// "ours" (tem song_data.json) | "txt" (só o .txt) | "none".
+    source: String,
+    title: String,
+    artist: String,
+    has_cover: bool,
+    has_bg: bool,
+    has_video: bool,
+    /// Caminho do .txt quando source == "txt" (para inserir os headers
+    /// #COVER/#VIDEO/#BACKGROUND ao baixar o asset).
+    txt_path: Option<String>,
+}
+
+/// Lê só os headers (#KEY:VALUE) de um .txt UltraStar, parando na primeira
+/// linha de nota. Chave em maiúsculas. Não parseia notas.
+fn read_txt_headers(path: &Path) -> std::collections::HashMap<String, String> {
+    let mut out = std::collections::HashMap::new();
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return out;
+    };
+    for line in content.lines() {
+        let line = line.trim();
+        if !line.starts_with('#') {
+            if line.is_empty() {
+                continue;
+            }
+            break; // primeira linha de nota - acabaram os headers
+        }
+        if let Some((k, v)) = line[1..].split_once(':') {
+            out.insert(k.trim().to_uppercase(), v.trim().to_string());
+        }
+    }
+    out
+}
+
+/// Um asset "existe" quando há um nome referenciado E o arquivo está na pasta.
+fn asset_present(dir: &Path, name: &Option<String>) -> bool {
+    name.as_ref()
+        .map(|n| !n.is_empty() && dir.join(n).exists())
+        .unwrap_or(false)
+}
+
+#[tauri::command]
+fn analyze_package(dir: String) -> PackageAnalysis {
+    let d = PathBuf::from(&dir);
+    let none = || PackageAnalysis {
+        found: false,
+        source: "none".into(),
+        title: String::new(),
+        artist: String::new(),
+        has_cover: false,
+        has_bg: false,
+        has_video: false,
+        txt_path: None,
+    };
+
+    // 1) Nosso pacote: song_data.json é a fonte da verdade.
+    let json = d.join("song_data.json");
+    if json.exists() {
+        if let Ok(song) = Song::from_json_file(&json) {
+            return PackageAnalysis {
+                found: true,
+                source: "ours".into(),
+                title: song.title.clone(),
+                artist: song.artist.clone(),
+                has_cover: asset_present(&d, &song.cover_filename),
+                has_bg: asset_present(&d, &song.background_filename),
+                has_video: asset_present(&d, &song.video_filename),
+                txt_path: None,
+            };
+        }
+    }
+
+    // 2) Pacote de terceiro: o primeiro .txt de chart (ignora auxiliares "_*").
+    if let Ok(entries) = std::fs::read_dir(&d) {
+        for e in entries.flatten() {
+            let p = e.path();
+            let is_txt = p
+                .extension()
+                .map(|x| x.eq_ignore_ascii_case("txt"))
+                .unwrap_or(false);
+            let is_aux = p
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.starts_with('_'))
+                .unwrap_or(false);
+            if is_txt && !is_aux {
+                let h = read_txt_headers(&p);
+                let get = |k: &str| h.get(k).cloned();
+                return PackageAnalysis {
+                    found: true,
+                    source: "txt".into(),
+                    title: get("TITLE").unwrap_or_default(),
+                    artist: get("ARTIST").unwrap_or_default(),
+                    has_cover: asset_present(&d, &get("COVER")),
+                    has_bg: asset_present(&d, &get("BACKGROUND")),
+                    has_video: asset_present(&d, &get("VIDEO")),
+                    txt_path: Some(p.to_string_lossy().to_string()),
+                };
+            }
+        }
+    }
+
+    none()
+}
+
 #[tauri::command]
 fn load_song(out_dir: String, lang: String) -> Result<ReviewData, String> {
     let dir = PathBuf::from(&out_dir);
@@ -1109,6 +1227,52 @@ mod clean_extras_tests {
     }
 }
 
+#[cfg(test)]
+mod analyze_tests {
+    use super::analyze_package;
+
+    #[test]
+    fn pacote_de_terceiro_le_headers_do_txt_e_detecta_assets_faltantes() {
+        // Pasta SEM song_data.json (terceiro), com um .txt de chart e só a capa.
+        let base = std::env::temp_dir().join(format!("usk_analyze_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+
+        let txt = "#TITLE:Beat Acelerado\n#ARTIST:Metrô\n#MP3:Metrô - Beat Acelerado.ogg\n\
+                   #COVER:Metrô - Beat Acelerado [CO].jpg\n#VIDEO:Metrô - Beat Acelerado.mp4\n\
+                   #BPM:303\n#GAP:1000\n: 0 4 5 Beat\n: 4 4 5 a\nE\n";
+        std::fs::write(base.join("Metrô - Beat Acelerado.txt"), txt).unwrap();
+        // Só a capa existe; o vídeo é referenciado mas o arquivo não está lá.
+        std::fs::write(base.join("Metrô - Beat Acelerado [CO].jpg"), b"x").unwrap();
+        // Auxiliar não pode ser confundido com o chart.
+        std::fs::write(base.join("_lyrics_input.txt"), b"letra").unwrap();
+
+        let a = analyze_package(base.to_string_lossy().to_string());
+        assert!(a.found);
+        assert_eq!(a.source, "txt");
+        assert_eq!(a.title, "Beat Acelerado");
+        assert_eq!(a.artist, "Metrô");
+        assert!(a.has_cover, "capa existe -> tem");
+        assert!(!a.has_video, "vídeo referenciado mas ausente -> não tem");
+        assert!(!a.has_bg, "sem #BACKGROUND -> não tem");
+        assert!(a.txt_path.is_some());
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn pasta_sem_chart_nem_json_e_none() {
+        let base = std::env::temp_dir().join(format!("usk_analyze_none_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::write(base.join("_process_output.log"), b"x").unwrap();
+        let a = analyze_package(base.to_string_lossy().to_string());
+        assert!(!a.found);
+        assert_eq!(a.source, "none");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+}
+
 /// Lê as tags básicas (título/artista/álbum/ano/gênero) de um arquivo de
 /// áudio local, para o app pré-preencher o formulário ao selecionar o arquivo.
 /// Roda o leitor leve `read_tags.py` (só mutagen) no python do sidecar e
@@ -1135,6 +1299,41 @@ fn read_audio_tags(
     Ok(serde_json::from_str(stdout.trim()).unwrap_or_else(|_| serde_json::json!({})))
 }
 
+/// Baixa os assets faltantes (capa/fundo/vídeo) de um pacote já existente.
+/// Roda o script leve `fetch_assets.py` (só rede, sem GPU/sidecar). `want` é
+/// "cover,bg,video" (subconjunto). Devolve o JSON do script
+/// ({cover,bg,video,errors}); a UI mostra o que veio e o que falhou.
+#[tauri::command]
+fn fetch_package_assets(
+    app: tauri::AppHandle,
+    dir: String,
+    title: String,
+    artist: String,
+    want: String,
+    lang: String,
+) -> Result<serde_json::Value, String> {
+    let (code_dir, python_exe) = resolve_sidecar(&app, &lang)?;
+    let script = code_dir.join("fetch_assets.py");
+
+    let mut cmd = std::process::Command::new(&python_exe);
+    cmd.arg(&script)
+        .arg("--out-dir").arg(&dir)
+        .arg("--title").arg(&title)
+        .arg("--artist").arg(&artist)
+        .arg("--want").arg(&want);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let output = cmd.output().map_err(|e| tr_err(&lang, "fetch_assets", &e))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    serde_json::from_str(stdout.trim()).map_err(|_| {
+        // Sem JSON válido: o script morreu antes de imprimir (ex.: venv/import).
+        // Devolve o stderr pra o usuário ter o que reportar.
+        let err = String::from_utf8_lossy(&output.stderr);
+        tr(&lang, "fetch_assets_failed").replace("{err}", err.trim())
+    })
+}
+
 #[tauri::command]
 fn open_folder(path: String, lang: String) -> Result<(), String> {
     // Windows-only por enquanto (Fase 2 é dev no Windows) - abre o
@@ -1154,6 +1353,8 @@ fn main() {
             open_folder,
             clean_song_extras,
             read_audio_tags,
+            analyze_package,
+            fetch_package_assets,
             load_song,
             save_song,
             cancel_pipeline,

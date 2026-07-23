@@ -1153,3 +1153,37 @@ body { overflow: hidden; }
     padding: 12px 20px 14px;
   }
 }
+
+/* Painel de análise de pacote na revisão (sugestão de download de assets) */
+.asset-panel {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+.asset-panel h2 { margin: 0 0 0.25rem; font-size: 1.2rem; }
+.asset-panel .subtitle { margin: 0 0 1.2rem; }
+.asset-list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.asset-list li {
+  padding: 0.5rem 0.8rem;
+  border: 1px solid #26262f;
+  border-radius: 6px;
+  background: #17171f;
+  font-size: 0.9rem;
+}
+.asset-list li.have { color: #7fc98f; }
+.asset-list li.miss { color: #c99a7f; }
+.asset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1rem;
+  align-items: center;
+}
+.asset-actions .submit-button.compact { margin-top: 0; }
