@@ -113,6 +113,7 @@ interface PersistedSettings {
   cleanExtras: boolean;
   withStems: boolean;
   duet: boolean;
+  backtrack: boolean;
 }
 
 function loadSettings(): Partial<PersistedSettings> {
@@ -231,6 +232,7 @@ function App() {
   const [cleanExtras, setCleanExtras] = useState(saved.cleanExtras ?? false);
   const [withStems, setWithStems] = useState(saved.withStems ?? false);
   const [duet, setDuet] = useState(saved.duet ?? false);
+  const [backtrack, setBacktrack] = useState(saved.backtrack ?? false);
   const [outDir, setOutDir] = useState(saved.outDir ?? "");
 
   // Letra sincronizada (.lrc) do LRCLIB: guardada crua e enviada ao pipeline,
@@ -314,9 +316,9 @@ function App() {
 
   // ------------------------------------------------ persistência leve
   useEffect(() => {
-    const settings: PersistedSettings = { sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet };
+    const settings: PersistedSettings = { sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack };
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  }, [sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet]);
+  }, [sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack]);
 
   // ------------------------------------------------ SÓ EM DEV: preview de estado
   // Abre a UI num estado simulado sem precisar do backend Tauri, para inspecionar
@@ -576,6 +578,7 @@ function App() {
       cleanWork,
       withStems,
       duet,
+      backtrack,
     };
   }
 
@@ -1203,6 +1206,16 @@ function App() {
             disabled={isRunning}
           />
           {t("duetLabel")}
+          <span className="tip-mark" aria-hidden="true">?</span>
+        </label>
+        <label className="checkbox-line" title={t("backtrackHint")}>
+          <input
+            type="checkbox"
+            checked={backtrack}
+            onChange={(e) => setBacktrack(e.target.checked)}
+            disabled={isRunning}
+          />
+          {t("backtrackLabel")}
           <span className="tip-mark" aria-hidden="true">?</span>
         </label>
         <label className="checkbox-line" title={t("withStemsHint")}>

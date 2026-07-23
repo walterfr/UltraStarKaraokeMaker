@@ -211,6 +211,10 @@ struct PipelineInput {
     /// formato de dueto (#P1/#P2, blocos P1/P2, sufixo [DUET]). Opt-in.
     #[serde(default)]
     duet: bool,
+    /// Backtrack: o áudio do pacote é o INSTRUMENTAL separado (sem voz-guia),
+    /// para karaokê puro. O instrumental já vem do Demucs. Opt-in.
+    #[serde(default)]
+    backtrack: bool,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -545,6 +549,7 @@ async fn run_pipeline(
         "clean_work": input.clean_work,
         "with_stems": input.with_stems,
         "duet": input.duet,
+        "backtrack": input.backtrack,
         "synced_lyrics_path": synced_path.as_ref().map(|p| p.to_string_lossy().to_string()),
     });
     let job_line = serde_json::to_string(&job)

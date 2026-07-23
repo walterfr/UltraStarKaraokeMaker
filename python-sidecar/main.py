@@ -205,6 +205,7 @@ def run_pipeline(
     synced_lyrics_path: str | None = None,
     with_stems: bool = False,
     duet: bool = False,
+    backtrack: bool = False,
 ):
     global _debug_log_path
 
@@ -638,10 +639,18 @@ def run_pipeline(
     song.write_json(str(json_path))
     console.print(f"[green]OK[/green] JSON intermediário exportado: {json_path}")
 
-    debug_log("Convertendo áudio final para .ogg")
+    # Backtrack: o áudio do pacote vira o INSTRUMENTAL (sem voz-guia) - karaokê
+    # puro. O instrumental já foi separado na Etapa 2; aqui só escolhemos a
+    # fonte. Alinhamento/pitch usam o VOCAL e não são afetados. A qualidade é a
+    # da separação do Demucs (nunca perfeita - pode sobrar resíduo de voz).
+    audio_src = stems.instrumental if backtrack else source.audio_wav
+    debug_log(f"Convertendo áudio final para .ogg (backtrack={backtrack}, fonte={audio_src})")
     final_audio_dest = out_path / final_audio_name
-    convert_to_ogg(source.audio_wav, final_audio_dest)
-    console.print(f"[green]OK[/green] Áudio convertido para .ogg: {final_audio_dest}")
+    convert_to_ogg(audio_src, final_audio_dest)
+    console.print(
+        f"[green]OK[/green] Áudio {'(INSTRUMENTAL) ' if backtrack else ''}convertido "
+        f"para .ogg: {final_audio_dest}"
+    )
 
     # Limpeza opcional da pasta _work (intermediários: áudio bruto, stems do
     # Demucs, vídeo bruto). Só roda se o usuário pediu, e nunca derruba um
@@ -698,6 +707,7 @@ if __name__ == "__main__":
     parser.add_argument("--clean-work", action="store_true", help="Remover a pasta _work (intermediários) ao final")
     parser.add_argument("--with-stems", action="store_true", help="Incluir faixas separadas voz/instrumental no pacote (#VOCALS/#INSTRUMENTAL) - quase triplica o tamanho")
     parser.add_argument("--duet", action="store_true", help="Modo dueto: lê as tags P1:/P2:/P1&P2: da letra e escreve o formato de dueto (#P1/#P2, blocos P1/P2, [DUET])")
+    parser.add_argument("--backtrack", action="store_true", help="Backtrack: o áudio do pacote é o INSTRUMENTAL (sem voz-guia), karaokê puro")
     parser.add_argument(
         "--synced-lyrics",
         default=None,
@@ -723,6 +733,7 @@ if __name__ == "__main__":
             clean_work=args.clean_work,
             with_stems=args.with_stems,
             duet=args.duet,
+            backtrack=args.backtrack,
             synced_lyrics_path=args.synced_lyrics,
         )
     except Exception:
