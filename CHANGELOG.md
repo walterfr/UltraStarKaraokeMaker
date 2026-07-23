@@ -6,6 +6,12 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 Cada versão tem um instalador pronto em **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — as notas de cada release trazem também as instruções de instalação.
 
+## [0.7.1] — 2026-07-22
+
+### Corrigido
+
+- **O download de capa/fundo/vídeo na revisão sempre falhava** com "o download dos complementos falhou". A parte que baixa os arquivos misturava mensagens de aviso na resposta que o app lê, e isso a corrompia — não tinha a ver com o seu ambiente de IA. Corrigido; o download funciona.
+
 ## [0.7.0] — 2026-07-22
 
 ### Adicionado
@@ -195,6 +201,7 @@ Correções a partir de feedback da comunidade, validadas contra a [spec oficial
 
 Primeira release pública: pipeline completo (letra sincronizada, pitch, BPM, metadados, vídeo), instalador Windows e setup assistido do ambiente de IA.
 
+[0.7.1]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.7.1
 [0.7.0]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.7.0
 [0.6.0]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.6.0
 [0.5.1]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.5.1
