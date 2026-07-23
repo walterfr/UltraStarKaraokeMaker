@@ -6,6 +6,13 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 Cada versão tem um instalador pronto em **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — as notas de cada release trazem também as instruções de instalação.
 
+## [0.7.0] — 2026-07-22
+
+### Adicionado
+
+- **Aviso na tela quando uma música (ou a fila) termina.** Se você deixou o USKMaker gerando e foi fazer outra coisa, o Windows te avisa quando fica pronto — `✓ Pronto: Artista - Título`, ou um resumo da fila. Só aparece quando a janela do app **não** está em foco (se você está olhando a tela, não incomoda).
+- **A revisão sugere baixar capa, fundo e vídeo que faltam.** Ao escolher um pacote para revisar, o app analisa a pasta e mostra o que está faltando — com um botão para **baixar de uma vez** o que não tem (capa via MusicBrainz, fundo via fanart.tv, clipe via YouTube). Funciona também com **pacotes que não foram gerados aqui**: nesse caso o app lê o `.txt` para saber artista/título e o que já existe. *(Editar as notas continua só para pacotes gerados pelo USKMaker.)*
+
 ## [0.6.0] — 2026-07-20
 
 ### Adicionado
@@ -188,6 +195,7 @@ Correções a partir de feedback da comunidade, validadas contra a [spec oficial
 
 Primeira release pública: pipeline completo (letra sincronizada, pitch, BPM, metadados, vídeo), instalador Windows e setup assistido do ambiente de IA.
 
+[0.7.0]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.7.0
 [0.6.0]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.6.0
 [0.5.1]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.5.1
 [0.5.0]: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.5.0
