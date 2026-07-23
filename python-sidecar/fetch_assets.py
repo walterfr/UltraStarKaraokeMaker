@@ -21,8 +21,8 @@ escolhida pelo usuário; os nomes seguem a convenção "[CO]/[BG]" já usada.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -112,6 +112,18 @@ def main() -> int:
     txt = _find_chart_txt(d)
     result: dict = {"cover": None, "bg": None, "video": None, "errors": []}
 
+    # O Rust lê SÓ o JSON da última linha do stdout. fetch_metadata e o yt-dlp
+    # imprimem avisos/progresso no stdout - desviamos tudo isso para o stderr
+    # (diagnóstico) para que o stdout contenha apenas o JSON final.
+    with contextlib.redirect_stdout(sys.stderr):
+        _download(d, args.artist, args.title, want, base, txt, result)
+
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+def _download(d: Path, artist: str, title: str, want: set, base: str,
+              txt: Path | None, result: dict) -> None:
     # Capa e/ou fundo: fetch_metadata baixa a capa (MusicBrainz/CAA) e, com
     # FANARTTV_API_KEY, o fundo 16:9. Uma chamada cobre os dois.
     if want & {"cover", "bg"}:
@@ -120,7 +132,7 @@ def main() -> int:
             bg_out = (d / f"{base} [BG].jpg") if "bg" in want else None
             meta = fetch_metadata(
                 audio_path=_find_audio(d) or d,
-                artist=args.artist, title=args.title,
+                artist=artist, title=title,
                 out_cover_path=cover_out, use_network=True, out_bg_path=bg_out,
             )
             if "cover" in want and meta.cover_path and Path(meta.cover_path).exists():
@@ -142,7 +154,7 @@ def main() -> int:
     # Vídeo: clipe do YouTube por busca "artista título".
     if "video" in want:
         try:
-            got = download_background_video(f"ytsearch1:{args.artist} {args.title}", d)
+            got = download_background_video(f"ytsearch1:{artist} {title}", d)
             if got and Path(got).exists():
                 # download_background_video salva como "bgvideo.ext"; renomeia
                 # para o padrão do pacote e referencia no header.
@@ -156,9 +168,6 @@ def main() -> int:
                 result["errors"].append("video: nenhum clipe encontrado")
         except Exception as e:  # noqa: BLE001
             result["errors"].append(f"video: {e}")
-
-    print(json.dumps(result, ensure_ascii=False))
-    return 0
 
 
 if __name__ == "__main__":
