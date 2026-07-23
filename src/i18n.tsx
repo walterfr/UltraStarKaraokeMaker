@@ -173,7 +173,10 @@ const STRINGS = {
       "colocado as notas no lugar errado. Vale conferir a sincronia; se estiver ruim, gere de " +
       "novo (a separação da voz varia a cada tentativa) e confira se a letra bate com esta gravação.",
     resultReview: "Revisar alinhamento",
+    resultReviewHint: "É a melhor forma de acertar trechos: você ajusta as notas sem gerar de novo, então conserta só o pedaço ruim sem mexer no que ficou bom.",
     resultOpenFolder: "Abrir pasta",
+    resultRegen: "Gerar de novo",
+    resultRegenHint: "Gera esta mesma música outra vez, sem redigitar. A separação do vocal varia a cada tentativa — se saiu ruim, a próxima costuma melhorar. Para acertar trechos, prefira Revisar.",
     resultNewSong: "Nova música",
 
     // ---- revisão ----
@@ -383,7 +386,10 @@ const STRINGS = {
       "else and placed the notes in the wrong spots. Worth checking the sync; if it's off, generate " +
       "again (the vocal separation varies between attempts) and check the lyrics match this recording.",
     resultReview: "Review alignment",
+    resultReviewHint: "This is the best way to fix specific parts: you adjust the notes without generating again, so you fix only the bad bit without touching what came out good.",
     resultOpenFolder: "Open folder",
+    resultRegen: "Generate again",
+    resultRegenHint: "Generates this same song again, without retyping. Vocal separation varies each attempt — if it came out bad, the next one usually improves. To fix specific parts, prefer Review.",
     resultNewSong: "New song",
 
     revTitle: "Review",

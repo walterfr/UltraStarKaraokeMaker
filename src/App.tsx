@@ -260,6 +260,9 @@ function App() {
   const [env, setEnv] = useState<EnvCheck | null>(null);
   const [reviewDir, setReviewDir] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<(PackageAnalysis & { dir: string }) | null>(null);
+  // Snapshot da última música gerada (input + rótulo) para "Gerar de novo"
+  // sem redigitar. O input é o mesmo objeto que foi para o run_pipeline.
+  const [lastGen, setLastGen] = useState<{ input: Record<string, unknown>; artist: string; title: string } | null>(null);
   const [fetchingAssets, setFetchingAssets] = useState(false);
   const [assetMsg, setAssetMsg] = useState<string | null>(null);
 
@@ -668,6 +671,7 @@ function App() {
         const res = await invoke<PipelineResult>("run_pipeline", { input: item.input, lang });
         patchItem(item.id, { status: "done", result: res });
         setResult(res);
+        setLastGen({ input: item.input, artist: item.artist, title: item.title });
         setCurrentStep(STEP_KEYS.length + 1);
         doneItems.push({ id: item.id, dir: res.outDir });
       } catch (err) {
@@ -739,6 +743,23 @@ function App() {
       clearSongFields();
     }
     await processQueue(full);
+  }
+
+  // Gera de novo a última música, reusando o mesmo input (sem redigitar).
+  // Útil quando a separação do vocal saiu ruim: cada tentativa varia, e a
+  // próxima costuma sair melhor. (Para acertar TRECHOS, a Revisão é melhor -
+  // ela não re-separa; ver o texto do botão de revisão.)
+  async function regenerate() {
+    if (isRunning || !lastGen) return;
+    const item: QueueItem = {
+      id: nextIdRef.current++,
+      artist: lastGen.artist,
+      title: lastGen.title,
+      input: lastGen.input,
+      status: "pending",
+    };
+    setQueue((q) => [...q, item]);
+    await processQueue([item]);
   }
 
   async function handleCancel() {
@@ -1373,13 +1394,19 @@ function App() {
           <h3 className="card-title">{t("sectionNext")}</h3>
           <div className="next-actions">
             {!resultCleaned && (
-              <button className="submit-button compact" onClick={() => setReviewDir(result.outDir)}>
-                {t("resultReview")}
-              </button>
+              <>
+                <button className="submit-button compact" onClick={() => setReviewDir(result.outDir)}>
+                  {t("resultReview")}
+                </button>
+                <p className="field-hint">{t("resultReviewHint")}</p>
+              </>
             )}
             <div className="next-row">
               <button className="secondary" onClick={openOutputFolder}>
                 {t("resultOpenFolder")}
+              </button>
+              <button className="secondary" onClick={regenerate} disabled={!lastGen} title={t("resultRegenHint")}>
+                {t("resultRegen")}
               </button>
               <button className="secondary" onClick={resetForm}>
                 {t("resultNewSong")}
