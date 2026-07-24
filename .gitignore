@@ -48,3 +48,9 @@ dist/
 .idea/
 Thumbs.db
 .DS_Store
+
+# --- Ferramentas do Claude Code (locais, não versionar) ---
+# .claude/: settings locais, lock e launch.json de preview (por-máquina).
+# .codegraph/: índice de código (db/wal/pid pesados, regenerado localmente).
+.claude/
+.codegraph/
