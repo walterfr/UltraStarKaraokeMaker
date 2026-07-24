@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Every version has a ready-to-use installer on **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — each release's notes also carry the install instructions.
 
+## [0.10.0] — 2026-07-24
+
+### Added
+
+- **Key change (transpose).** New **Transpose (semitones)** field next to BPM, from −6 to +6. The package comes out in a different key from the original: the app shifts the **audio** (tempo preserved) **and the notes** together, by the same number of semitones — everything stays in sync in the new key. Handy to share or play outside the game already in the right key, or in players without live transpose. Large steps (beyond ±4) degrade the audio; combined with Backtrack, the separation residue becomes more audible. The key is per-song: it resets to the original on each new generation.
+
 ## [0.9.0] — 2026-07-23
 
 ### Added

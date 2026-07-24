@@ -222,6 +222,9 @@ function App() {
   const [tagsMsg, setTagsMsg] = useState<string | null>(null);
   const [language, setLanguage] = useState(saved.language ?? "pt");
   const [bpm, setBpm] = useState("");
+  // Tom fixo: transpõe o pacote N semitons. Por-música (não persiste): cada
+  // faixa tem seu tom, guardar entre gerações transporia a próxima sem querer.
+  const [transpose, setTranspose] = useState("0");
   const [withVideo, setWithVideo] = useState(saved.withVideo ?? false);
   const [bgVideo, setBgVideo] = useState(saved.bgVideo ?? false);
   const [bgVideoUrl, setBgVideoUrl] = useState("");
@@ -579,6 +582,7 @@ function App() {
       withStems,
       duet,
       backtrack,
+      transpose: parseInt(transpose, 10) || 0,
     };
   }
 
@@ -593,6 +597,7 @@ function App() {
     setTitle("");
     setArtist("");
     setBpm("");
+    setTranspose("0");
     setBgVideoUrl("");
   }
 
@@ -785,6 +790,7 @@ function App() {
     setTitle("");
     setArtist("");
     setBpm("");
+    setTranspose("0");
     setBgVideoUrl("");
     setResult(null);
     setError(null);
@@ -1178,6 +1184,19 @@ function App() {
             placeholder={t("bpmPlaceholder")}
             disabled={isRunning}
           />
+        </div>
+        <div className="field-group">
+          <label title={t("transposeHint")}>
+            {t("transposeLabel")}
+            <span className="tip-mark" aria-hidden="true">?</span>
+          </label>
+          <select value={transpose} onChange={(e) => setTranspose(e.target.value)} disabled={isRunning}>
+            {[-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6].map((n) => (
+              <option key={n} value={String(n)}>
+                {n === 0 ? t("transposeOriginal") : `${n > 0 ? "+" : ""}${n}`}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 

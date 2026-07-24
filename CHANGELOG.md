@@ -6,6 +6,12 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 Cada versão tem um instalador pronto em **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — as notas de cada release trazem também as instruções de instalação.
 
+## [0.10.0] — 2026-07-24
+
+### Adicionado
+
+- **Mudança de tom (transposição).** Novo campo **Transpor (semitons)** ao lado do BPM, de −6 a +6. O pacote sai num tom diferente do original: o app desloca o **áudio** (preservando o andamento) **e as notas** juntos, o mesmo número de semitons — tudo fica sincronizado no tom novo. Serve para compartilhar ou tocar fora do jogo já no tom certo, ou em players sem transposição ao vivo. Passos grandes (mais de ±4) degradam o áudio; combinado com o Backtrack, o resíduo da separação aparece mais. O tom é por-música: volta ao original a cada nova geração.
+
 ## [0.9.0] — 2026-07-23
 
 ### Adicionado

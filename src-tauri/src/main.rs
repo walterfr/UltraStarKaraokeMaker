@@ -215,6 +215,10 @@ struct PipelineInput {
     /// para karaokê puro. O instrumental já vem do Demucs. Opt-in.
     #[serde(default)]
     backtrack: bool,
+    /// Tom fixo: transpõe o pacote N semitons (áudio via rubberband + pitches
+    /// das notas, juntos). 0 = tom original. Opt-in, por-música.
+    #[serde(default)]
+    transpose: i64,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -550,6 +554,7 @@ async fn run_pipeline(
         "with_stems": input.with_stems,
         "duet": input.duet,
         "backtrack": input.backtrack,
+        "transpose": input.transpose,
         "synced_lyrics_path": synced_path.as_ref().map(|p| p.to_string_lossy().to_string()),
     });
     let job_line = serde_json::to_string(&job)

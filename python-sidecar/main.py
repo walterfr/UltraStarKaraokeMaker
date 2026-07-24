@@ -154,19 +154,23 @@ def get_audio_duration_seconds(path: Path) -> float:
     return info.frames / info.samplerate
 
 
-def convert_to_ogg(source_wav: Path, dest_ogg: Path, quality: int = 6) -> None:
+def convert_to_ogg(source_wav: Path, dest_ogg: Path, quality: int = 6,
+                   pitch_semitones: int = 0) -> None:
     """
     Converte um .wav para .ogg (Vorbis) via ffmpeg. quality 0-10 (VBR
     libvorbis); 6 ~= 192kbps, bom equilíbrio qualidade/tamanho para karaoke.
     Ambos UltraStar Deluxe e Play leem Ogg Vorbis nativamente.
+
+    pitch_semitones != 0 transpõe o áudio N semitons PRESERVANDO o tempo, via
+    filtro rubberband (phase-vocoder de boa qualidade). Usado no "tom fixo":
+    o pacote sai num tom diferente do original. Shift grande (>±4) degrada.
     """
-    cmd = [
-        ffmpeg_exe(), "-y",
-        "-i", str(source_wav),
-        "-c:a", "libvorbis",
-        "-q:a", str(quality),
-        str(dest_ogg),
-    ]
+    cmd = [ffmpeg_exe(), "-y", "-i", str(source_wav)]
+    if pitch_semitones:
+        # pitch é fator de escala; 2^(N/12) = N semitons na escala temperada.
+        ratio = 2 ** (pitch_semitones / 12.0)
+        cmd += ["-af", f"rubberband=pitch={ratio:.6f}"]
+    cmd += ["-c:a", "libvorbis", "-q:a", str(quality), str(dest_ogg)]
     run_subprocess(cmd)
 
 
@@ -206,6 +210,7 @@ def run_pipeline(
     with_stems: bool = False,
     duet: bool = False,
     backtrack: bool = False,
+    transpose: int = 0,
 ):
     global _debug_log_path
 
@@ -628,6 +633,7 @@ def run_pipeline(
         duet=duet,
         p1_name=p1_name,
         p2_name=p2_name,
+        transpose=transpose,
     )
     debug_log("ETAPA 6 - build_song concluído, escrevendo .txt")
 
@@ -644,11 +650,12 @@ def run_pipeline(
     # fonte. Alinhamento/pitch usam o VOCAL e não são afetados. A qualidade é a
     # da separação do Demucs (nunca perfeita - pode sobrar resíduo de voz).
     audio_src = stems.instrumental if backtrack else source.audio_wav
-    debug_log(f"Convertendo áudio final para .ogg (backtrack={backtrack}, fonte={audio_src})")
+    debug_log(f"Convertendo áudio final para .ogg (backtrack={backtrack}, transpose={transpose}, fonte={audio_src})")
     final_audio_dest = out_path / final_audio_name
-    convert_to_ogg(audio_src, final_audio_dest)
+    convert_to_ogg(audio_src, final_audio_dest, pitch_semitones=transpose)
     console.print(
-        f"[green]OK[/green] Áudio {'(INSTRUMENTAL) ' if backtrack else ''}convertido "
+        f"[green]OK[/green] Áudio {'(INSTRUMENTAL) ' if backtrack else ''}"
+        f"{f'(TOM {transpose:+d}) ' if transpose else ''}convertido "
         f"para .ogg: {final_audio_dest}"
     )
 
@@ -708,6 +715,7 @@ if __name__ == "__main__":
     parser.add_argument("--with-stems", action="store_true", help="Incluir faixas separadas voz/instrumental no pacote (#VOCALS/#INSTRUMENTAL) - quase triplica o tamanho")
     parser.add_argument("--duet", action="store_true", help="Modo dueto: lê as tags P1:/P2:/P1&P2: da letra e escreve o formato de dueto (#P1/#P2, blocos P1/P2, [DUET])")
     parser.add_argument("--backtrack", action="store_true", help="Backtrack: o áudio do pacote é o INSTRUMENTAL (sem voz-guia), karaokê puro")
+    parser.add_argument("--transpose", type=int, default=0, help="Transpõe o pacote N semitons (áudio via rubberband + pitches das notas). 0 = tom original")
     parser.add_argument(
         "--synced-lyrics",
         default=None,
@@ -734,6 +742,7 @@ if __name__ == "__main__":
             with_stems=args.with_stems,
             duet=args.duet,
             backtrack=args.backtrack,
+            transpose=args.transpose,
             synced_lyrics_path=args.synced_lyrics,
         )
     except Exception:

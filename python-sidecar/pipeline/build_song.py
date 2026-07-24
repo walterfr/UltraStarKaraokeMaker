@@ -522,6 +522,7 @@ def build_song(
     duet: bool = False,
     p1_name: str | None = None,
     p2_name: str | None = None,
+    transpose: int = 0,
 ) -> Song:
     pitch_extractor = PitchExtractor()
 
@@ -536,6 +537,13 @@ def build_song(
     effective_gap_ms = round_gap_ms(max(0, round(first_start * 1000)) + gap_ms)
 
     notes, phrase_breaks = build_notes(word_timings, vocals_wav_path, grid, effective_gap_ms, pitch_extractor)
+
+    # Tom fixo: transpõe a melodia inteira N semitons, uniforme, DEPOIS de toda
+    # a estimativa/dobra de pitch. Casa com o áudio deslocado pelo mesmo N em
+    # convert_to_ogg (rubberband). Shift uniforme mantém intervalos e voicing.
+    if transpose:
+        for n in notes:
+            n.pitch += transpose
 
     return Song(
         title=title,
