@@ -114,6 +114,7 @@ interface PersistedSettings {
   withStems: boolean;
   duet: boolean;
   backtrack: boolean;
+  yargExport: boolean;
 }
 
 function loadSettings(): Partial<PersistedSettings> {
@@ -236,6 +237,7 @@ function App() {
   const [withStems, setWithStems] = useState(saved.withStems ?? false);
   const [duet, setDuet] = useState(saved.duet ?? false);
   const [backtrack, setBacktrack] = useState(saved.backtrack ?? false);
+  const [yargExport, setYargExport] = useState(saved.yargExport ?? false);
   const [outDir, setOutDir] = useState(saved.outDir ?? "");
 
   // Letra sincronizada (.lrc) do LRCLIB: guardada crua e enviada ao pipeline,
@@ -319,9 +321,9 @@ function App() {
 
   // ------------------------------------------------ persistência leve
   useEffect(() => {
-    const settings: PersistedSettings = { sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack };
+    const settings: PersistedSettings = { sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, yargExport };
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  }, [sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack]);
+  }, [sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, yargExport]);
 
   // ------------------------------------------------ SÓ EM DEV: preview de estado
   // Abre a UI num estado simulado sem precisar do backend Tauri, para inspecionar
@@ -583,6 +585,7 @@ function App() {
       duet,
       backtrack,
       transpose: parseInt(transpose, 10) || 0,
+      yargExport,
     };
   }
 
@@ -1235,6 +1238,16 @@ function App() {
             disabled={isRunning}
           />
           {t("backtrackLabel")}
+          <span className="tip-mark" aria-hidden="true">?</span>
+        </label>
+        <label className="checkbox-line" title={t("yargExportHint")}>
+          <input
+            type="checkbox"
+            checked={yargExport}
+            onChange={(e) => setYargExport(e.target.checked)}
+            disabled={isRunning}
+          />
+          {t("yargExportLabel")}
           <span className="tip-mark" aria-hidden="true">?</span>
         </label>
         <label className="checkbox-line" title={t("withStemsHint")}>

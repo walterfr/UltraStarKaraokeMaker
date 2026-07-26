@@ -219,6 +219,10 @@ struct PipelineInput {
     /// das notas, juntos). 0 = tom original. Opt-in, por-música.
     #[serde(default)]
     transpose: i64,
+    /// Export YARG: além do pacote UltraStar, monta uma subpasta no layout do
+    /// YARG (notes.txt + song.ini + stems song.ogg/vocals.ogg). Opt-in.
+    #[serde(default)]
+    yarg_export: bool,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -555,6 +559,7 @@ async fn run_pipeline(
         "duet": input.duet,
         "backtrack": input.backtrack,
         "transpose": input.transpose,
+        "yarg_export": input.yarg_export,
         "synced_lyrics_path": synced_path.as_ref().map(|p| p.to_string_lossy().to_string()),
     });
     let job_line = serde_json::to_string(&job)

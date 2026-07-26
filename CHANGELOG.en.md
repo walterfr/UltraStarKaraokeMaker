@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Every version has a ready-to-use installer on **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — each release's notes also carry the install instructions.
 
+## [0.11.0] — 2026-07-25
+
+### Added
+
+- **Export for YARG.** New option under **Options**: alongside the UltraStar package, the app assembles a **"(YARG)"** subfolder ready for [YARG](https://yarg.in). YARG reads the UltraStar `.txt` format natively — so there's no format conversion, just packaging into the layout it expects: `notes.txt` (the same chart), `song.ini` (metadata), and the audio files `song.ogg` (instrumental) and `vocals.ogg` (isolated vocal), built from the separation the app already does. Cover (`album.jpg`) and video are included when present. Respects the chosen transpose. Reuses everything the pipeline already produces, at no meaningful extra processing cost.
+
 ## [0.10.0] — 2026-07-24
 
 ### Added

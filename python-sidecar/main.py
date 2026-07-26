@@ -174,6 +174,52 @@ def convert_to_ogg(source_wav: Path, dest_ogg: Path, quality: int = 6,
     run_subprocess(cmd)
 
 
+def write_song_ini(dest: Path, name: str, artist: str,
+                   length_ms: int | None = None, year: int | None = None,
+                   genre: str | None = None) -> None:
+    """
+    Escreve o song.ini que o YARG lê (seção [song]). Todos os campos são
+    opcionais na spec (GuitarGame_ChartFormats), então só emitimos os que
+    temos. charter=USKMaker identifica a origem. song_length é em ms e é
+    "metadata only" para o YARG (ele mede a duração do áudio de verdade).
+    """
+    lines = ["[song]", f"name={name}", f"artist={artist}", "charter=USKMaker"]
+    if length_ms is not None:
+        lines.append(f"song_length={length_ms}")
+    if year:
+        lines.append(f"year={year}")
+    if genre:
+        lines.append(f"genre={genre}")
+    dest.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def export_yarg(yarg_dir: Path, txt_path: Path, stems, source_audio: Path,
+                cover_path: Path | None, video_path: Path | None,
+                name: str, artist: str, year: int | None, genre: str | None,
+                transpose: int = 0) -> None:
+    """
+    Monta a pasta no layout do YARG. O YARG lê o UltraStar .txt NATIVAMENTE
+    (ChartFormat.UltraStar) - não há conversão de formato, só empacotamento.
+    O áudio vem dos STEMS (nomes reservados song/vocals), não da tag #MP3 do
+    .txt: song.ogg = instrumental (Demucs), vocals.ogg = vocal. Ambos os oggs
+    respeitam a transposição, para casar com as notas transpostas do notes.txt.
+    Q8/256kbps é o recomendado pela spec (o pacote UltraStar usa Q6).
+    """
+    yarg_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy(txt_path, yarg_dir / "notes.txt")
+    convert_to_ogg(stems.instrumental, yarg_dir / "song.ogg", quality=8, pitch_semitones=transpose)
+    convert_to_ogg(stems.vocals, yarg_dir / "vocals.ogg", quality=8, pitch_semitones=transpose)
+    if cover_path and cover_path.exists():
+        shutil.copy(cover_path, yarg_dir / "album.jpg")
+    if video_path and video_path.exists():
+        shutil.copy(video_path, yarg_dir / f"video{video_path.suffix.lower() or '.mp4'}")
+    try:
+        length_ms = int(sf.info(str(source_audio)).duration * 1000)
+    except Exception:
+        length_ms = None
+    write_song_ini(yarg_dir / "song.ini", name, artist, length_ms, year, genre)
+
+
 def split_duet_artists(artist: str) -> tuple[str | None, str | None]:
     """
     Tenta separar o campo #ARTIST em dois nomes para os headers #P1/#P2 do
@@ -211,6 +257,7 @@ def run_pipeline(
     duet: bool = False,
     backtrack: bool = False,
     transpose: int = 0,
+    yarg_export: bool = False,
 ):
     global _debug_log_path
 
@@ -659,6 +706,30 @@ def run_pipeline(
         f"para .ogg: {final_audio_dest}"
     )
 
+    # Export YARG (opt-in): monta uma subpasta "<file_base> (YARG)" com o
+    # layout do YARG. O YARG lê o .txt UltraStar nativo, então só empacotamos
+    # (notes.txt + song.ini + stems song.ogg/vocals.ogg + capa/vídeo). Roda
+    # ANTES do clean_work porque os stems vivem em _work. Não-fatal: um pacote
+    # UltraStar válido não pode ser derrubado por causa de um extra.
+    if yarg_export:
+        yarg_dir = out_path / f"{file_base} (YARG)"
+        debug_log(f"Exportando para YARG em {yarg_dir} (transpose={transpose})")
+        console.print("[cyan]Exportando pacote para o YARG...[/cyan]")
+        try:
+            export_yarg(
+                yarg_dir, txt_path, stems, source.audio_wav,
+                metadata.cover_path, source.video_path,
+                title, artist, metadata.year, metadata.genre,
+                transpose=transpose,
+            )
+            console.print(f"[green]OK[/green] Pasta YARG pronta: {yarg_dir}")
+        except Exception as e:
+            debug_log(f"Falha ao exportar YARG (ignorada): {e}")
+            console.print(
+                f"[yellow]AVISO[/yellow] Não consegui exportar para o YARG: {e}. "
+                f"O pacote UltraStar está OK."
+            )
+
     # Limpeza opcional da pasta _work (intermediários: áudio bruto, stems do
     # Demucs, vídeo bruto). Só roda se o usuário pediu, e nunca derruba um
     # pipeline que já deu certo - por isso o try/except que só avisa.
@@ -716,6 +787,7 @@ if __name__ == "__main__":
     parser.add_argument("--duet", action="store_true", help="Modo dueto: lê as tags P1:/P2:/P1&P2: da letra e escreve o formato de dueto (#P1/#P2, blocos P1/P2, [DUET])")
     parser.add_argument("--backtrack", action="store_true", help="Backtrack: o áudio do pacote é o INSTRUMENTAL (sem voz-guia), karaokê puro")
     parser.add_argument("--transpose", type=int, default=0, help="Transpõe o pacote N semitons (áudio via rubberband + pitches das notas). 0 = tom original")
+    parser.add_argument("--yarg-export", action="store_true", help="Exporta também uma subpasta no layout do YARG (notes.txt + song.ini + stems song.ogg/vocals.ogg)")
     parser.add_argument(
         "--synced-lyrics",
         default=None,
@@ -743,6 +815,7 @@ if __name__ == "__main__":
             duet=args.duet,
             backtrack=args.backtrack,
             transpose=args.transpose,
+            yarg_export=args.yarg_export,
             synced_lyrics_path=args.synced_lyrics,
         )
     except Exception:
