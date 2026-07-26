@@ -971,6 +971,7 @@ body { overflow: hidden; }
 }
 .chip.gpu { background: #171d2e; color: #8fa8ff; border-color: #26315a; }
 .chip.muted { background: #201a17; color: #c99a7f; border-color: #402c23; }
+.chip.warn { background: #2a2014; color: #f0b573; border-color: #5c4520; }
 
 /* first-run: banner de ambiente incompleto empurra o workspace, tudo bem */
 .app-shell > .env-problems,

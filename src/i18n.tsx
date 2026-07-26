@@ -30,6 +30,7 @@ const STRINGS = {
     envAI: "Ambiente de IA",
     envNoGpu: "⚠ sem GPU NVIDIA — processamento em CPU (lento)",
     envGpu: "✓ GPU {name}",
+    envGpuNoCuda: "⚠ GPU {name} — torch sem CUDA, rodando em CPU (lento)",
     envIncomplete: "Ambiente incompleto — a geração vai falhar até resolver:",
     envNoFfmpeg: "ffmpeg não encontrado no PATH — instale (https://www.gyan.dev/ffmpeg/builds/) e reinicie o app.",
     envNoVorbis: "O ffmpeg instalado não tem suporte a libvorbis (necessário para o áudio .ogg do pacote) — use um build \"full\".",
@@ -104,6 +105,8 @@ const STRINGS = {
     backtrackHint: "O áudio do pacote fica só com o instrumental (sem a voz-guia) — karaokê puro, você canta por cima. Usa a separação da voz que o app já faz; a qualidade depende dela e pode sobrar um resíduo de voz. O alinhamento e as notas não mudam.",
     yargExportLabel: "Exportar para o YARG",
     yargExportHint: "Além do pacote UltraStar, gera uma subpasta \"(YARG)\" pronta para o YARG: notes.txt (o mesmo chart, que o YARG lê nativo), song.ini, e os áudios song.ogg (instrumental) e vocals.ogg (voz). Reaproveita a separação e os metadados que o app já produz. Respeita a transposição escolhida.",
+    romanizeLabel: "Romanizar (romaji)",
+    romanizeHint: "Para músicas em japonês: reescreve a letra do pacote em romaji (alfabeto latino, Hepburn), para quem não lê kana/kanji conseguir cantar. O alinhamento roda sobre o japonês original — só o texto final vira romaji. Em letras que já são latinas não muda nada.",
 
     // ---- validação ----
     valNeedYoutube: "Informe o link do YouTube.",
@@ -256,6 +259,7 @@ const STRINGS = {
     envAI: "AI environment",
     envNoGpu: "⚠ no NVIDIA GPU — CPU processing (slow)",
     envGpu: "✓ GPU {name}",
+    envGpuNoCuda: "⚠ GPU {name} — torch without CUDA, running on CPU (slow)",
     envIncomplete: "Incomplete environment — generation will fail until fixed:",
     envNoFfmpeg: "ffmpeg not found on PATH — install it (https://www.gyan.dev/ffmpeg/builds/) and restart the app.",
     setupButton: "Set up AI environment",
@@ -327,6 +331,8 @@ const STRINGS = {
     backtrackHint: "The package audio keeps only the instrumental (no guide vocal) — pure karaoke, you sing over it. Uses the vocal separation the app already does; quality depends on it and some vocal residue may remain. Alignment and notes are unchanged.",
     yargExportLabel: "Export for YARG",
     yargExportHint: "Alongside the UltraStar package, generates a \"(YARG)\" subfolder ready for YARG: notes.txt (the same chart, which YARG reads natively), song.ini, and the audio files song.ogg (instrumental) and vocals.ogg (vocal). Reuses the separation and metadata the app already produces. Respects the chosen transpose.",
+    romanizeLabel: "Romanize (romaji)",
+    romanizeHint: "For Japanese songs: rewrites the package lyrics in romaji (Latin alphabet, Hepburn), so people who can't read kana/kanji can sing along. Alignment runs on the original Japanese — only the final text becomes romaji. For lyrics that are already Latin, nothing changes.",
 
     valNeedYoutube: "Enter the YouTube link.",
     valNeedFile: "Select a local audio/video file.",

@@ -174,6 +174,25 @@ def convert_to_ogg(source_wav: Path, dest_ogg: Path, quality: int = 6,
     run_subprocess(cmd)
 
 
+def romanize_notes(notes) -> None:
+    """
+    Reescreve o texto de cada nota em romaji (Hepburn) via pykakasi. Para letras
+    japonesas (kana/kanji), deixa quem não lê japonês cantar. Texto já latino
+    passa direto. Import LAZY: pykakasi só é exigido quando o usuário liga a
+    opção. Preserva o espaço à direita, que no UltraStar marca fim de palavra.
+    """
+    from pykakasi import kakasi
+    kks = kakasi()
+    for n in notes:
+        raw = n.text
+        core = raw.strip()
+        if not core:
+            continue
+        romaji = "".join(item["hepburn"] for item in kks.convert(core))
+        if romaji:
+            n.text = romaji + (" " if raw.endswith(" ") else "")
+
+
 def write_song_ini(dest: Path, name: str, artist: str,
                    length_ms: int | None = None, year: int | None = None,
                    genre: str | None = None) -> None:
@@ -258,6 +277,7 @@ def run_pipeline(
     backtrack: bool = False,
     transpose: int = 0,
     yarg_export: bool = False,
+    romanize: bool = False,
 ):
     global _debug_log_path
 
@@ -684,6 +704,22 @@ def run_pipeline(
     )
     debug_log("ETAPA 6 - build_song concluído, escrevendo .txt")
 
+    # Romanização (opt-in): reescreve o texto das notas em romaji. Depois do
+    # build_song (o alinhamento roda sobre o japonês original) e antes de
+    # escrever - o .txt e o song_data.json já saem romanizados. Não-fatal: se o
+    # pykakasi não estiver instalado, o pacote em japonês continua válido.
+    if romanize:
+        debug_log("Romanizando texto das notas (romanize=True)")
+        try:
+            romanize_notes(song.notes)
+            console.print("[green]OK[/green] Letra romanizada (romaji)")
+        except Exception as e:
+            debug_log(f"Falha ao romanizar (ignorada): {e}")
+            console.print(
+                f"[yellow]AVISO[/yellow] Não consegui romanizar (pykakasi instalado? "
+                f"rode o setup do ambiente de novo): {e}"
+            )
+
     txt_path = out_path / f"{file_base}.txt"
     song.write(str(txt_path))
     console.print(f"[green]OK[/green] Arquivo UltraStar gerado (Python): {txt_path}")
@@ -788,6 +824,7 @@ if __name__ == "__main__":
     parser.add_argument("--backtrack", action="store_true", help="Backtrack: o áudio do pacote é o INSTRUMENTAL (sem voz-guia), karaokê puro")
     parser.add_argument("--transpose", type=int, default=0, help="Transpõe o pacote N semitons (áudio via rubberband + pitches das notas). 0 = tom original")
     parser.add_argument("--yarg-export", action="store_true", help="Exporta também uma subpasta no layout do YARG (notes.txt + song.ini + stems song.ogg/vocals.ogg)")
+    parser.add_argument("--romanize", action="store_true", help="Reescreve o texto das notas em romaji (Hepburn) via pykakasi - para letras japonesas")
     parser.add_argument(
         "--synced-lyrics",
         default=None,
@@ -816,6 +853,7 @@ if __name__ == "__main__":
             backtrack=args.backtrack,
             transpose=args.transpose,
             yarg_export=args.yarg_export,
+            romanize=args.romanize,
             synced_lyrics_path=args.synced_lyrics,
         )
     except Exception:

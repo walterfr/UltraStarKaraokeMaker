@@ -256,30 +256,50 @@ if ($hasNvidia -and $cudaCheck -ne "True") {
 # um WARNING no stderr (ex.: o aviso de torchcodec do pyannote) NAO pode
 # reprovar um import que funcionou; (c) na falha, mostrar o FIM do traceback,
 # que e onde mora a excecao real.
-$pipelineModules = @('whisperx', 'demucs', 'librosa', 'mutagen', 'audio_separator.separator')
-$failedModules = @()
+# Modulos ESSENCIAIS: sem qualquer um deles o sidecar morre no import e o app
+# nao gera nada. Falha aqui = ambiente reprovado.
+$coreModules = @('whisperx', 'demucs', 'librosa', 'mutagen')
+# audio_separator = OPCIONAL: e o resgate de voz principal (2o passe). Em
+# runtime o import e lazy dentro de um try/except (pipeline/separate.py), entao
+# o pipeline JA cai para o stem do Demucs sem ele. Reprovar o ambiente todo por
+# causa dele bloqueava usuarios cujo onnxruntime nao carrega (ex.: falta do
+# Microsoft Visual C++ Redistributable numa maquina limpa) de um app que
+# funcionaria. Agora so avisa.
+$optionalModules = @('audio_separator.separator')
+$failedCore = @()
+$failedOptional = @()
 $prevEAP = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
-foreach ($mod in $pipelineModules) {
+foreach ($mod in ($coreModules + $optionalModules)) {
     $importOut = & $venvPython -c "import $mod" 2>&1 | ForEach-Object { "$_" }
     if ($LASTEXITCODE -eq 0) {
         Write-Ok "import $mod"
     } else {
-        $failedModules += $mod
+        if ($optionalModules -contains $mod) { $failedOptional += $mod } else { $failedCore += $mod }
         Write-Host "    [FALHOU] import $mod - fim do traceback:" -ForegroundColor Red
         $importOut | Select-Object -Last 15 | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
     }
 }
 $ErrorActionPreference = $prevEAP
 
-if ($failedModules.Count -eq 0) {
-    Write-Ok "Bibliotecas do pipeline importadas com sucesso."
+if ($failedOptional.Count -gt 0) {
+    Write-Warn2 @"
+Opcional nao importou: $($failedOptional -join ', '). O app FUNCIONA sem ele - o
+pipeline cai para o stem do Demucs (voce perde so o resgate de voz principal,
+que melhora a separacao em algumas musicas). Causa comum: falta o Microsoft
+Visual C++ Redistributable, que o onnxruntime precisa. Para reativar o resgate:
+instale o VC++ Redistributable (x64) e rode este setup de novo.
+"@
+}
+
+if ($failedCore.Count -eq 0) {
+    Write-Ok "Bibliotecas essenciais do pipeline importadas com sucesso."
 } else {
     # FALHA (nao aviso): sem estas bibliotecas o app NAO gera - o sidecar morre
     # no import, antes de conseguir escrever qualquer log. Terminar aqui com
     # banner verde foi exatamente o que confundiu um usuario (16/07/2026).
     Fail @"
-Estas bibliotecas nao importaram: $($failedModules -join ', ') - o ambiente NAO esta pronto.
+Estas bibliotecas essenciais nao importaram: $($failedCore -join ', ') - o ambiente NAO esta pronto.
 
 A causa esta nas linhas de traceback acima (a ultima linha e a excecao).
 Rode este setup de novo. Se persistir, abra uma issue anexando essas linhas.

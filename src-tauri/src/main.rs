@@ -223,6 +223,10 @@ struct PipelineInput {
     /// YARG (notes.txt + song.ini + stems song.ogg/vocals.ogg). Opt-in.
     #[serde(default)]
     yarg_export: bool,
+    /// Romanizar: reescreve o texto das notas em romaji (para letras japonesas).
+    /// Opt-in; o alinhamento roda sobre o japonês original. Opt-in.
+    #[serde(default)]
+    romanize: bool,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -560,6 +564,7 @@ async fn run_pipeline(
         "backtrack": input.backtrack,
         "transpose": input.transpose,
         "yarg_export": input.yarg_export,
+        "romanize": input.romanize,
         "synced_lyrics_path": synced_path.as_ref().map(|p| p.to_string_lossy().to_string()),
     });
     let job_line = serde_json::to_string(&job)
@@ -805,6 +810,26 @@ async fn check_environment(app: tauri::AppHandle, lang: String) -> Result<EnvChe
         vorbis_ok,
         gpu_name,
     })
+}
+
+/// Verdade real sobre a GPU: se o TORCH consegue usar CUDA, não só se o
+/// hardware existe. O chip do env vem do `nvidia-smi` (hardware presente),
+/// que já mostrou "GPU" com o torch rodando em CPU (o bug do índice do
+/// pytorch) - enganando o usuário. Custa um `import torch` (~2-5 s), por isso
+/// é um comando SEPARADO, chamado DEPOIS do check_environment (não atrasa o
+/// status crítico de sidecar/ffmpeg na abertura).
+#[tauri::command]
+async fn torch_cuda_available(app: tauri::AppHandle, lang: String) -> Result<bool, String> {
+    let (_, python) = resolve_sidecar(&app, &lang)?;
+    let mut cmd = Command::new(&python);
+    cmd.arg("-c").arg("import torch,sys; sys.stdout.write('1' if torch.cuda.is_available() else '0')");
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    match cmd.output().await {
+        Ok(out) if out.status.success() => Ok(String::from_utf8_lossy(&out.stdout).trim() == "1"),
+        Ok(out) => Err(String::from_utf8_lossy(&out.stderr).trim().to_string()),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 /// Setup in-app do ambiente de IA: roda o setup-sidecar.ps1 em modo NÃO
@@ -1374,6 +1399,7 @@ fn main() {
             save_song,
             cancel_pipeline,
             check_environment,
+            torch_cuda_available,
             setup_environment
         ])
         .build(tauri::generate_context!())

@@ -14,7 +14,7 @@ PROTOCOLO
     {"url":..., "file":..., "lyrics_path":..., "title":..., "artist":...,
      "language":..., "out_dir":..., "bpm":..., "gap_ms":..., "device":...,
      "with_video":..., "bg_video":..., "bg_video_url":..., "clean_work":...,
-     "with_stems":..., "duet":..., "backtrack":..., "transpose":..., "yarg_export":...,
+     "with_stems":..., "duet":..., "backtrack":..., "transpose":..., "yarg_export":..., "romanize":...,
      "synced_lyrics_path":...}
     {"cmd":"shutdown"}  -> encerra o servidor.
 
@@ -86,6 +86,7 @@ def _run_one(job: dict) -> None:
                     backtrack=job.get("backtrack", False),
                     transpose=job.get("transpose", 0),
                     yarg_export=job.get("yarg_export", False),
+                    romanize=job.get("romanize", False),
                     synced_lyrics_path=job.get("synced_lyrics_path"),
                 )
             status_path.write_text(json.dumps({"status": "ok"}), encoding="utf-8")

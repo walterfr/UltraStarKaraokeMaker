@@ -115,6 +115,7 @@ interface PersistedSettings {
   duet: boolean;
   backtrack: boolean;
   yargExport: boolean;
+  romanize: boolean;
 }
 
 function loadSettings(): Partial<PersistedSettings> {
@@ -238,6 +239,7 @@ function App() {
   const [duet, setDuet] = useState(saved.duet ?? false);
   const [backtrack, setBacktrack] = useState(saved.backtrack ?? false);
   const [yargExport, setYargExport] = useState(saved.yargExport ?? false);
+  const [romanize, setRomanize] = useState(saved.romanize ?? false);
   const [outDir, setOutDir] = useState(saved.outDir ?? "");
 
   // Letra sincronizada (.lrc) do LRCLIB: guardada crua e enviada ao pipeline,
@@ -265,6 +267,10 @@ function App() {
   const [currentStep, setCurrentStep] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [env, setEnv] = useState<EnvCheck | null>(null);
+  // Verdade real da GPU: torch.cuda.is_available(). null = ainda não checado
+  // (ou hardware sem GPU). Vem de um probe SEPARADO e deferido — o gpuName do
+  // env é só o hardware (nvidia-smi), que pode mentir se o torch caiu pra CPU.
+  const [cudaOk, setCudaOk] = useState<boolean | null>(null);
   const [reviewDir, setReviewDir] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<(PackageAnalysis & { dir: string }) | null>(null);
   // Snapshot da última música gerada (input + rótulo) para "Gerar de novo"
@@ -321,9 +327,9 @@ function App() {
 
   // ------------------------------------------------ persistência leve
   useEffect(() => {
-    const settings: PersistedSettings = { sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, yargExport };
+    const settings: PersistedSettings = { sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, yargExport, romanize };
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  }, [sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, yargExport]);
+  }, [sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, yargExport, romanize]);
 
   // ------------------------------------------------ SÓ EM DEV: preview de estado
   // Abre a UI num estado simulado sem precisar do backend Tauri, para inspecionar
@@ -405,7 +411,18 @@ function App() {
   // Refaz ao trocar de idioma para a mensagem de erro (se houver) vir traduzida.
   useEffect(() => {
     invoke<EnvCheck>("check_environment", { lang })
-      .then(setEnv)
+      .then((e) => {
+        setEnv(e);
+        // Só vale checar CUDA se há GPU no hardware E o sidecar importa (senão
+        // o torch nem carrega). Deferido: não segura o status principal.
+        if (e.gpuName && e.sidecarOk) {
+          invoke<boolean>("torch_cuda_available", { lang })
+            .then(setCudaOk)
+            .catch(() => setCudaOk(null));
+        } else {
+          setCudaOk(null);
+        }
+      })
       .catch(() => setEnv(null));
   }, [lang]);
 
@@ -586,6 +603,7 @@ function App() {
       backtrack,
       transpose: parseInt(transpose, 10) || 0,
       yargExport,
+      romanize,
     };
   }
 
@@ -978,8 +996,12 @@ function App() {
             <div className="env-chips" title={t("subtitle")}>
               <span className="chip ok">✓ {t("envAI")}</span>
               <span className="chip ok">✓ ffmpeg{env.vorbisOk ? " · vorbis" : ""}</span>
-              <span className={env.gpuName ? "chip gpu" : "chip muted"}>
-                {env.gpuName ? t("envGpu", { name: env.gpuName }) : t("envNoGpu")}
+              <span className={!env.gpuName ? "chip muted" : cudaOk === false ? "chip warn" : "chip gpu"}>
+                {!env.gpuName
+                  ? t("envNoGpu")
+                  : cudaOk === false
+                    ? t("envGpuNoCuda", { name: env.gpuName })
+                    : t("envGpu", { name: env.gpuName })}
               </span>
             </div>
           )}
@@ -1248,6 +1270,16 @@ function App() {
             disabled={isRunning}
           />
           {t("yargExportLabel")}
+          <span className="tip-mark" aria-hidden="true">?</span>
+        </label>
+        <label className="checkbox-line" title={t("romanizeHint")}>
+          <input
+            type="checkbox"
+            checked={romanize}
+            onChange={(e) => setRomanize(e.target.checked)}
+            disabled={isRunning}
+          />
+          {t("romanizeLabel")}
           <span className="tip-mark" aria-hidden="true">?</span>
         </label>
         <label className="checkbox-line" title={t("withStemsHint")}>

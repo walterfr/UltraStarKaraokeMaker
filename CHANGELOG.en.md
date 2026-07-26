@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Every version has a ready-to-use installer on **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — each release's notes also carry the install instructions.
 
+## [0.12.0] — 2026-07-26
+
+### Added
+
+- **Romanize (romaji).** New option under **Options**, for Japanese songs: rewrites the package lyrics in **romaji** (Latin alphabet, Hepburn), so people who can't read kana/kanji can sing along. Alignment still runs on the original Japanese — only the final text becomes romaji. For lyrics that are already Latin, nothing changes.
+
+### Fixed
+
+- **The AI environment install no longer fails because of the optional vocal-rescue component.** Before, if `audio-separator` (a 2nd separation pass that improves vocals on some songs) failed to import — common when the Microsoft Visual C++ Redistributable is missing — the setup rejected the **whole** environment and the app wouldn't open, even with everything essential working. That component is now treated as **optional**: the setup only warns, and the app works normally (the pipeline uses the Demucs separation). To re-enable the rescue, install the VC++ Redistributable and run the setup again.
+- **The GPU indicator now tells the truth.** Before, the app showed "✓ GPU" whenever an NVIDIA card was present — even when PyTorch had fallen back to CPU and generation would run slow. It now checks whether PyTorch actually sees CUDA and, when it doesn't, shows a clear warning ("⚠ GPU … — torch without CUDA, running on CPU") instead of a false positive.
+
 ## [0.11.0] — 2026-07-25
 
 ### Added
