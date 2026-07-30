@@ -6,6 +6,13 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 Cada versão tem um instalador pronto em **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — as notas de cada release trazem também as instruções de instalação.
 
+## [0.15.0] — 2026-07-30
+
+### Corrigido
+
+- **Letra sincronizada (LRCLIB) de gravação errada agora é detectada e ignorada.** O app busca a letra sincronizada só por artista/título, sem confirmar duração — o LRCLIB é uma base colaborativa e pode devolver a versão ao vivo, remix ou edição estendida de outra pessoa. Medido na biblioteca de teste: 66% das letras sincronizadas encontradas tinham duração incompatível com o áudio baixado. Agora, antes de usar, o app confere se a duração bate; se não bater, ignora a letra sincronizada (o alinhamento segue normal só com a IA) em vez de arriscar notas erradas.
+- **Log confuso de "idioma não especificado" removido.** Em alguns casos o log mostrava um aviso de que nenhum idioma tinha sido definido, mesmo quando o usuário escolhia um na tela — o idioma escolhido sempre foi usado corretamente na transcrição, era só o aviso que estava errado. Relato de usuário (issue #9).
+
 ## [0.14.0] — 2026-07-30
 
 ### Adicionado

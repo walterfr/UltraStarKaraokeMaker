@@ -22,6 +22,7 @@ from pipeline.align import (
     anchor_and_interpolate,
     compute_anchors,
     demote_anchors_conflicting_with_lrc,
+    lrc_duration_mismatch,
     match_lrc_to_lines,
     parse_lrc,
     seed_line_anchors,
@@ -351,6 +352,34 @@ def test_demote_anchors_conflicting_with_lrc_catches_tail_of_last_line():
     assert anchors[4] is None
     assert anchors[0] is not None  # não mexe no que está plausível
 
+
+# --- lrc_duration_mismatch: LRCLIB pode devolver a letra de OUTRA gravação -
+
+def test_lrc_duration_mismatch_detecta_lrc_mais_longo_que_o_audio():
+    # IMPOSSÍVEL: a última linha do .lrc acontece depois do fim do NOSSO
+    # áudio - não pode ser a mesma gravação (caso real medido: "Chic - Good
+    # Times", áudio de 213,6s recebeu um .lrc cuja última linha é 483,6s).
+    lrc_lines = [(1.0, "a"), (200.0, "b"), (483.6, "c")]
+    assert lrc_duration_mismatch(lrc_lines, audio_duration=213.6) is True
+
+
+def test_lrc_duration_mismatch_detecta_versao_truncada():
+    # a última linha do .lrc cobre bem menos da metade do áudio - versão
+    # mais curta (single edit vs. gravação estendida/ao vivo).
+    lrc_lines = [(1.0, "a"), (50.0, "b")]
+    assert lrc_duration_mismatch(lrc_lines, audio_duration=250.0) is True
+
+
+def test_lrc_duration_mismatch_aceita_outro_instrumental_normal():
+    # última linha 20s antes do fim: outro/fade-out comum, não é sinal de
+    # versão errada - a maioria das músicas do gold caiu nessa faixa.
+    lrc_lines = [(1.0, "a"), (270.0, "b")]
+    assert lrc_duration_mismatch(lrc_lines, audio_duration=290.0) is False
+
+
+def test_lrc_duration_mismatch_sem_linhas_ou_duracao_nao_quebra():
+    assert lrc_duration_mismatch([], audio_duration=200.0) is False
+    assert lrc_duration_mismatch([(1.0, "a")], audio_duration=0.0) is False
 
 
 # --- interpolacao nao pode vazar pra fora do audio -------------------------

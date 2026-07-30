@@ -325,6 +325,49 @@ def seed_line_anchors(
     return seeded
 
 
+def lrc_duration_mismatch(
+    lrc_lines: list[tuple[float, str]],
+    audio_duration: float,
+    hard_margin: float = 5.0,
+    min_coverage: float = 0.5,
+) -> bool:
+    """
+    Detecta letra sincronizada (LRCLIB) de uma gravação DIFERENTE da que
+    estamos processando. O app busca só por artista/título (App.tsx,
+    `lrclib.net/api/get` sem parâmetro `duration`) - o LRCLIB é crowdsourced
+    e pode devolver qualquer versão submetida (ao vivo, remix, cover,
+    edição estendida) sem nada garantir que é a MESMA gravação do áudio
+    baixado. Duas checagens baratas, só com NÚMEROS (sem casar texto):
+
+    1. IMPOSSÍVEL: a última linha do LRC acontece DEPOIS do fim do NOSSO
+       áudio (+ folga de `hard_margin` s pro fade-out/outro natural após a
+       última linha cantada) - não pode ser a mesma gravação.
+    2. TRUNCADA/CURTA DEMAIS: a última linha do LRC cobre menos de
+       `min_coverage` da duração do áudio - sinal de versão mais curta
+       (single edit vs. álbum/ao vivo estendido).
+
+    MEDIDO (27/07/2026, biblioteca gold, 56 músicas com LRC encontrado):
+    37/56 (66%) tinham >15s de diferença entre a última linha do LRC e o
+    fim real do áudio; pelo menos 4 eram IMPOSSÍVEIS (LRC mais longo que o
+    áudio) - prova direta de gravação errada. Filosofia igual à do resto do
+    módulo (`_whisper_token_unreliable` etc.): melhor perder uma âncora
+    possivelmente boa do que arriscar uma errada.
+
+    LIMITAÇÃO CONHECIDA: não pega o caso mais sutil de uma versão com a
+    MESMA duração total mas timing internamente deslocado (ex.: intro de
+    tamanho diferente que empurra tudo igual). Isso exigiria casar texto
+    (`match_lrc_to_lines`) e comparar contra âncoras já medidas - tentado,
+    mas o casamento por linhas curtas/genéricas contamina o resultado sem
+    filtro extra; não implementado aqui.
+    """
+    if not lrc_lines or audio_duration <= 0:
+        return False
+    last = lrc_lines[-1][0]
+    if last > audio_duration + hard_margin:
+        return True
+    return (last / audio_duration) < min_coverage
+
+
 def demote_anchors_conflicting_with_lrc(
     anchors: list[Anchor | None],
     lyric_lines: list[tuple[str, int]],
@@ -1010,11 +1053,19 @@ _WHISPER_CACHE: dict = {}
 _ALIGN_CACHE: dict = {}
 
 
-def _get_whisper_model(size: str, device: str, compute_type: str):
+def _get_whisper_model(size: str, device: str, compute_type: str, language: str | None = None):
+    """
+    `language` só afeta o PRIMEIRO load (silencia o log "No language
+    specified..." do whisperx, que confundiu um usuário a achar que o idioma
+    escolhido estava sendo ignorado - issue #9). NÃO entra na chave do cache:
+    trocar de idioma entre músicas da MESMA fila não recarrega o modelo (caro,
+    ~GB) - o `.transcribe(..., language=...)` de cada chamada já reconstrói o
+    tokenizer sozinho quando o idioma muda (whisperx/asr.py, FasterWhisperPipeline.transcribe).
+    """
     import whisperx
     key = (size, device, compute_type)
     if key not in _WHISPER_CACHE:
-        _WHISPER_CACHE[key] = whisperx.load_model(size, device, compute_type=compute_type)
+        _WHISPER_CACHE[key] = whisperx.load_model(size, device, compute_type=compute_type, language=language)
     return _WHISPER_CACHE[key]
 
 
@@ -1053,7 +1104,7 @@ def align_lyrics_to_audio(
     # 1) Transcrição LIVRE (sem substituir nada) - queremos saber o que o
     #    Whisper de fato reconheceu no áudio, com timestamps de alta
     #    confiança para o que ele acertar.
-    whisper_model = _get_whisper_model(whisper_model_size, device, compute_type)
+    whisper_model = _get_whisper_model(whisper_model_size, device, compute_type, language)
     audio = whisperx.load_audio(str(vocals_wav))
     transcription = whisper_model.transcribe(audio, language=language)
 
@@ -1083,15 +1134,26 @@ def align_lyrics_to_audio(
     if synced_lyrics_path is not None and Path(synced_lyrics_path).exists():
         lrc_lines = parse_lrc(Path(synced_lyrics_path).read_text(encoding="utf-8"))
         lyric_lines = _lyric_lines_with_start_index(lyrics_path)
-
         audio_duration = float(len(audio)) / 16000  # whisperx.audio.SAMPLE_RATE
-        demoted = demote_anchors_conflicting_with_lrc(anchors, lyric_lines, lrc_lines, audio_duration=audio_duration)
-        if demoted:
-            print(f"[INFO] Âncoras de linha do .lrc: {demoted} âncoras implausíveis demovidas.")
 
-        seeded = seed_line_anchors(anchors, lyric_lines, lrc_lines)
-        if seeded:
-            print(f"[INFO] Âncoras de linha do .lrc: {seeded} inícios de linha semeados.")
+        # Guarda-chuva: o LRCLIB é buscado só por artista/título (sem
+        # duração), pode devolver a letra de OUTRA gravação (ao vivo, remix,
+        # edição estendida) - ver lrc_duration_mismatch. Medido: 66% das
+        # letras encontradas na biblioteca gold divergiam >15s na duração.
+        if lrc_duration_mismatch(lrc_lines, audio_duration):
+            print(
+                "[AVISO] Letra sincronizada (.lrc) ignorada: a duração implícita não bate "
+                "com a gravação baixada (provável versão diferente - ao vivo, remix, edição). "
+                "O alinhamento segue só com Whisper + forced alignment."
+            )
+        else:
+            demoted = demote_anchors_conflicting_with_lrc(anchors, lyric_lines, lrc_lines, audio_duration=audio_duration)
+            if demoted:
+                print(f"[INFO] Âncoras de linha do .lrc: {demoted} âncoras implausíveis demovidas.")
+
+            seeded = seed_line_anchors(anchors, lyric_lines, lrc_lines)
+            if seeded:
+                print(f"[INFO] Âncoras de linha do .lrc: {seeded} inícios de linha semeados.")
 
     # o fim do áudio limita o encadeamento das palavras sem âncora - sem isso
     # a interpolação vaza pra depois da música (ver timings_from_anchors)

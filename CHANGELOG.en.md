@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Every version has a ready-to-use installer on **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — each release's notes also carry the install instructions.
 
+## [0.15.0] — 2026-07-30
+
+### Fixed
+
+- **Synced lyrics (LRCLIB) from the wrong recording are now detected and ignored.** The app searches for synced lyrics by artist/title only, without confirming duration — LRCLIB is a crowdsourced database and can return someone else's live version, remix, or extended edit. Measured on the test library: 66% of the synced lyrics found had a duration inconsistent with the downloaded audio. Now, before using it, the app checks whether the duration matches; if it doesn't, the synced lyrics are ignored (alignment proceeds normally with just the AI) instead of risking wrong note placement.
+- **Confusing "no language specified" log removed.** In some cases the log showed a warning that no language had been set, even when the user had picked one on screen — the chosen language was always correctly used for transcription, only the warning was wrong. User report (issue #9).
+
 ## [0.14.0] — 2026-07-30
 
 ### Added
