@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Every version has a ready-to-use installer on **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — each release's notes also carry the install instructions.
 
+## [0.13.0] — 2026-07-29
+
+### Fixed
+
+- **The low-confidence alignment warning is now much more visible.** When the app recognizes little of the lyrics in a song (e.g. heavily processed/electronic vocals), the package still comes out, but with a real risk of being out of sync — and the warning about that was small text, easy to miss on an otherwise "success" screen. It's now a proper banner (background and border), matching the rest of the app's style. Found from a real user report (electronic music with processed vocals, only 18% of the lyrics recognized).
+
 ## [0.12.0] — 2026-07-26
 
 ### Added

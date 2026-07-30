@@ -1437,11 +1437,11 @@ function App() {
                 um badge igual ao de 5%. Ver issue #6. */}
             {result.notesTotal > 0 &&
               result.notesEstimated / result.notesTotal > 0.5 && (
-                <p className="field-hint warn">
+                <div className="result-warning-banner">
                   ⚠ {t("resultAlignFailed", {
                     pct: Math.round((100 * result.notesEstimated) / result.notesTotal),
                   })}
-                </p>
+                </div>
               )}
             {/* Aviso "ancorado mas ERRADO" (achado no lote n=60): quando o
                 Whisper reconheceu POUCO da letra, ele pode ter ancorado nas
@@ -1453,11 +1453,11 @@ function App() {
             {result.notesTotal > 0 &&
               result.notesEstimated / result.notesTotal <= 0.5 &&
               result.notesWhisperAnchored / result.notesTotal < 0.6 && (
-                <p className="field-hint warn">
+                <div className="result-warning-banner">
                   ⚠ {t("resultLowRecall", {
                     pct: Math.round((100 * result.notesWhisperAnchored) / result.notesTotal),
                   })}
-                </p>
+                </div>
               )}
             <p className="result-paths">
               <span className="path-line" title={result.txtPath}>{result.txtPath}</span>

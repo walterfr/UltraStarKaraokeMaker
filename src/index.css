@@ -700,6 +700,21 @@ button.danger:hover {
 .estimated-badge {
   color: #f0b573;
 }
+/* Avisos de baixa confiança (align falhou / word-recall baixo): antes eram um
+   .field-hint pequeno (12px, só cor) - fácil de ignorar numa tela que já
+   mostra "sucesso" em destaque acima. Banner de verdade (fundo/borda/fonte
+   maior), mesmos tokens âmbar do .chip.warn - achado real (colega no Reddit,
+   Boy Harsher - Pain: wrecall 18%, o aviso disparou mas ele não notou). */
+.result-warning-banner {
+  background: #2a2014;
+  border: 1px solid #5c4520;
+  color: #f0b573;
+  border-radius: 8px;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  margin: 0.6rem 0;
+}
 .result-actions {
   display: flex;
   gap: 0.6rem;
