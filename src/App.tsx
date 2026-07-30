@@ -248,6 +248,13 @@ function App() {
   const [syncedLyrics, setSyncedLyrics] = useState<string | null>(null);
   const [lyricsSearching, setLyricsSearching] = useState(false);
   const [lyricsSearchMsg, setLyricsSearchMsg] = useState<{ kind: "ok" | "warn" | "err"; text: string } | null>(null);
+  // Colar .lrc manualmente: caminho alternativo à busca automática (LRCLIB)
+  // - gêneros pouco indexados (ex.: EBM/industrial/darkwave) não aparecem na
+  // busca por artista/título, mas o usuário acha a letra sincronizada indo
+  // direto no site. Mesmo destino (syncedLyrics) da busca automática - o
+  // pipeline não se importa de onde o .lrc veio.
+  const [manualLrcOpen, setManualLrcOpen] = useState(false);
+  const [manualLrcText, setManualLrcText] = useState("");
 
   // Fila de músicas: enfileira várias e processa em série, sem reabrir o app.
   // O frontend é dono da fila (loop chamando run_pipeline por item); o sidecar
@@ -570,6 +577,28 @@ function App() {
     } finally {
       setLyricsSearching(false);
     }
+  }
+
+  // Aplica um .lrc colado à mão - mesmo destino (syncedLyrics/lyricsText) da
+  // busca automática bem-sucedida, então o pipeline trata os dois caminhos
+  // de forma idêntica (inclusive o guard de duração divergente).
+  async function applyManualLrc() {
+    const trimmed = manualLrcText.trim();
+    if (!trimmed) return;
+    const plain = lrcToPlain(trimmed);
+    if (!plain) {
+      setLyricsSearchMsg({ kind: "err", text: t("manualLrcEmpty") });
+      return;
+    }
+    if (lyricsText.trim()) {
+      const ok = await ask(t("lyricsOverwriteConfirm"), { title: "USKMaker" });
+      if (!ok) return;
+    }
+    setLyricsText(plain);
+    setSyncedLyrics(trimmed);
+    setManualLrcOpen(false);
+    setManualLrcText("");
+    setLyricsSearchMsg({ kind: "ok", text: t("manualLrcApplied") });
   }
 
   function validate(): string | null {
@@ -1176,6 +1205,34 @@ function App() {
             ⚠ {w}
           </p>
         ))}
+        <button
+          type="button"
+          className="link-button"
+          onClick={() => setManualLrcOpen((v) => !v)}
+          disabled={isRunning}
+        >
+          {manualLrcOpen ? t("manualLrcClose") : t("manualLrcOpen")}
+        </button>
+        {manualLrcOpen && (
+          <div className="manual-lrc-box">
+            <p className="field-hint">{t("manualLrcHint")}</p>
+            <textarea
+              className="manual-lrc-textarea"
+              value={manualLrcText}
+              onChange={(e) => setManualLrcText(e.target.value)}
+              placeholder={t("manualLrcPlaceholder")}
+              disabled={isRunning}
+            />
+            <button
+              type="button"
+              className="mini-button"
+              onClick={applyManualLrc}
+              disabled={isRunning || !manualLrcText.trim()}
+            >
+              {t("manualLrcApply")}
+            </button>
+          </div>
+        )}
       </div>
 
       </section>

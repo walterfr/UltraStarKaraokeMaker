@@ -1053,7 +1053,8 @@ _WHISPER_CACHE: dict = {}
 _ALIGN_CACHE: dict = {}
 
 
-def _get_whisper_model(size: str, device: str, compute_type: str, language: str | None = None):
+def _get_whisper_model(size: str, device: str, compute_type: str, language: str | None = None,
+                       vad_options: dict | None = None):
     """
     `language` só afeta o PRIMEIRO load (silencia o log "No language
     specified..." do whisperx, que confundiu um usuário a achar que o idioma
@@ -1061,11 +1062,19 @@ def _get_whisper_model(size: str, device: str, compute_type: str, language: str 
     trocar de idioma entre músicas da MESMA fila não recarrega o modelo (caro,
     ~GB) - o `.transcribe(..., language=...)` de cada chamada já reconstrói o
     tokenizer sozinho quando o idioma muda (whisperx/asr.py, FasterWhisperPipeline.transcribe).
+
+    `vad_options` (onset/offset da detecção de voz do pyannote) É DIFERENTE:
+    fica gravado no objeto da pipeline em `load_model()` e o `.transcribe()`
+    NÃO tem como sobrescrever por chamada (ao contrário do idioma) - por isso
+    ENTRA na chave do cache, senão um pedido de VAD sensível devolveria o
+    modelo já cacheado com o VAD default de outra chamada.
     """
     import whisperx
-    key = (size, device, compute_type)
+    vad_key = tuple(sorted(vad_options.items())) if vad_options else None
+    key = (size, device, compute_type, vad_key)
     if key not in _WHISPER_CACHE:
-        _WHISPER_CACHE[key] = whisperx.load_model(size, device, compute_type=compute_type, language=language)
+        _WHISPER_CACHE[key] = whisperx.load_model(size, device, compute_type=compute_type,
+                                                  language=language, vad_options=vad_options)
     return _WHISPER_CACHE[key]
 
 
@@ -1085,6 +1094,7 @@ def align_lyrics_to_audio(
     whisper_model_size: str = "medium",
     realign_gaps: bool = True,
     synced_lyrics_path: Path | None = None,
+    vad_options: dict | None = None,
 ) -> list[WordTiming]:
     """
     Retorna uma lista de WordTiming na ordem da letra fornecida, usando a
@@ -1094,6 +1104,14 @@ def align_lyrics_to_audio(
     LRCLIB), os tempos de início de cada linha são semeados como âncoras nos
     vãos que o Whisper não mediu - encurta a interpolação e dá limites melhores
     ao realinhamento acústico.
+
+    `vad_options` (ex.: `{"vad_onset": 0.3, "vad_offset": 0.2}`) deixa a
+    detecção de voz do pyannote mais sensível que o default do whisperx
+    (0.5/0.363) - útil pra vocal baixo/breathy que o VAD marca como "sem
+    fala". MEDIDO (30/07/2026, 51 charts de terceiros na gold): NÃO é seguro
+    como default global (empate no agregado, mas piora música que já estava
+    boa - onset de 87,3→88,3ms, mas com casos individuais bem piores). Use só
+    como resgate condicional (ver Etapa 4d em main.py), nunca como padrão.
     """
     import whisperx
 
@@ -1104,7 +1122,7 @@ def align_lyrics_to_audio(
     # 1) Transcrição LIVRE (sem substituir nada) - queremos saber o que o
     #    Whisper de fato reconheceu no áudio, com timestamps de alta
     #    confiança para o que ele acertar.
-    whisper_model = _get_whisper_model(whisper_model_size, device, compute_type, language)
+    whisper_model = _get_whisper_model(whisper_model_size, device, compute_type, language, vad_options)
     audio = whisperx.load_audio(str(vocals_wav))
     transcription = whisper_model.transcribe(audio, language=language)
 

@@ -6,6 +6,13 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 Cada versão tem um instalador pronto em **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — as notas de cada release trazem também as instruções de instalação.
 
+## [0.16.0] — 2026-07-30
+
+### Adicionado
+
+- **Colar letra sincronizada (.lrc) manualmente.** A busca automática (LRCLIB) não encontra tudo — gêneros pouco indexados (ex.: EBM, industrial, darkwave) costumam ficar sem resultado. Agora dá para colar o conteúdo de um arquivo `.lrc` encontrado manualmente no site; o app extrai a letra e usa os tempos das linhas como âncoras do alinhamento, do mesmo jeito que a busca automática. Pedido de usuário.
+- **Novo resgate automático: detecção de voz (VAD) mais sensível.** Quando o alinhamento sai ruim, o app agora também tenta destravar o reconhecimento de vocais baixos/atmosféricos (comum em trilhas sonoras e certos estilos eletrônicos) que a detecção de voz padrão simplesmente não percebe como canto. Só entra em ação quando o resultado já está ruim, e só fica se realmente melhorar — medido em 51 músicas de terceiros da biblioteca de teste para garantir que não piora quem já funciona bem. Relato de usuário (issue #9).
+
 ## [0.15.0] — 2026-07-30
 
 ### Corrigido

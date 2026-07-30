@@ -368,6 +368,29 @@ button.danger:hover {
   color: #7fabf9;
 }
 
+/* Colar .lrc manualmente (alternativa à busca automática LRCLIB) */
+.manual-lrc-box {
+  margin-top: 0.4rem;
+  padding: 0.6rem;
+  border: 1px solid #33333f;
+  border-radius: 6px;
+  background: #17171f;
+}
+.manual-lrc-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 90px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  background: #1b1b24;
+  border: 1px solid #33333f;
+  color: #e8e8ec;
+  border-radius: 6px;
+  padding: 0.5rem;
+  resize: vertical;
+  margin-bottom: 0.5rem;
+}
+
 /* Proveniência do timing (cores por confiança) */
 .review-legend {
   color: #9a9aa8;

@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Every version has a ready-to-use installer on **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — each release's notes also carry the install instructions.
 
+## [0.16.0] — 2026-07-30
+
+### Added
+
+- **Paste synced lyrics (.lrc) manually.** The automatic search (LRCLIB) doesn't find everything — under-indexed genres (e.g. EBM, industrial, darkwave) often come up empty. You can now paste the contents of an `.lrc` file found manually on the site; the app extracts the lyrics and uses the line timestamps as alignment anchors, same as the automatic search. User request.
+- **New automatic rescue: more sensitive voice detection (VAD).** When alignment comes out poorly, the app now also tries to unlock recognition of quiet/atmospheric vocals (common in soundtracks and certain electronic styles) that the default voice detector simply doesn't register as singing. It only kicks in when the result is already poor, and only keeps the change if it actually helps — measured on 51 third-party songs from the test library to make sure it doesn't hurt songs that already work well. User report (issue #9).
+
 ## [0.15.0] — 2026-07-30
 
 ### Fixed

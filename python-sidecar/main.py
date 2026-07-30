@@ -437,6 +437,63 @@ def run_pipeline(
                 "mantendo o alinhamento no stem combinado do Demucs."
             )
 
+    # ETAPA 4d - RESGATE com detecção de voz (VAD) mais sensível.
+    #
+    # Achado real (relato de usuário, issue #9, "Why Do I Have To Feel?" - The
+    # Vampire Lestat): o VAD do whisperx (pyannote, onset=0.5/offset=0.363)
+    # deixou ~70% da música sem NENHUM segmento de fala - vocal baixo/breathy
+    # de trilha atmosférica não passa no limiar default. Baixando pra
+    # onset=0.3/offset=0.2 a cobertura da transcrição livre subiu de 30% pra
+    # 43%. É um sintoma DIFERENTE do resgate 4b (que mira harmonia/coro
+    # sequestrando o lead) - aqui o Whisper nem CHEGA a tentar transcrever o
+    # trecho, o VAD que descarta antes.
+    #
+    # MEDIDO (30/07/2026) contra 51 charts de TERCEIROS na biblioteca gold
+    # (filtrado #CREATOR != USKMaker, pra não medir nosso pipeline contra ele
+    # mesmo - 616/~1440 charts da biblioteca já foram gerados por nós em algum
+    # momento). Resultado: baixar o VAD como DEFAULT GLOBAL não é seguro -
+    # empate no agregado (onset 87,3→88,3ms, w_1s 0,747→0,757) mas com ALTA
+    # variância: ajuda muito em alguns casos (Beatles - I'll Follow The Sun:
+    # 26,65s→0,41s de erro) e PIORA música que já estava boa (P!nk, Irene
+    # Cara, Chop Suey - o VAD mais permissivo pegou ruído/instrumental como
+    # fala). Por isso é condicional aqui, mesmo contrato dos resgates acima:
+    # só tenta quando já está ruim (interp_frac>0,10), ganha quem tiver MENOS
+    # palavras interpoladas (sinal interno, sem ground truth). Roda ANTES do
+    # 4c (que reseparara o Demucs, caro) porque é barato - reusa o mesmo stem.
+    interp_frac = alignment_stats(word_timings)["by_source"]["interpolated"] / max(len(word_timings), 1)
+    if interp_frac > 0.10:
+        console.print(
+            f"[yellow]—[/yellow] Ainda {100*interp_frac:.0f}% interpoladas - tentando resgate "
+            "com detecção de voz mais sensível..."
+        )
+        debug_log(f"ETAPA 4d - resgate VAD sensivel: interp_frac={interp_frac:.2f}")
+        try:
+            vad_retry_timings = align_lyrics_to_audio(
+                stems.vocals, Path(lyrics_path), language=language, device=device,
+                synced_lyrics_path=Path(synced_lyrics_path) if synced_lyrics_path else None,
+                vad_options={"vad_onset": 0.3, "vad_offset": 0.2},
+            )
+            vad_retry_interp = alignment_stats(vad_retry_timings)["by_source"]["interpolated"]
+            base_interp = alignment_stats(word_timings)["by_source"]["interpolated"]
+            debug_log(f"ETAPA 4d - interpoladas: atual={base_interp} vad_sensivel={vad_retry_interp}")
+            if vad_retry_interp < base_interp:
+                word_timings = vad_retry_timings
+                console.print(
+                    f"[green]OK[/green] Resgate melhorou: {base_interp} -> {vad_retry_interp} "
+                    "palavras interpoladas (detecção de voz mais sensível)."
+                )
+            else:
+                console.print(
+                    f"[dim]Resgate não melhorou ({base_interp} -> {vad_retry_interp} "
+                    "interpoladas) - mantendo o alinhamento anterior.[/dim]"
+                )
+        except Exception as e:
+            debug_log(f"ETAPA 4d - falhou (não-fatal): {e}")
+            console.print(
+                f"[yellow]AVISO[/yellow] Não consegui tentar o resgate com VAD sensível ({e}) - "
+                "mantendo o alinhamento que já temos."
+            )
+
     # ETAPA 4c - 2ª SEPARAÇÃO ("outro sorteio do Demucs").
     #
     # O Demucs NÃO é determinístico: a MESMA entrada dá stems diferentes a cada
