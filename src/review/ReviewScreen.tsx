@@ -183,7 +183,14 @@ type DragMode =
   | { kind: "seek" }
   | { kind: "pan"; startX: number; viewStart0: number }
   | { kind: "move"; noteIdx: number; startX: number; startY: number; beat0: number; pitch0: number }
-  | { kind: "resize"; noteIdx: number; startX: number; dur0: number };
+  | { kind: "resize"; noteIdx: number; startX: number; dur0: number }
+  // Move em BLOCO: várias notas selecionadas, todas somam o MESMO delta de
+  // tempo/pitch (não recalcula posição relativa entre elas) - 1 undo pro
+  // gesto inteiro (issue #11, pedido de usuário: música com trecho inteiro
+  // deslocado, sem jeito de mover tudo de uma vez).
+  | { kind: "moveGroup"; noteIdxs: number[]; startX: number; startY: number; beats0: number[]; pitches0: number[] }
+  // Retângulo de seleção (Shift+arraste no fundo do piano roll).
+  | { kind: "rubberband"; startX: number; startY: number; curX: number; curY: number };
 
 export default function ReviewScreen({ outDir, onClose }: Props) {
   const { t, lang } = useI18n();
@@ -192,6 +199,10 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
   const [vocalsPath, setVocalsPath] = useState<string | null>(null);
   const [audioChoice, setAudioChoice] = useState<"mix" | "vocals">("mix");
   const [selected, setSelected] = useState<number | null>(null);
+  // Seleção múltipla (issue #11): size<=1 = comportamento de sempre (inspector
+  // de uma nota); size>=2 = grupo real - inspector vira resumo, arrastar
+  // qualquer nota do grupo move todas juntas.
+  const [multiSelected, setMultiSelected] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -208,6 +219,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
   // Estado imperativo do editor (ver nota no topo do arquivo).
   const songRef = useRef<USSong | null>(null);
   const selectedRef = useRef<number | null>(null);
+  const multiSelectedRef = useRef<Set<number>>(new Set());
   const viewRef = useRef({ start: 0, pxPerSec: 80 });
   const peaksRef = useRef<{ peaks: Float32Array; duration: number } | null>(null);
   const dragRef = useRef<DragMode>({ kind: "none" });
@@ -219,6 +231,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
 
   songRef.current = song;
   selectedRef.current = selected;
+  multiSelectedRef.current = multiSelected;
 
   // ---------------------------------------------------------------- carga
   useEffect(() => {
@@ -464,6 +477,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
     ctx.font = "11px system-ui";
     ctx.textBaseline = "middle";
     const sel = selectedRef.current;
+    const group = multiSelectedRef.current;
     for (let i = 0; i < s.notes.length; i++) {
       const n = s.notes[i];
       const t0 = beatToSec(s, n.start_beat);
@@ -473,6 +487,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
       const nw = Math.max(3, (t1 - t0) * pxPerSec);
       const y = yOfPitch(n.pitch);
       const nh = Math.max(8, semitoneH - 2);
+      const isSel = i === sel || group.has(i);
 
       ctx.fillStyle =
         n.note_type === "F"
@@ -486,7 +501,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
       ctx.roundRect(x, y, nw, nh, 3);
       ctx.fill();
 
-      if (i === sel) {
+      if (isSel) {
         ctx.strokeStyle = "#ff9f43";
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -496,8 +511,22 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
       }
 
       // texto da sílaba: acima da nota, para não depender da largura dela
-      ctx.fillStyle = i === sel ? "#ffd9b0" : "#c9c9d6";
+      ctx.fillStyle = isSel ? "#ffd9b0" : "#c9c9d6";
       ctx.fillText(n.text.trim(), x + 1, y - 8);
+    }
+
+    // --- retângulo de seleção (Shift+arraste no fundo, issue #11) ---
+    if (dragRef.current.kind === "rubberband") {
+      const rb = dragRef.current;
+      const rx = Math.min(rb.startX, rb.curX);
+      const ry = Math.min(rb.startY, rb.curY);
+      const rw = Math.abs(rb.curX - rb.startX);
+      const rh = Math.abs(rb.curY - rb.startY);
+      ctx.fillStyle = "rgba(255, 159, 67, 0.15)";
+      ctx.strokeStyle = "#ff9f43";
+      ctx.lineWidth = 1;
+      ctx.fillRect(rx, ry, rw, rh);
+      ctx.strokeRect(rx, ry, rw, rh);
     }
 
     // --- playhead ---
@@ -731,6 +760,46 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
     return null;
   }, []);
 
+  // Notas cuja caixa intersecta o retângulo (Shift+arraste, issue #11) -
+  // mesma geometria de noteAt, mas testando sobreposição em vez de ponto.
+  const notesInRect = useCallback((x0: number, y0: number, x1: number, y1: number): number[] => {
+    const canvas = canvasRef.current;
+    const s = songRef.current;
+    if (!canvas || !s) return [];
+    const h = canvas.clientHeight;
+    const laneTop = RULER_H + WAVE_H + 6;
+    const laneH = h - laneTop - 4;
+    let pMin = Infinity;
+    let pMax = -Infinity;
+    for (const n of s.notes) {
+      if (n.pitch < pMin) pMin = n.pitch;
+      if (n.pitch > pMax) pMax = n.pitch;
+    }
+    if (!isFinite(pMin)) return [];
+    pMin -= 2;
+    pMax += 2;
+    if (pMax - pMin < 12) pMax = pMin + 12;
+    const semitoneH = laneH / (pMax - pMin + 1);
+    const { start, pxPerSec } = viewRef.current;
+    const rx0 = Math.min(x0, x1);
+    const rx1 = Math.max(x0, x1);
+    const ry0 = Math.min(y0, y1);
+    const ry1 = Math.max(y0, y1);
+
+    const out: number[] = [];
+    for (let i = 0; i < s.notes.length; i++) {
+      const n = s.notes[i];
+      const t0 = beatToSec(s, n.start_beat);
+      const t1 = beatToSec(s, n.start_beat + n.duration_beats);
+      const x = (t0 - start) * pxPerSec;
+      const nw = Math.max(3, (t1 - t0) * pxPerSec);
+      const y = laneTop + (pMax - n.pitch) * semitoneH;
+      const nh = Math.max(8, semitoneH - 2);
+      if (x < rx1 && x + nw > rx0 && y < ry1 && y + nh > ry0) out.push(i);
+    }
+    return out;
+  }, []);
+
   const onMouseDown = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       const canvas = canvasRef.current;
@@ -753,6 +822,42 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
       if (hit) {
         setSelected(hit.idx);
         selectedRef.current = hit.idx;
+
+        if (e.shiftKey) {
+          // Shift+clique: alterna a nota no grupo, sem iniciar arraste - o
+          // usuário solta e arrasta depois pra mover o grupo inteiro.
+          const next = new Set(multiSelectedRef.current);
+          if (next.has(hit.idx)) next.delete(hit.idx);
+          else next.add(hit.idx);
+          setMultiSelected(next);
+          multiSelectedRef.current = next;
+          dragRef.current = { kind: "none" };
+          draw();
+          return;
+        }
+
+        const group = multiSelectedRef.current;
+        if (group.size > 1 && group.has(hit.idx)) {
+          // A nota clicada já faz parte de um grupo: move o GRUPO inteiro,
+          // não só ela - mesmo delta pra todas, 1 undo pro gesto (issue #11).
+          pushHistory();
+          const idxs = Array.from(group);
+          dragRef.current = {
+            kind: "moveGroup",
+            noteIdxs: idxs,
+            startX: mx,
+            startY: my,
+            beats0: idxs.map((i) => s.notes[i].start_beat),
+            pitches0: idxs.map((i) => s.notes[i].pitch),
+          };
+          draw();
+          return;
+        }
+
+        // Clique simples numa nota fora do grupo: reseta a seleção múltipla
+        // e volta ao comportamento de sempre (nota única).
+        setMultiSelected(new Set());
+        multiSelectedRef.current = new Set();
         const n = s.notes[hit.idx];
         pushHistory(); // 1 snapshot por gesto de drag
         dragRef.current = hit.onEdge
@@ -766,9 +871,15 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
               pitch0: n.pitch,
             };
         draw();
+      } else if (e.shiftKey) {
+        // Shift+arraste no fundo: retângulo de seleção, soma ao grupo atual.
+        dragRef.current = { kind: "rubberband", startX: mx, startY: my, curX: mx, curY: my };
+        draw();
       } else {
         setSelected(null);
         selectedRef.current = null;
+        setMultiSelected(new Set());
+        multiSelectedRef.current = new Set();
         dragRef.current = { kind: "pan", startX: mx, viewStart0: viewRef.current.start };
         draw();
       }
@@ -818,6 +929,21 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
           const n = d.notes[drag.noteIdx];
           n.duration_beats = Math.max(1, drag.dur0 + dBeats);
         }, false);
+      } else if (drag.kind === "moveGroup") {
+        // Mesmo delta pra TODAS as notas do grupo (issue #11) - não
+        // recalcula posição relativa entre elas, só desloca o bloco inteiro.
+        const dBeats = Math.round((mx - drag.startX) / pxPerSec / beatDur);
+        const dPitch = -Math.round((my - drag.startY) / 12);
+        const { noteIdxs, beats0, pitches0 } = drag;
+        mutate((d) => {
+          noteIdxs.forEach((idx, i) => {
+            d.notes[idx].start_beat = beats0[i] + dBeats;
+            d.notes[idx].pitch = pitches0[i] + dPitch;
+          });
+        }, false);
+      } else if (drag.kind === "rubberband") {
+        dragRef.current = { kind: "rubberband", startX: drag.startX, startY: drag.startY, curX: mx, curY: my };
+        draw();
       }
     },
     [noteAt, seekTo, mutate, draw]
@@ -827,11 +953,27 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
     const drag = dragRef.current;
     // clique simples numa nota (sem arrastar): o snapshot de história feito
     // no mousedown não corresponde a mudança nenhuma - descarta
-    if ((drag.kind === "move" || drag.kind === "resize") && !dragMovedRef.current) {
+    if ((drag.kind === "move" || drag.kind === "resize" || drag.kind === "moveGroup") && !dragMovedRef.current) {
       historyRef.current.pop();
     }
+    if (drag.kind === "rubberband") {
+      // Solta o retângulo: seleciona as notas dentro dele, SOMANDO ao grupo
+      // atual (permite construir a seleção com vários Shift+arraste).
+      const idxs = notesInRect(drag.startX, drag.startY, drag.curX, drag.curY);
+      if (idxs.length > 0) {
+        const next = new Set(multiSelectedRef.current);
+        idxs.forEach((i) => next.add(i));
+        setMultiSelected(next);
+        multiSelectedRef.current = next;
+        if (selectedRef.current === null) {
+          setSelected(idxs[0]);
+          selectedRef.current = idxs[0];
+        }
+      }
+      draw();
+    }
     dragRef.current = { kind: "none" };
-  }, []);
+  }, [notesInRect, draw]);
 
   const onDoubleClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -937,7 +1079,11 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
         playNote(sel);
       } else if (e.key === "Delete") {
         e.preventDefault();
-        deleteNote(sel);
+        if (multiSelectedRef.current.size > 1) {
+          deleteNotes(Array.from(multiSelectedRef.current));
+        } else {
+          deleteNote(sel);
+        }
       } else if (e.key === "Tab") {
         e.preventDefault();
         const next = Math.min(s.notes.length - 1, sel + 1);
@@ -952,16 +1098,25 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
   }, [togglePlay, undo, redo, mutate, playNote, draw]);
 
   // ------------------------------------------------------ ações pontuais
-  function deleteNote(idx: number) {
+  // Generalização de deleteNote pra várias notas de uma vez (issue #11):
+  // remove de trás pra frente (índices menores continuam válidos durante o
+  // splice) e desloca as quebras de frase pelo Nº de remoções ANTES delas.
+  function deleteNotes(idxs: number[]) {
+    const removed = new Set(idxs);
+    const sortedDesc = [...idxs].sort((a, b) => b - a);
     mutate((d) => {
-      d.notes.splice(idx, 1);
-      // os índices de quebra de frase apontam para posições em `notes` -
-      // remover uma nota desloca tudo que vem depois
+      for (const idx of sortedDesc) d.notes.splice(idx, 1);
       d.phrase_breaks_after_index = d.phrase_breaks_after_index
-        .filter((b) => b !== idx)
-        .map((b) => (b > idx ? b - 1 : b));
+        .filter((b) => !removed.has(b))
+        .map((b) => b - sortedDesc.filter((r) => r < b).length);
     });
     setSelected(null);
+    setMultiSelected(new Set());
+    multiSelectedRef.current = new Set();
+  }
+
+  function deleteNote(idx: number) {
+    deleteNotes([idx]);
   }
 
   function togglePhraseBreak(idx: number) {
@@ -1184,7 +1339,18 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
         </p>
       )}
 
-      {sel !== null && selected !== null && (
+      {multiSelected.size > 1 && (
+        <div className="note-inspector">
+          <div className="field-group inspector-side">
+            <span className="note-time">{t("revGroupSelected", { n: multiSelected.size })}</span>
+            <button className="danger" onClick={() => deleteNotes(Array.from(multiSelected))}>
+              {t("revDeleteGroup")}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {multiSelected.size <= 1 && sel !== null && selected !== null && (
         <div className="note-inspector">
           <div className="field-group">
             <label>{t("revSyllable")}</label>

@@ -6,6 +6,12 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 Cada versão tem um instalador pronto em **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — as notas de cada release trazem também as instruções de instalação.
 
+## [0.14.0] — 2026-07-30
+
+### Adicionado
+
+- **Seleção múltipla de notas na revisão.** `Shift+clique` alterna uma nota dentro/fora do grupo selecionado; `Shift+arraste` no fundo do piano roll abre um retângulo de seleção que soma as notas dentro dele ao grupo. Arrastar qualquer nota do grupo move o **bloco inteiro** (mesmo deslocamento de tempo e pitch em todas), com um único undo para o gesto. `Del` com um grupo selecionado exclui todas de uma vez. Resolve o caso de um trecho inteiro da música sair deslocado do alinhamento automático e precisar ser corrigido de uma vez, sem ajustar nota por nota. Pedido de usuário (issue #11).
+
 ## [0.13.0] — 2026-07-29
 
 ### Corrigido
