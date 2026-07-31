@@ -69,6 +69,33 @@ function isLowConfidenceAnchor(n: USNote): boolean {
   return typeof n.score === "number" && n.score < LOW_SCORE_ANCHOR_THRESHOLD;
 }
 
+// Salto de pitch isolado que NÃO é múltiplo de oitava (issue #7): o
+// extrator de pitch (SwiftF0) às vezes trava com alta confiança na
+// harmonia de apoio em vez da voz principal - descoberto medindo contra
+// charts de referência (ex.: harmonia uma quinta/7 semitons acima). Nenhum
+// sinal barato (variância dentro da nota, cobertura, confiança média)
+// discriminou isso de forma confiável pra corrigir automaticamente sem
+// gastar GPU em toda música (medido: 3 sinais testados, nenhum funcionou -
+// ver issue #7). `snap_octave_outliers` (build_song.py) já corrige saltos
+// de OITAVA (12/24 semitons); isto pega o que sobra - mesmo padrão
+// (comparar com as DUAS vizinhas imediatas), só que sinalizando pro
+// usuário revisar em vez de tentar adivinhar a correção.
+const PITCH_JUMP_THRESHOLD = 5; // semitons - o caso real medido é 7 (quinta)
+const PITCH_NEIGHBOR_AGREE_THRESHOLD = 3; // vizinhas têm que concordar entre si
+
+function isPitchOutlier(notes: USNote[], i: number): boolean {
+  if (i <= 0 || i >= notes.length - 1) return false;
+  const n = notes[i];
+  if (n.note_type === "F") return false; // freestyle não tem pitch significativo
+  const prev = notes[i - 1];
+  const next = notes[i + 1];
+  if (prev.note_type === "F" || next.note_type === "F") return false;
+  const devPrev = Math.abs(n.pitch - prev.pitch);
+  const devNext = Math.abs(n.pitch - next.pitch);
+  const neighborsAgree = Math.abs(prev.pitch - next.pitch) <= PITCH_NEIGHBOR_AGREE_THRESHOLD;
+  return devPrev >= PITCH_JUMP_THRESHOLD && devNext >= PITCH_JUMP_THRESHOLD && neighborsAgree;
+}
+
 interface USSong {
   title: string;
   artist: string;
@@ -494,7 +521,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
           ? "#4a4a58"
           : n.note_type === "*"
           ? "#c9a227"
-          : isLowConfidenceAnchor(n)
+          : isLowConfidenceAnchor(n) || isPitchOutlier(s.notes, i)
           ? LOW_CONFIDENCE_COLOR
           : SOURCE_COLORS[n.source ?? ""] ?? DEFAULT_NOTE_COLOR;
       ctx.beginPath();
@@ -566,9 +593,9 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
         );
         const mxOf = (t: number) => (t / songEnd) * mw;
 
-        for (const n of s.notes) {
+        s.notes.forEach((n, i) => {
           const nx = mxOf(beatToSec(s, n.start_beat));
-          if (n.source === "interpolated" || isLowConfidenceAnchor(n)) {
+          if (n.source === "interpolated" || isLowConfidenceAnchor(n) || isPitchOutlier(s.notes, i)) {
             // notas estimadas ou suspeitas saltam aos olhos até no minimapa
             mctx.fillStyle = n.source === "interpolated" ? SOURCE_COLORS.interpolated : LOW_CONFIDENCE_COLOR;
             mctx.fillRect(nx, 2, 2, mh - 4);
@@ -576,7 +603,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
             mctx.fillStyle = "#3d6fd6";
             mctx.fillRect(nx, mh * 0.3, 1, mh * 0.4);
           }
-        }
+        });
 
         // viewport atual
         const vx0 = mxOf(start);
@@ -1180,7 +1207,8 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
   // Pacotes antigos não têm o campo source - nesse caso a legenda e o botão
   // de "pular pra flagrada" não fazem sentido e ficam ocultos.
   const hasSourceInfo = song.notes.some((n) => n.source != null);
-  const needsReview = (n: USNote) => n.source === "interpolated" || isLowConfidenceAnchor(n);
+  const needsReview = (n: USNote, i: number, notes: USNote[]) =>
+    n.source === "interpolated" || isLowConfidenceAnchor(n) || isPitchOutlier(notes, i);
   const flaggedCount = song.notes.filter(needsReview).length;
 
   function jumpToNextFlagged() {
@@ -1189,7 +1217,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
     const from = selectedRef.current !== null ? selectedRef.current : -1;
     const order = [...Array(s.notes.length).keys()];
     // procura a partir da seleção atual, dando a volta no fim
-    const next = [...order.slice(from + 1), ...order.slice(0, from + 1)].find((i) => needsReview(s.notes[i]));
+    const next = [...order.slice(from + 1), ...order.slice(0, from + 1)].find((i) => needsReview(s.notes[i], i, s.notes));
     if (next === undefined) return;
     setSelected(next);
     selectedRef.current = next;

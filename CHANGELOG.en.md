@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Every version has a ready-to-use installer on **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — each release's notes also carry the install instructions.
 
+## [0.17.0] — 2026-07-30
+
+### Added
+
+- **Visual warning for isolated pitch jumps in the review screen.** In layered productions (e.g. a backing harmony a fifth above the lead vocal), the pitch-recognition AI can sometimes lock onto the wrong voice for an isolated note — confidently, without giving itself away. With no cheap way to auto-correct this without reprocessing the whole song, the review screen now flags these notes (same visual highlight and "jump to next" button already used for other suspicious notes), for a quick manual fix.
+
 ## [0.16.0] — 2026-07-30
 
 ### Added

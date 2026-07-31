@@ -6,6 +6,12 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 Cada versão tem um instalador pronto em **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — as notas de cada release trazem também as instruções de instalação.
 
+## [0.17.0] — 2026-07-30
+
+### Adicionado
+
+- **Aviso visual para saltos de pitch isolados na revisão.** Em produções com camadas (ex.: harmonia de apoio uma quinta acima do vocal principal), a IA de reconhecimento de pitch às vezes trava numa nota isolada na voz errada — com alta confiança, sem se denunciar. Sem jeito barato de corrigir isso automaticamente sem processar toda música de novo, a tela de Revisão agora sinaliza essas notas (mesmo destaque visual e botão "pular pra próxima" que já existiam para outras notas suspeitas), para correção manual rápida.
+
 ## [0.16.0] — 2026-07-30
 
 ### Adicionado
