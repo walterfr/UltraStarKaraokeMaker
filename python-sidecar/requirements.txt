@@ -82,12 +82,22 @@ librosa>=0.10.1
 # --- Separação silábica PT-BR ---
 pyphen>=0.15.0
 
-# --- Romanização (romaji) opcional ---
-# pykakasi converte kana/kanji -> romaji (Hepburn) para a opção "Romanizar":
-# a letra japonesa sai em romaji no .txt, para quem não lê japonês cantar. Só é
-# importado quando a opção está ligada (import lazy em main.romanize_notes),
-# então não pesa no caminho comum. Puro Python + dados, sem toolchain nativa.
-pykakasi>=2.2.1
+# --- Romanização (alfabeto latino) opcional, por idioma ---
+# Cada lib converte o script nativo de UM idioma pra alfabeto latino, pra
+# quem não lê o script original conseguir cantar. Todas puro Python + dados,
+# sem toolchain nativa (sem compilador). Import LAZY por idioma em
+# main._make_romanize_converter - só paga o custo de quem ligar a opção
+# "Romanizar" e só carrega a lib do idioma daquela música.
+#
+# Hebraico e persa ficaram de fora: o script sem vogal marcada (uso comum)
+# daria só um esqueleto de consoantes, não a pronúncia real - baixa demanda
+# (3-4 charts na comunidade) não justifica o risco de qualidade.
+pykakasi>=2.2.1       # japonês (kana/kanji) -> Hepburn
+pypinyin>=0.49.0      # chinês (hanzi) -> Pinyin com tom
+korean-romanizer>=1.4 # coreano (hangul) -> Revised Romanization
+transliterate>=1.10.2 # russo/ucraniano (cirílico) -> latino
+indic-transliteration>=2.3.4  # hindi (devanagari) -> IAST
+Unidecode>=1.3.6      # grego -> latino (alfabeto simples, transliteração genérica basta)
 
 # --- Números por extenso (alinhamento) ---
 # A letra escreve "20", mas o Whisper transcreve "vinte" e o vocabulário do

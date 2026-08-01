@@ -174,23 +174,60 @@ def convert_to_ogg(source_wav: Path, dest_ogg: Path, quality: int = 6,
     run_subprocess(cmd)
 
 
-def romanize_notes(notes) -> None:
+def _make_romanize_converter(language: str):
     """
-    Reescreve o texto de cada nota em romaji (Hepburn) via pykakasi. Para letras
-    japonesas (kana/kanji), deixa quem não lê japonês cantar. Texto já latino
-    passa direto. Import LAZY: pykakasi só é exigido quando o usuário liga a
-    opção. Preserva o espaço à direita, que no UltraStar marca fim de palavra.
+    Devolve uma função texto->texto pro idioma, ou None se não suportado.
+    Cria qualquer instância COM ESTADO (ex.: kakasi carrega dicionário) UMA
+    VEZ aqui fora, não a cada nota - recriar por nota seria caro à toa.
+
+    Idiomas de fora (hebraico/persa): script sem vogal marcada no uso comum -
+    romanizar sem elas dá só um esqueleto de consoantes, não a pronúncia real.
+    Baixa demanda medida (3-4 charts na comunidade) não justifica o risco de
+    qualidade. Ver issue de romanização (30/07/2026).
     """
-    from pykakasi import kakasi
-    kks = kakasi()
+    if language == "ja":
+        from pykakasi import kakasi
+        kks = kakasi()
+        return lambda t: "".join(item["hepburn"] for item in kks.convert(t))
+    if language == "zh":
+        from pypinyin import pinyin, Style
+        return lambda t: " ".join(p[0] for p in pinyin(t, style=Style.TONE))
+    if language == "ko":
+        from korean_romanizer.romanizer import Romanizer
+        return lambda t: Romanizer(t).romanize()
+    if language in ("ru", "uk"):
+        from transliterate import translit
+        return lambda t: translit(t, language, reversed=True)
+    if language == "hi":
+        from indic_transliteration import sanscript
+        return lambda t: sanscript.transliterate(t, sanscript.DEVANAGARI, sanscript.IAST)
+    if language == "el":
+        from unidecode import unidecode
+        return unidecode
+    return None
+
+
+def romanize_notes(notes, language: str) -> None:
+    """
+    Reescreve o texto de cada nota em alfabeto latino, no sistema padrão do
+    idioma: japonês (Hepburn), chinês (Pinyin com tom), coreano (Revised
+    Romanization), russo/ucraniano (transliteração cirílico->latino), hindi
+    (IAST). Deixa quem não lê o script original cantar. Texto já latino
+    passa direto; idioma sem conversor (ver _make_romanize_converter) não
+    faz nada. Import LAZY por idioma - só paga o custo de quem usar.
+    Preserva o espaço à direita, que no UltraStar marca fim de palavra.
+    """
+    converter = _make_romanize_converter(language)
+    if converter is None:
+        return
     for n in notes:
         raw = n.text
         core = raw.strip()
         if not core:
             continue
-        romaji = "".join(item["hepburn"] for item in kks.convert(core))
-        if romaji:
-            n.text = romaji + (" " if raw.endswith(" ") else "")
+        romanized = converter(core)
+        if romanized:
+            n.text = romanized + (" " if raw.endswith(" ") else "")
 
 
 def write_song_ini(dest: Path, name: str, artist: str,
@@ -768,7 +805,7 @@ def run_pipeline(
     if romanize:
         debug_log("Romanizando texto das notas (romanize=True)")
         try:
-            romanize_notes(song.notes)
+            romanize_notes(song.notes, language)
             console.print("[green]OK[/green] Letra romanizada (romaji)")
         except Exception as e:
             debug_log(f"Falha ao romanizar (ignorada): {e}")

@@ -199,6 +199,11 @@ const NON_LATIN_LANGS = new Set([
   "ar", "el", "fa", "he", "hi", "ja", "ka", "ko", "ml", "ru", "te", "uk", "ur", "zh",
 ]);
 
+// Idiomas com conversor de romanização no backend (main._make_romanize_converter).
+// Hebraico/persa ficam de fora: script sem vogal marcada dá só um esqueleto
+// de consoantes, não a pronúncia real - baixa demanda não justifica o risco.
+const ROMANIZABLE_LANGS = new Set(["ja", "zh", "ko", "ru", "uk", "hi", "el"]);
+
 function LogoMark({ size = 40 }: { size?: number }) {
   // marca simples e própria: microfone estilizado + estrela (UltraStar)
   return (
@@ -1329,16 +1334,18 @@ function App() {
           {t("yargExportLabel")}
           <span className="tip-mark" aria-hidden="true">?</span>
         </label>
-        <label className="checkbox-line" title={t("romanizeHint")}>
-          <input
-            type="checkbox"
-            checked={romanize}
-            onChange={(e) => setRomanize(e.target.checked)}
-            disabled={isRunning}
-          />
-          {t("romanizeLabel")}
-          <span className="tip-mark" aria-hidden="true">?</span>
-        </label>
+        {ROMANIZABLE_LANGS.has(language) && (
+          <label className="checkbox-line" title={t("romanizeHint")}>
+            <input
+              type="checkbox"
+              checked={romanize}
+              onChange={(e) => setRomanize(e.target.checked)}
+              disabled={isRunning}
+            />
+            {t("romanizeLabel")}
+            <span className="tip-mark" aria-hidden="true">?</span>
+          </label>
+        )}
         <label className="checkbox-line" title={t("withStemsHint")}>
           <input
             type="checkbox"

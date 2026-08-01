@@ -6,6 +6,12 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 Cada versão tem um instalador pronto em **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — as notas de cada release trazem também as instruções de instalação.
 
+## [0.18.0] — 2026-07-31
+
+### Adicionado
+
+- **Romanização estendida para chinês, coreano, russo, ucraniano, hindi e grego.** A opção "Romanizar" (antes só japonês/Hepburn) agora cobre mais idiomas, cada um no sistema padrão: chinês → Pinyin com tom, coreano → Revised Romanization, russo/ucraniano → transliteração cirílico→latino, hindi → IAST, grego → transliteração simples. O checkbox só aparece para idiomas com conversor disponível. Pedido de usuário.
+
 ## [0.17.0] — 2026-07-30
 
 ### Adicionado
