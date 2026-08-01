@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Every version has a ready-to-use installer on **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — each release's notes also carry the install instructions.
 
+## [0.18.1] — 2026-07-31
+
+### Fixed
+
+- **Sidecar diagnostic log could silently disappear.** The Python server's session log was written inside the app's install folder — under the default `perMachine` installer (Program Files), that folder is read-only for regular users, so the write failed and the error was swallowed, falling back to `/dev/null`. If the sidecar died before opening the job's own log (e.g. a crash on torch/CUDA import, a real case with an old GPU), no log survived at all, for the user or for us. This log now lives in `%LOCALAPPDATA%\USKMaker\`, always writable.
+
 ## [0.18.0] — 2026-07-31
 
 ### Added

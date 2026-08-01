@@ -425,7 +425,21 @@ async fn ensure_server_and_send(
         let (code_dir, python_exe) = resolve_sidecar(app, lang)?;
         // stdout/stderr do servidor vão para um log de SESSÃO (só diagnóstico);
         // a saída de cada job é capturada pelo próprio Python no log do job.
-        let session_log = code_dir.join("_server_session.log");
+        //
+        // Fica em %LOCALAPPDATA%\USKMaker, NÃO em code_dir: no instalador
+        // perMachine, code_dir é a pasta de recursos dentro de Program Files,
+        // só-leitura pra usuário comum. Achado num caso real (31/07/2026):
+        // GPU antiga (GTX 750 Ti) fazia o sidecar morrer no import do
+        // torch/CUDA, ANTES de existir o log do job (aberto só depois, em
+        // server.py); o log de sessão seria o único registro do crash, mas
+        // como estava em Program Files, o File::create falhava e o erro
+        // caía num Stdio::null() silencioso - usuário e nós sem log nenhum.
+        let session_log = std::env::var("LOCALAPPDATA")
+            .map(|p| Path::new(&p).join("USKMaker").join("_server_session.log"))
+            .unwrap_or_else(|_| code_dir.join("_server_session.log"));
+        if let Some(parent) = session_log.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
         let (out, err) = match File::create(&session_log) {
             Ok(f) => {
                 let e = f.try_clone().ok();
