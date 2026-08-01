@@ -258,7 +258,14 @@ if ($hasNvidia -and $cudaCheck -ne "True") {
 # que e onde mora a excecao real.
 # Modulos ESSENCIAIS: sem qualquer um deles o sidecar morre no import e o app
 # nao gera nada. Falha aqui = ambiente reprovado.
-$coreModules = @('whisperx', 'demucs', 'librosa', 'mutagen')
+#
+# swift_f0 (extracao de pitch) faltava aqui (achado 31/07/2026, caso real):
+# ele importa onnxruntime igual o audio_separator, mas SEM guarda de
+# try/except em pipeline/pitch.py - se o onnxruntime dele falhar (causa
+# comum: falta o VC++ Redistributable), o sidecar inteiro morre no import,
+# so que ISSO NAO ERA TESTADO aqui - o setup passava "tudo certo" e o
+# usuario so descobria a quebra no meio de uma geracao de verdade.
+$coreModules = @('whisperx', 'demucs', 'librosa', 'mutagen', 'swift_f0')
 # audio_separator = OPCIONAL: e o resgate de voz principal (2o passe). Em
 # runtime o import e lazy dentro de um try/except (pipeline/separate.py), entao
 # o pipeline JA cai para o stem do Demucs sem ele. Reprovar o ambiente todo por

@@ -6,6 +6,12 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 Cada versão tem um instalador pronto em **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — as notas de cada release trazem também as instruções de instalação.
 
+## [0.18.2] — 2026-07-31
+
+### Corrigido
+
+- **Setup não testava a extração de pitch (`swift_f0`), só descobria a quebra na hora de gerar.** `swift_f0` importa `onnxruntime` igual o resgate de voz principal (audio-separator), mas sem proteção de try/except — se o onnxruntime dele falhar (causa comum: falta o Microsoft Visual C++ Redistributable), o sidecar inteiro morre no import, sem gerar nada. O setup validava outras bibliotecas essenciais mas não essa, então dizia "tudo certo" e o usuário só descobria o problema no meio de uma geração real (caso relatado por usuário). Agora `swift_f0` também é validado no setup, com a mesma dica de instalar o VC++ Redistributable se falhar.
+
 ## [0.18.1] — 2026-07-31
 
 ### Corrigido
