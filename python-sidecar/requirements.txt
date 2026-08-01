@@ -94,7 +94,7 @@ pyphen>=0.15.0
 # (3-4 charts na comunidade) não justifica o risco de qualidade.
 pykakasi>=2.2.1       # japonês (kana/kanji) -> Hepburn
 pypinyin>=0.49.0      # chinês (hanzi) -> Pinyin com tom
-korean-romanizer>=1.4 # coreano (hangul) -> Revised Romanization
+korean-romanizer>=0.28.0  # coreano (hangul) -> Revised Romanization (pin errado dizia >=1.4, essa versão NUNCA existiu - o pacote nem chegou a 1.0; achado por relato de usuário, 31/07/2026)
 transliterate>=1.10.2 # russo/ucraniano (cirílico) -> latino
 indic-transliteration>=2.3.4  # hindi (devanagari) -> IAST
 Unidecode>=1.3.6      # grego -> latino (alfabeto simples, transliteração genérica basta)

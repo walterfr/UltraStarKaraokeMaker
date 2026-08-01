@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Every version has a ready-to-use installer on **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — each release's notes also carry the install instructions.
 
+## [0.18.3] — 2026-07-31
+
+### Fixed
+
+- **AI environment setup was failing for everyone since v0.18.0.** `requirements.txt` required `korean-romanizer>=1.4` — a version that never existed (the real package hasn't even reached 1.0; the latest is 0.28.0). Pin corrected. User report (Sethid777).
+
 ## [0.18.2] — 2026-07-31
 
 ### Fixed

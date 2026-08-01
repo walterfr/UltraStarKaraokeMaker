@@ -7,7 +7,7 @@
   },
   "package": {
     "productName": "USKMaker",
-    "version": "0.18.2"
+    "version": "0.18.3"
   },
   "tauri": {
     "allowlist": {
