@@ -72,7 +72,18 @@ def download_from_youtube(url: str, out_dir: Path) -> Path:
     Retorna o caminho do arquivo .wav gerado.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
-    output_template = str(out_dir / "%(title)s.%(ext)s")
+    # Nome FIXO ("audio.wav"), não "%(title)s.%(ext)s". BUG REAL achado por
+    # relato de usuário (Todilo, issue #12, 04/08/2026): com nome por título,
+    # o retorno da função era "o .wav mais recente por mtime na pasta raw" -
+    # se essa pasta já tivesse QUALQUER outro .wav (de um teste anterior com
+    # outra música, reprocessamento, etc.), a heurística podia devolver o
+    # arquivo ERRADO. Aconteceu de verdade: o log dele mostra "Áudio em:
+    # ...BTS Video Grammofon.wav" no meio do processamento de uma música
+    # SUECA completamente diferente - alinhou a letra contra o áudio errado,
+    # 0 âncora exata, 61% interpolado. Nome fixo elimina a ambiguidade: só
+    # existe UM .wav possível nesta pasta, sem precisar adivinhar qual é.
+    output_template = str(out_dir / "audio.%(ext)s")
+    audio_wav = out_dir / "audio.wav"
 
     # HISTÓRICO DE BUG (06/07/2026): antes chamava "yt-dlp" direto pelo nome,
     # dependendo de ele estar no PATH. Funcionava com o venv ATIVADO, mas
@@ -92,10 +103,9 @@ def download_from_youtube(url: str, out_dir: Path) -> Path:
 
     run_subprocess(cmd)
 
-    wav_files = sorted(out_dir.glob("*.wav"), key=lambda p: p.stat().st_mtime, reverse=True)
-    if not wav_files:
-        raise RuntimeError("yt-dlp rodou mas nenhum .wav foi encontrado em " + str(out_dir))
-    return wav_files[0]
+    if not audio_wav.exists():
+        raise RuntimeError("yt-dlp rodou mas " + str(audio_wav) + " não foi encontrado.")
+    return audio_wav
 
 
 def download_from_youtube_with_video(url: str, out_dir: Path) -> SourceAudio:
@@ -107,7 +117,13 @@ def download_from_youtube_with_video(url: str, out_dir: Path) -> SourceAudio:
     Retorna SourceAudio com audio_wav E video_path preenchidos.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
-    output_template = str(out_dir / "%(title)s.%(ext)s")
+    # Basename FIXO ("video.*"), não "%(title)s.*" - mesmo bug real do
+    # download_from_youtube (ver comentário lá): "arquivo mais recente por
+    # mtime na pasta" podia devolver um vídeo de OUTRA música que já
+    # estivesse na pasta. A extensão final varia (mp4/webm/mkv conforme o
+    # que o YouTube oferece), então não dá pra fixar ela também - mas o
+    # PREFIXO fixo já garante que só o arquivo desta chamada casa com o glob.
+    output_template = str(out_dir / "video.%(ext)s")
 
     # Baixa o melhor vídeo mp4 + melhor áudio m4a e combina em mp4. O formato
     # mp4 é o que o UltraStar lê melhor; se o YouTube só tiver webm, o yt-dlp
@@ -121,11 +137,7 @@ def download_from_youtube_with_video(url: str, out_dir: Path) -> SourceAudio:
     ]
     run_subprocess(cmd)
 
-    # Descobre o arquivo de vídeo recém-baixado (mais recente na pasta, entre
-    # as extensões de vídeo comuns que o yt-dlp pode ter entregue).
-    video_candidates: list[Path] = []
-    for ext in ("*.mp4", "*.webm", "*.mkv"):
-        video_candidates.extend(out_dir.glob(ext))
+    video_candidates = list(out_dir.glob("video.*"))
     if not video_candidates:
         raise RuntimeError("yt-dlp rodou mas nenhum vídeo foi encontrado em " + str(out_dir))
     video_path = max(video_candidates, key=lambda p: p.stat().st_mtime)

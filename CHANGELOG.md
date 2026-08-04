@@ -6,6 +6,12 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 Cada versão tem um instalador pronto em **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — as notas de cada release trazem também as instruções de instalação.
 
+## [0.18.4] — 2026-08-04
+
+### Corrigido
+
+- **Download do YouTube podia pegar o áudio/vídeo de OUTRA música, em silêncio.** `download_from_youtube` escolhia "o `.wav` mais recente por data de modificação" na pasta de trabalho — se essa pasta já tivesse qualquer outro `.wav` (de um teste anterior, por exemplo), a heurística podia devolver o arquivo errado, sem erro nenhum. Resultado real (relato de usuário): letra de uma música alinhada contra o áudio de outra completamente diferente, alinhamento naufragando (0 âncora exata, 61% interpolado). Mesmo padrão corrigido no download de vídeo. Agora o nome do arquivo baixado é fixo (`audio.wav`/`video.*`), sem ambiguidade possível.
+
 ## [0.18.3] — 2026-07-31
 
 ### Corrigido
