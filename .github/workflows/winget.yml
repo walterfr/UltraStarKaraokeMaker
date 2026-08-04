@@ -1,11 +1,12 @@
 name: Publish to Winget
 
-# Roda quando um release é publicado. Atualiza o manifesto do walterfr.USKMaker
+# Roda quando um release é publicado: atualiza o manifesto do walterfr.USKMaker
 # no microsoft/winget-pkgs via wingetcreate (abre PR lá automaticamente).
 #
-# PRÉ-REQUISITO (feito uma vez, fora deste workflow): o pacote precisa já
-# EXISTIR no winget-pkgs (1ª submissão manual/local com `wingetcreate submit`)
-# - "wingetcreate update" só atualiza pacote existente, não cria um novo.
+# Também aceita disparo manual (workflow_dispatch) - usado SÓ para a 1ª
+# submissão (bootstrap: `wingetcreate submit` do manifesto local em
+# packaging/winget/, que CRIA o pacote lá). Depois de existir, todo release
+# novo usa o caminho automático (`wingetcreate update`).
 #
 # Precisa do secret WINGET_TOKEN: um GitHub PAT (classic, escopo public_repo)
 # da conta que vai abrir o fork/PR no microsoft/winget-pkgs.
@@ -13,12 +14,29 @@ name: Publish to Winget
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      manifest_path:
+        description: "Pasta do manifesto local pra 1ª submissão (bootstrap)"
+        required: true
+        default: "packaging/winget/manifests/w/walterfr/USKMaker/0.18.4"
 
 jobs:
   publish:
     runs-on: windows-latest
     steps:
-      - name: Update winget manifest and submit PR
+      - uses: actions/checkout@v4
+        if: github.event_name == 'workflow_dispatch'
+
+      - name: Bootstrap - submit local manifest (1ª vez só)
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://aka.ms/wingetcreate/latest" -OutFile wingetcreate.exe
+          .\wingetcreate.exe submit "${{ inputs.manifest_path }}" --token "${{ secrets.WINGET_TOKEN }}"
+
+      - name: Update winget manifest and submit PR (release novo)
+        if: github.event_name == 'release'
         shell: pwsh
         run: |
           $version = "${{ github.event.release.tag_name }}".TrimStart('v')
