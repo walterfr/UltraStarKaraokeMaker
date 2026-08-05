@@ -6,6 +6,12 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 Cada versão tem um instalador pronto em **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — as notas de cada release trazem também as instruções de instalação.
 
+## [0.18.5] — 2026-08-05
+
+### Corrigido
+
+- **GPU antiga detectada mas incompatível travava o pipeline em vez de cair pra CPU.** `resolve_device` só conferia se havia uma GPU NVIDIA com driver (`torch.cuda.is_available()`), não se o torch instalado tinha KERNEL compilado pra ela. Placas antigas (ex.: GTX 750 Ti, arquitetura Maxwell) passavam nessa checagem e só quebravam depois, dentro do Demucs, com "CUDA error: no kernel image is available for execution on the device" - sem fallback, sem aviso claro. Agora a capacidade real da GPU é comparada contra os kernels disponíveis no torch antes de escolher CUDA; se não bater, cai pra CPU (mais lento, mas funciona) com aviso no log. Relato de usuário (Vitor).
+
 ## [0.18.4] — 2026-08-04
 
 ### Corrigido

@@ -136,13 +136,30 @@ def resolve_device(requested: str) -> str:
     "AssertionError: Torch not compiled with CUDA enabled". A interface já
     avisa que o processamento roda na CPU; aqui garantimos que o pipeline
     concorde com isso, em vez de assumir GPU cegamente.
+
+    SEGUNDO CASO (achado por relato de usuário, GTX 750 Ti, 05/08/2026):
+    `torch.cuda.is_available()` só confirma que HÁ uma GPU NVIDIA com driver
+    - não que os KERNELS compilados no torch instalado cobrem a capacidade de
+    computação dela. GPU antiga (ex.: Maxwell, sm_50) passa nesse teste e só
+    quebra depois, dentro do subprocess do Demucs, com "CUDA error: no kernel
+    image is available for execution on the device" - sem fallback, sem
+    log claro pro usuário. `torch.cuda.get_arch_list()` é a mesma lista que o
+    próprio torch usa pra emitir o aviso "supports CUDA capabilities sm_XX...";
+    comparamos a capacidade REAL da placa contra ela antes de decidir "cuda".
     """
     if requested == "cpu":
         return "cpu"
     try:
         import torch
         if torch.cuda.is_available():
-            return "cuda"
+            major, minor = torch.cuda.get_device_capability(0)
+            if f"sm_{major}{minor}" in torch.cuda.get_arch_list():
+                return "cuda"
+            print(
+                f"[AVISO] GPU detectada (capacidade sm_{major}{minor}) mas o torch "
+                f"instalado só tem kernels para {torch.cuda.get_arch_list()} - "
+                "caindo para CPU (mais lento, mas funciona)."
+            )
     except Exception:
         pass
     return "cpu"

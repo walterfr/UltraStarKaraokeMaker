@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Every version has a ready-to-use installer on **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — each release's notes also carry the install instructions.
 
+## [0.18.5] — 2026-08-05
+
+### Fixed
+
+- **A detected-but-incompatible GPU stalled the pipeline instead of falling back to CPU.** `resolve_device` only checked whether an NVIDIA GPU with a driver was present (`torch.cuda.is_available()`), not whether the installed torch build actually had compiled KERNELS for it. Older cards (e.g. GTX 750 Ti, Maxwell architecture) passed that check and only failed later, inside Demucs, with "CUDA error: no kernel image is available for execution on the device" — no fallback, no clear warning. The GPU's real capability is now compared against the kernels torch actually ships before picking CUDA; if it doesn't match, it falls back to CPU (slower, but it works) with a log warning. User report (Vitor).
+
 ## [0.18.4] — 2026-08-04
 
 ### Fixed
