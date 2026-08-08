@@ -1142,6 +1142,14 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
     multiSelectedRef.current = new Set();
   }
 
+  function setNotesType(idxs: number[], noteType: string) {
+    mutate((d) => {
+      for (const idx of idxs) {
+        d.notes[idx].note_type = noteType;
+      }
+    });
+  }
+
   function deleteNote(idx: number) {
     deleteNotes([idx]);
   }
@@ -1370,8 +1378,30 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
       {multiSelected.size > 1 && (
         <div className="note-inspector">
           <div className="field-group inspector-side">
-            <span className="note-time">{t("revGroupSelected", { n: multiSelected.size })}</span>
-            <button className="danger" onClick={() => deleteNotes(Array.from(multiSelected))}>
+            <span className="note-time">
+              {t("revGroupSelected", { n: multiSelected.size })}
+            </span>
+
+            <label>{t("revType")}</label>
+            <select
+              value=""
+              onChange={(e) => {
+                const value = e.target.value;
+                if (!value) return;
+                setNotesType(Array.from(multiSelected), value);
+                e.target.value = "";
+              }}
+            >
+              <option value="">—</option>
+              <option value=":">{t("revTypeNormal")}</option>
+              <option value="*">{t("revTypeGolden")}</option>
+              <option value="F">{t("revTypeFreestyle")}</option>
+            </select>
+
+            <button
+              className="danger"
+              onClick={() => deleteNotes(Array.from(multiSelected))}
+            >
               {t("revDeleteGroup")}
             </button>
           </div>
