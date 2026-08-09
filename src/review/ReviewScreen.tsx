@@ -1065,6 +1065,11 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
         redo();
         return;
       }
+      if (e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        addNote();
+        return;
+      }
 
       const sel = selectedRef.current;
       const s = songRef.current;
@@ -1195,6 +1200,75 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
 
   function deleteNote(idx: number) {
     deleteNotes([idx]);
+  }
+
+  function addNote() {
+    const s = songRef.current;
+    if (!s) return;
+
+    // Put the note at the current playhead, snapped to a beat.
+    const currentTime = audioRef.current?.currentTime ?? 0;
+    const rawBeat =
+      (currentTime - s.gap_ms / 1000) / beatDuration(s);
+    const startBeat = Math.max(0, Math.round(rawBeat));
+
+    // Use the selected note's pitch when possible.
+    // Otherwise use the nearest note to the insertion point.
+    let pitch = 0;
+
+    const selectedIdx = selectedRef.current;
+    if (selectedIdx !== null && s.notes[selectedIdx]) {
+      pitch = s.notes[selectedIdx].pitch;
+    } else if (s.notes.length > 0) {
+      const nearest = s.notes.reduce((best, note, index) => {
+        const bestDistance = Math.abs(
+          s.notes[best].start_beat - startBeat
+        );
+        const distance = Math.abs(note.start_beat - startBeat);
+        return distance < bestDistance ? index : best;
+      }, 0);
+
+      pitch = s.notes[nearest].pitch;
+    }
+
+    let newIndex = 0;
+
+    mutate((d) => {
+      const newNote: USNote = {
+        start_beat: startBeat,
+        duration_beats: 4,
+        pitch,
+        text: "",
+        note_type: ":",
+        source: null,
+        score: null,
+      };
+
+      // Keep notes chronologically ordered.
+      newIndex = d.notes.findIndex(
+        (note) => note.start_beat > startBeat
+      );
+
+      if (newIndex === -1) {
+        newIndex = d.notes.length;
+        d.notes.push(newNote);
+      } else {
+        d.notes.splice(newIndex, 0, newNote);
+      }
+
+      // Inserting a note shifts phrase-break indexes.
+      d.phrase_breaks_after_index = d.phrase_breaks_after_index.map(
+        (index) => (index >= newIndex ? index + 1 : index)
+      );
+    });
+
+    setSelected(newIndex);
+    selectedRef.current = newIndex;
+
+    setMultiSelected(new Set());
+    multiSelectedRef.current = new Set();
+
+    draw();
   }
 
   function togglePhraseBreak(idx: number) {
@@ -1345,6 +1419,9 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
           </button>
         ))}
         <span className="toolbar-sep" />
+        <button onClick={addNote} title="Add note">
+          + Note
+        </button>
         <button onClick={undo} title="Ctrl+Z">
           {t("revUndo")}
         </button>
