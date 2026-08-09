@@ -255,6 +255,10 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
   const historyRef = useRef<string[]>([]);
   const redoRef = useRef<string[]>([]);
   const rafRef = useRef<number>(0);
+  const pianoRollRef = useRef<HTMLCanvasElement | null>(null);
+  const pianoAudioRef = useRef<AudioContext | null>(null);
+
+  const PIANO_ROLL_W = 92;
 
   songRef.current = song;
   selectedRef.current = selected;
@@ -372,6 +376,54 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
     setSelected(null);
   }, []);
 
+  const playPianoPitch = useCallback((pitch: number) => {
+    const AudioContextClass =
+      window.AudioContext ||
+      (
+        window as typeof window & {
+          webkitAudioContext?: typeof AudioContext;
+        }
+      ).webkitAudioContext;
+
+    if (!AudioContextClass) return;
+
+    if (!pianoAudioRef.current) {
+      pianoAudioRef.current = new AudioContextClass();
+    }
+
+    const ctx = pianoAudioRef.current;
+
+    if (ctx.state === "suspended") {
+      void ctx.resume();
+    }
+
+    // UltraStar pitch 0 = C4 = MIDI 60.
+    const midi = pitch + 60;
+    const frequency = 440 * Math.pow(2, (midi - 69) / 12);
+
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    oscillator.type = "square";
+    oscillator.frequency.value = frequency;
+
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(
+      0.8,
+      ctx.currentTime + 0.01
+    );
+    gain.gain.exponentialRampToValueAtTime(
+      0.0001,
+      ctx.currentTime + 1
+    );
+
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+
+    oscillator.start();
+    oscillator.stop(ctx.currentTime + 1);
+  }, []);
+
   // ------------------------------------------------------------- desenho
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -457,6 +509,135 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
     if (pMax - pMin < 12) pMax = pMin + 12;
     const semitoneH = laneH / (pMax - pMin + 1);
     const yOfPitch = (p: number) => laneTop + (pMax - p) * semitoneH;
+
+    // ------------------------------------------------ piano roll
+    const piano = pianoRollRef.current;
+
+    if (piano) {
+      const pw = piano.clientWidth;
+
+      if (
+        piano.width !== pw * dpr ||
+        piano.height !== h * dpr
+      ) {
+        piano.width = pw * dpr;
+        piano.height = h * dpr;
+      }
+
+      const pctx = piano.getContext("2d");
+
+      if (pctx) {
+        pctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        pctx.clearRect(0, 0, pw, h);
+
+        pctx.fillStyle = "#111118";
+        pctx.fillRect(0, 0, pw, h);
+
+        const selectedIndex = selectedRef.current;
+
+        const selectedPitch =
+          selectedIndex !== null &&
+          selectedIndex >= 0 &&
+          selectedIndex < s.notes.length
+            ? s.notes[selectedIndex].pitch
+            : null;
+
+        // Header/ruler/waveform area.
+        pctx.fillStyle = "#1b1b24";
+        pctx.fillRect(0, 0, pw, laneTop);
+
+        for (let p = Math.ceil(pMin); p <= pMax; p++) {
+          const y = yOfPitch(p);
+
+          const isBlack =
+            [1, 3, 6, 8, 10].includes(
+              ((p + 60) % 12 + 12) % 12
+            );
+
+          const isSelected = selectedPitch === p;
+
+          // White/black piano key.
+          if (isSelected) {
+            pctx.fillStyle = "#ff8c00";
+            pctx.fillRect(
+              0,
+              y,
+              isBlack ? pw * 0.68 : pw,
+              semitoneH
+            );
+
+            pctx.strokeStyle = "#bd5f00";
+            pctx.lineWidth = 2;
+
+            pctx.strokeRect(
+              1,
+              y + 1,
+              (isBlack ? pw * 0.68 : pw) - 2,
+              semitoneH - 2
+            );
+          } else {
+            pctx.fillStyle = isBlack
+              ? "#000000"
+              : "#ffffff";
+              pctx.fillRect(
+                0,
+                y,
+                isBlack ? pw * 0.68 : pw,
+                semitoneH
+              );
+          }
+
+          pctx.fillRect(
+            0,
+            y,
+            isBlack ? pw * 0.68 : pw,
+            semitoneH
+          );
+
+          // Horizontal pitch boundary.
+          pctx.strokeStyle = isBlack
+            ? "#111118"
+            : "#777";
+
+          pctx.lineWidth = 1;
+
+          pctx.beginPath();
+          pctx.moveTo(0, y + 0.5);
+          pctx.lineTo(pw, y + 0.5);
+          pctx.stroke();
+
+          // C notes get a stronger divider.
+          if (((p + 60) % 12 + 12) % 12 === 0) {
+            pctx.strokeStyle = "#d46b55";
+            pctx.beginPath();
+            pctx.moveTo(0, y + 0.5);
+            pctx.lineTo(pw, y + 0.5);
+            pctx.stroke();
+          }
+
+          // Note name.
+          if (semitoneH >= 8) {
+            pctx.fillStyle = isBlack
+              ? "#ffffff"
+              : "#222";
+
+            pctx.font = "bold 14px system-ui";
+            pctx.textBaseline = "middle";
+
+            pctx.fillText(
+              `${pitchName(p)} (${p})`,
+              6,
+              y + semitoneH / 2
+            );
+          }
+        }
+
+        // Divider between main editor and piano.
+        pctx.fillStyle = "#555";
+        pctx.fillRect(0, 0, 1, h);
+      }
+    }
 
     // linhas de grade de pitch (a cada 2 semitons, sutil)
     ctx.strokeStyle = "#1e1e28";
@@ -837,6 +1018,56 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
     return out;
   }, []);
 
+  const onPianoMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      const piano = pianoRollRef.current;
+      const s = songRef.current;
+
+      if (!piano || !s) return;
+
+      const rect = piano.getBoundingClientRect();
+      const my = e.clientY - rect.top;
+
+      const h = piano.clientHeight;
+      const laneTop = RULER_H + WAVE_H + 6;
+      const laneH = h - laneTop - 4;
+
+      let pMin = Infinity;
+      let pMax = -Infinity;
+
+      for (const n of s.notes) {
+        if (n.pitch < pMin) pMin = n.pitch;
+        if (n.pitch > pMax) pMax = n.pitch;
+      }
+
+      if (!isFinite(pMin)) {
+        pMin = 0;
+        pMax = 12;
+      }
+
+      pMin -= 2;
+      pMax += 2;
+
+      if (pMax - pMin < 12) {
+        pMax = pMin + 12;
+      }
+
+      const semitoneH =
+        laneH / (pMax - pMin + 1);
+
+      const pitch = Math.round(
+        pMax -
+          (my - laneTop - semitoneH / 2) /
+            semitoneH
+      );
+
+      if (pitch >= pMin && pitch <= pMax) {
+        playPianoPitch(pitch);
+      }
+    },
+    [playPianoPitch]
+  );
+
   const onMouseDown = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       const canvas = canvasRef.current;
@@ -1065,6 +1296,11 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
         redo();
         return;
       }
+      if (e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        addNote();
+        return;
+      }
 
       const sel = selectedRef.current;
       const s = songRef.current;
@@ -1095,22 +1331,55 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
       if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         e.preventDefault();
         const delta = e.key === "ArrowLeft" ? -1 : 1;
-        if (e.shiftKey) {
-          mutate((d) => {
-            const n = d.notes[sel];
-            n.duration_beats = Math.max(1, n.duration_beats + delta);
-          });
+        const group = multiSelectedRef.current;
+
+        if (group.size >1)
+        {
+          const idxs = Array.from(group);
+          if(e.shiftKey) {
+            // Shift + arrows: resize all selected notes by the same amount
+            mutate((d) => {
+              for (const idx of idxs) {
+                d.notes[idx].duration_beats = Math.max(1, d.notes[idx].duration_beats + delta);
+              }
+            });
+          } else {
+            // Arrows: move all selected notes in time
+            mutate((d) => {
+              for(const idx of idxs) {
+                d.notes[idx].start_beat += delta;
+              }
+            });
+          }
         } else {
-          mutate((d) => {
-            d.notes[sel].start_beat += delta;
-          });
+          if (e.shiftKey) {
+            mutate((d) => {
+              const n = d.notes[sel];
+              n.duration_beats = Math.max(1, n.duration_beats + delta);
+            });
+          } else {
+            mutate((d) => {
+              d.notes[sel].start_beat += delta;
+            });
+          }
         }
       } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
         e.preventDefault();
         const delta = e.key === "ArrowUp" ? 1 : -1;
-        mutate((d) => {
-          d.notes[sel].pitch += delta;
-        });
+        const group = multiSelectedRef.current;
+        if (group.size >1)
+        {
+          const idxs = Array.from(group);
+          mutate((d) => {
+            for(const idx of idxs) {
+              d.notes[idx].pitch += delta;
+            }
+          })
+        } else {
+          mutate((d) => {
+            d.notes[sel].pitch += delta;
+          });
+        }
       } else if (e.key === "Enter") {
         e.preventDefault();
         playNote(sel);
@@ -1162,6 +1431,75 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
 
   function deleteNote(idx: number) {
     deleteNotes([idx]);
+  }
+
+  function addNote() {
+    const s = songRef.current;
+    if (!s) return;
+
+    // Put the note at the current playhead, snapped to a beat.
+    const currentTime = audioRef.current?.currentTime ?? 0;
+    const rawBeat =
+      (currentTime - s.gap_ms / 1000) / beatDuration(s);
+    const startBeat = Math.max(0, Math.round(rawBeat));
+
+    // Use the selected note's pitch when possible.
+    // Otherwise use the nearest note to the insertion point.
+    let pitch = 0;
+
+    const selectedIdx = selectedRef.current;
+    if (selectedIdx !== null && s.notes[selectedIdx]) {
+      pitch = s.notes[selectedIdx].pitch;
+    } else if (s.notes.length > 0) {
+      const nearest = s.notes.reduce((best, note, index) => {
+        const bestDistance = Math.abs(
+          s.notes[best].start_beat - startBeat
+        );
+        const distance = Math.abs(note.start_beat - startBeat);
+        return distance < bestDistance ? index : best;
+      }, 0);
+
+      pitch = s.notes[nearest].pitch;
+    }
+
+    let newIndex = 0;
+
+    mutate((d) => {
+      const newNote: USNote = {
+        start_beat: startBeat,
+        duration_beats: 4,
+        pitch,
+        text: "",
+        note_type: ":",
+        source: null,
+        score: null,
+      };
+
+      // Keep notes chronologically ordered.
+      newIndex = d.notes.findIndex(
+        (note) => note.start_beat > startBeat
+      );
+
+      if (newIndex === -1) {
+        newIndex = d.notes.length;
+        d.notes.push(newNote);
+      } else {
+        d.notes.splice(newIndex, 0, newNote);
+      }
+
+      // Inserting a note shifts phrase-break indexes.
+      d.phrase_breaks_after_index = d.phrase_breaks_after_index.map(
+        (index) => (index >= newIndex ? index + 1 : index)
+      );
+    });
+
+    setSelected(newIndex);
+    selectedRef.current = newIndex;
+
+    setMultiSelected(new Set());
+    multiSelectedRef.current = new Set();
+
+    draw();
   }
 
   function togglePhraseBreak(idx: number) {
@@ -1312,6 +1650,9 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
           </button>
         ))}
         <span className="toolbar-sep" />
+        <button onClick={addNote} title="Add note">
+          + Note
+        </button>
         <button onClick={undo} title="Ctrl+Z">
           {t("revUndo")}
         </button>
@@ -1352,16 +1693,40 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
             </button>
           ))}
         </div>
-        <canvas
-          ref={canvasRef}
-          className="review-canvas"
-          onMouseDown={onMouseDown}
-          onMouseMove={onMouseMove}
-          onMouseUp={onMouseUp}
-          onMouseLeave={onMouseUp}
-          onDoubleClick={onDoubleClick}
-          onWheel={onWheel}
-        />
+        <div
+          style={{
+            position: "relative",
+            flex: 1,
+            minWidth: 0,
+            height: "100%",
+            overflow: "hidden",
+          }}
+        >
+          <canvas
+            ref={canvasRef}
+            className="review-canvas"
+            onMouseDown={onMouseDown}
+            onMouseMove={onMouseMove}
+            onMouseUp={onMouseUp}
+            onMouseLeave={onMouseUp}
+            onDoubleClick={onDoubleClick}
+            onWheel={onWheel}
+          />
+
+          <canvas
+            ref={pianoRollRef}
+            onMouseDown={onPianoMouseDown}
+            style={{
+              position: "absolute",
+              top: 0,
+              right: 0,
+              width: `${PIANO_ROLL_W}px`,
+              height: "100%",
+              zIndex: 20,
+              cursor: "pointer",
+            }}
+          />
+        </div>
       </div>
 
       <p className="review-hints">{t("revHints")}</p>
