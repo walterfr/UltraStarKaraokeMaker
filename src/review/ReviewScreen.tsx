@@ -519,7 +519,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
       ctx.fillStyle =
         n.note_type === "F"
           ? "#4a4a58"
-          : n.note_type === "*"
+          : n.note_type === "*" || n.note_type === "G"
           ? "#c9a227"
           : isLowConfidenceAnchor(n) || isPitchOutlier(s.notes, i)
           ? LOW_CONFIDENCE_COLOR
