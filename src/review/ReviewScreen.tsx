@@ -1396,6 +1396,8 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
               <option value=":">{t("revTypeNormal")}</option>
               <option value="*">{t("revTypeGolden")}</option>
               <option value="F">{t("revTypeFreestyle")}</option>
+              <option value="R">{t("revTypeRap")}</option>
+              <option value="G">{t("revTypeGoldenRap")}</option>
             </select>
 
             <button
@@ -1462,6 +1464,8 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
               <option value=":">{t("revTypeNormal")}</option>
               <option value="*">{t("revTypeGolden")}</option>
               <option value="F">{t("revTypeFreestyle")}</option>
+              <option value="R">{t("revTypeRap")}</option>
+              <option value="G">{t("revTypeGoldenRap")}</option>
             </select>
           </div>
           <div className="field-group inspector-side">
