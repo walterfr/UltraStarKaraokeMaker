@@ -1095,22 +1095,55 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
       if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         e.preventDefault();
         const delta = e.key === "ArrowLeft" ? -1 : 1;
-        if (e.shiftKey) {
-          mutate((d) => {
-            const n = d.notes[sel];
-            n.duration_beats = Math.max(1, n.duration_beats + delta);
-          });
+        const group = multiSelectedRef.current;
+
+        if (group.size >1)
+        {
+          const idxs = Array.from(group);
+          if(e.shiftKey) {
+            // Shift + arrows: resize all selected notes by the same amount
+            mutate((d) => {
+              for (const idx of idxs) {
+                d.notes[idx].duration_beats = Math.max(1, d.notes[idx].duration_beats + delta);
+              }
+            });
+          } else {
+            // Arrows: move all selected notes in time
+            mutate((d) => {
+              for(const idx of idxs) {
+                d.notes[idx].start_beat += delta;
+              }
+            });
+          }
         } else {
-          mutate((d) => {
-            d.notes[sel].start_beat += delta;
-          });
+          if (e.shiftKey) {
+            mutate((d) => {
+              const n = d.notes[sel];
+              n.duration_beats = Math.max(1, n.duration_beats + delta);
+            });
+          } else {
+            mutate((d) => {
+              d.notes[sel].start_beat += delta;
+            });
+          }
         }
       } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
         e.preventDefault();
         const delta = e.key === "ArrowUp" ? 1 : -1;
-        mutate((d) => {
-          d.notes[sel].pitch += delta;
-        });
+        const group = multiSelectedRef.current;
+        if (group.size >1)
+        {
+          const idxs = Array.from(group);
+          mutate((d) => {
+            for(const idx of idxs) {
+              d.notes[idx].pitch += delta;
+            }
+          })
+        } else {
+          mutate((d) => {
+            d.notes[sel].pitch += delta;
+          });
+        }
       } else if (e.key === "Enter") {
         e.preventDefault();
         playNote(sel);
