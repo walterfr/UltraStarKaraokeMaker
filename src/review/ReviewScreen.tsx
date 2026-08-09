@@ -525,14 +525,24 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
           ? LOW_CONFIDENCE_COLOR
           : SOURCE_COLORS[n.source ?? ""] ?? DEFAULT_NOTE_COLOR;
       ctx.beginPath();
-      ctx.roundRect(x, y, nw, nh, 3);
+      // Draw rap and golden rap notes squared
+      if(n.note_type === "R" || n.note_type === "G") {
+        ctx.rect(x,y, nw, nh);
+      } else {
+        ctx.roundRect(x, y, nw, nh, 3);
+      }
       ctx.fill();
 
       if (isSel) {
         ctx.strokeStyle = "#ff9f43";
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.roundRect(x - 1, y - 1, nw + 2, nh + 2, 4);
+        if(n.note_type === "R" || n.note_type === "G") {
+          ctx.rect(x - 1, y -1, nw + 2, nh + 2);
+        } else {
+          ctx.roundRect(x - 1, y - 1, nw + 2, nh + 2, 4);
+        }
+
         ctx.stroke();
         ctx.lineWidth = 1;
       }
