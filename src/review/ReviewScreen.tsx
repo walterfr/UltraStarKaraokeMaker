@@ -519,20 +519,30 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
       ctx.fillStyle =
         n.note_type === "F"
           ? "#4a4a58"
-          : n.note_type === "*"
+          : n.note_type === "*" || n.note_type === "G"
           ? "#c9a227"
           : isLowConfidenceAnchor(n) || isPitchOutlier(s.notes, i)
           ? LOW_CONFIDENCE_COLOR
           : SOURCE_COLORS[n.source ?? ""] ?? DEFAULT_NOTE_COLOR;
       ctx.beginPath();
-      ctx.roundRect(x, y, nw, nh, 3);
+      // Draw rap and golden rap notes squared
+      if(n.note_type === "R" || n.note_type === "G") {
+        ctx.rect(x,y, nw, nh);
+      } else {
+        ctx.roundRect(x, y, nw, nh, 3);
+      }
       ctx.fill();
 
       if (isSel) {
         ctx.strokeStyle = "#ff9f43";
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.roundRect(x - 1, y - 1, nw + 2, nh + 2, 4);
+        if(n.note_type === "R" || n.note_type === "G") {
+          ctx.rect(x - 1, y -1, nw + 2, nh + 2);
+        } else {
+          ctx.roundRect(x - 1, y - 1, nw + 2, nh + 2, 4);
+        }
+
         ctx.stroke();
         ctx.lineWidth = 1;
       }
@@ -1396,6 +1406,8 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
               <option value=":">{t("revTypeNormal")}</option>
               <option value="*">{t("revTypeGolden")}</option>
               <option value="F">{t("revTypeFreestyle")}</option>
+              <option value="R">{t("revTypeRap")}</option>
+              <option value="G">{t("revTypeGoldenRap")}</option>
             </select>
 
             <button
@@ -1462,6 +1474,8 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
               <option value=":">{t("revTypeNormal")}</option>
               <option value="*">{t("revTypeGolden")}</option>
               <option value="F">{t("revTypeFreestyle")}</option>
+              <option value="R">{t("revTypeRap")}</option>
+              <option value="G">{t("revTypeGoldenRap")}</option>
             </select>
           </div>
           <div className="field-group inspector-side">
