@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 
 
 def ffmpeg_exe() -> str:
@@ -43,6 +44,48 @@ def ffmpeg_exe() -> str:
     antigas que dependiam dele.
     """
     return os.environ.get("USKMAKER_FFMPEG") or "ffmpeg"
+
+
+# Handle devolvido pelo os.add_dll_directory. PRECISA continuar vivo: quando
+# esse objeto e coletado pelo garbage collector, o Windows TIRA a pasta da
+# busca de DLLs de novo. Por isso ele mora aqui, no modulo, e nao numa
+# variavel local que morreria no fim da funcao.
+_dll_dir_handle = None
+
+
+def _expose_ffmpeg_dlls(ff_dir: str) -> None:
+    """
+    Deixa as DLLs do ffmpeg embutido visiveis para o carregador de DLLs do
+    Windows.
+
+    POR QUE O PATH NAO BASTA: desde o Python 3.8 o Windows NAO procura mais no
+    PATH as dependencias de uma DLL. O torchcodec (vem junto do torch 2.8, e e
+    o que o torchaudio/pyannote usam para decodificar audio) precisa das libs
+    COMPARTILHADAS do ffmpeg - avcodec, avfilter, avformat, avutil, postproc,
+    swresample, swscale. E o torchcodec 0.7.0 nao faz nada para acha-las: a
+    busca por "ffmpeg" no PATH so apareceu na versao 0.10.0. Resultado: as libs
+    podiam estar na MESMA pasta do ffmpeg.exe e ele falhava do mesmo jeito, com
+    "Could not find module ... (or one of its dependencies)" - mensagem que nao
+    diz qual dependencia faltou, o que custou horas de diagnostico.
+
+    MEDIDO (2026-09-05, maquina real com RTX 5080): com as 7 libs do ffmpeg
+    7.1.1 ja na pasta bin e apenas o PATH ajustado, o torchcodec falhava nas
+    quatro versoes que tenta (7, 6, 5, 4); acrescentando esta pasta com
+    os.add_dll_directory, ele carregou na primeira tentativa.
+
+    Inofensivo quando as libs nao estao la - so registra a pasta.
+    """
+    global _dll_dir_handle
+    if _dll_dir_handle is not None:
+        return
+    if sys.platform != "win32" or not hasattr(os, "add_dll_directory"):
+        return
+    try:
+        _dll_dir_handle = os.add_dll_directory(ff_dir)
+    except OSError:
+        # Pasta inexistente ou sem permissao. O app funciona sem isto - o
+        # torchcodec so continua no estado em que ja estava.
+        pass
 
 
 def ensure_ffmpeg_on_path() -> None:
@@ -68,6 +111,7 @@ def ensure_ffmpeg_on_path() -> None:
     parts = os.environ.get("PATH", "").split(os.pathsep)
     if ff_dir not in parts:
         os.environ["PATH"] = os.pathsep.join([ff_dir, *parts])
+    _expose_ffmpeg_dlls(ff_dir)
 
 
 def _print_captured(text: str) -> None:

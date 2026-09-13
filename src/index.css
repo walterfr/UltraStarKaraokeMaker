@@ -1226,3 +1226,204 @@ body { overflow: hidden; }
   align-items: center;
 }
 .asset-actions .submit-button.compact { margin-top: 0; }
+
+/* ----------------------------------------------------------------------
+   Lyric timing table (review screen -> "Lyric timing")
+   Overlay over the review screen: one row per .lrc line, flagged where the
+   .lrc and the measured audio disagree.
+   ---------------------------------------------------------------------- */
+.lt-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 8, 12, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+  padding: 2rem 1rem;
+}
+.lt-panel {
+  background: #17171f;
+  border: 1px solid #262632;
+  border-radius: 10px;
+  width: min(1000px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem 1.2rem 0.8rem;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+}
+.lt-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.lt-header h3 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+.lt-help {
+  color: #9a9aa8;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  margin: 0.4rem 0 0.6rem;
+}
+.lt-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+.lt-summary {
+  font-size: 0.9rem;
+  color: #c8c8d4;
+}
+.lt-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  color: #c8c8d4;
+  cursor: pointer;
+}
+.lt-table-wrap {
+  overflow: auto;
+  border: 1px solid #262632;
+  border-radius: 8px;
+  flex: 1;
+  min-height: 0;
+}
+.lt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+.lt-table thead th {
+  position: sticky;
+  top: 0;
+  background: #1d1d27;
+  text-align: left;
+  font-weight: 600;
+  color: #b6b6c4;
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid #262632;
+  white-space: nowrap;
+}
+.lt-table td {
+  padding: 0.3rem 0.6rem;
+  border-bottom: 1px solid #1f1f29;
+  vertical-align: middle;
+}
+.lt-table tr:last-child td {
+  border-bottom: none;
+}
+.lt-row.suspect {
+  background: rgba(214, 128, 47, 0.12);
+}
+.lt-num {
+  color: #7a7a8a;
+  width: 2.5rem;
+  text-align: right;
+  white-space: nowrap;
+}
+.lt-time {
+  background: none;
+  border: 1px solid transparent;
+  color: #cfcfdb;
+  font-variant-numeric: tabular-nums;
+  padding: 0.15rem 0.35rem;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 0.88rem;
+}
+.lt-time:hover {
+  border-color: #3a3a4a;
+  background: #22222e;
+}
+.lt-time.playing {
+  border-color: #3d6fd6;
+  background: #1e2a44;
+  color: #dce6ff;
+}
+.lt-gap {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: #8fbf8f;
+}
+.lt-gap.suspect {
+  color: #e0a05a;
+  font-weight: 600;
+}
+.lt-text {
+  color: #e8e8ec;
+  max-width: 26rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lt-muted {
+  color: #6a6a7a;
+}
+.lt-fix {
+  width: 6.5rem;
+  font-size: 0.88rem;
+  padding: 0.2rem 0.35rem;
+}
+.lt-fix.bad {
+  border-color: #b4553f;
+}
+.lt-row.settled {
+  background: rgba(143, 191, 143, 0.07);
+}
+.lt-done {
+  width: 3.2rem;
+  text-align: center;
+}
+.lt-done input[type="checkbox"] {
+  cursor: pointer;
+}
+.lt-seeded {
+  margin-left: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: #7a7a8a;
+  border: 1px solid #33333f;
+  border-radius: 4px;
+  padding: 0.05rem 0.28rem;
+  white-space: nowrap;
+}
+.lt-fix-echo {
+  margin-left: 0.4rem;
+  color: #7a7a8a;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+}
+.lt-note {
+  font-size: 0.82rem;
+  line-height: 1.4;
+  margin: 0.2rem 0 0.5rem;
+}
+.lt-note.ok {
+  color: #8fbf8f;
+}
+.lt-note.warn {
+  color: #e0a05a;
+}
+.lt-note.bad {
+  color: #e07a6a;
+}
+.lt-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin: 0.7rem 0 0.2rem;
+}
+.lt-actions .lt-note {
+  margin: 0;
+  word-break: break-all;
+}

@@ -80,6 +80,8 @@ npm run tauri dev
 
 O pacote resultante contém o `.txt` UltraStar, o áudio `.ogg`, a capa `[CO].jpg` (quando encontrada) e, se solicitado, o vídeo `.mp4`. Pode ser carregado no UltraStar Deluxe ou no UltraStar Play.
 
+   **Vídeo de karaokê (opcional):** marque **Gerar vídeo de karaokê (.mp4)** para sair também um `Artista - Título (Karaoke).mp4` — a letra preenchendo sílaba a sílaba por cima do fundo, exatamente no tempo que o alinhamento já mediu. Toca em qualquer TV, celular ou pendrive, sem o jogo instalado. O fundo é o vídeo do pacote (quando há), senão a arte de fundo ou a capa; o áudio é o mesmo do pacote, então **Backtrack** (instrumental) e transposição valem automaticamente. A renderização roda por último e não é fatal: se falhar, o pacote UltraStar continua completo. O arquivo de legenda usado fica na pasta como `_karaoke_subs.ass`, então dá para mexer no visual e re-renderizar sem rodar a IA de novo.
+
 5. (Opcional) Clique em **Revisar alinhamento** ao final — ou em "Revisar um pacote já gerado..." na tela inicial — para abrir o editor de revisão: ouça a música (mix completo ou só o vocal isolado, se os intermediários foram mantidos), arraste notas no tempo/pitch, ajuste durações, sílabas e quebras de frase, desloque o GAP global e salve para regenerar o `.txt`.
 
 ## Estado do projeto

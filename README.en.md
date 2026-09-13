@@ -80,6 +80,8 @@ npm run tauri dev
 
 The resulting package contains the UltraStar `.txt`, the `.ogg` audio, the `[CO].jpg` cover (when found) and, if requested, the `.mp4` video. It can be loaded in UltraStar Deluxe or UltraStar Play.
 
+   **Karaoke video (optional):** tick **Make karaoke video (.mp4)** to also get an `Artist - Title (Karaoke).mp4` — the lyrics filling in syllable by syllable over the background, on exactly the timing the alignment already measured. It plays on any TV, phone or USB stick, with no game installed. The background is the package video when there is one, otherwise the background art or the cover; the audio is whatever the package uses, so **Backtrack** (instrumental) and transpose carry over automatically. Rendering happens last and is non-fatal: if it fails, the UltraStar package is still complete. The subtitle file it renders from is left in the folder as `_karaoke_subs.ass`, so the look can be tweaked and re-rendered without running the AI again.
+
 5. (Optional) Click **Review alignment** at the end — or "Review an existing package..." on the home screen — to open the review editor: listen to the song (full mix or isolated vocals, if intermediates were kept), drag notes in time/pitch, adjust durations, syllables and phrase breaks, shift the global GAP and save to regenerate the `.txt`.
 
 ## Project status

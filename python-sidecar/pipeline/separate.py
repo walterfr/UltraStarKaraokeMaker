@@ -126,6 +126,47 @@ def isolate_lead_vocal(vocals_wav: Path, out_dir: Path, model: str = LEAD_VOCAL_
     return lead_vocals
 
 
+def isolate_backing_vocals(vocals_wav: Path, out_dir: Path, model: str = LEAD_VOCAL_MODEL) -> Path:
+    """
+    O AVESSO do isolate_lead_vocal: devolve as vozes de APOIO/coro/harmonia,
+    separadas da voz principal pelo mesmo modelo "karaoke".
+
+    PARA QUE SERVE: o Demucs tira TODA voz do instrumental - inclusive as
+    harmonias, que em muita música (synth-pop dos anos 80, por exemplo) são
+    metade do que faz a música soar como ela é. Somando este stem de volta ao
+    instrumental, o karaokê perde só a voz principal e mantém o arranjo vocal.
+
+    A entrada já é só voz (stem do Demucs), então "o que não é a voz
+    principal" é exatamente o apoio - por isso o stem pedido aqui é o
+    "Instrumental" do modelo, e não o "Vocals".
+
+    Os dois stems são pedidos numa passada só (mesma configuração validada em
+    teste real com o usuário, 08/09/2026): o nome do arquivo varia com a
+    versão da lib, então a escolha é por nome, do mais específico ao mais
+    genérico, em vez de confiar num formato só.
+    """
+    from audio_separator.separator import Separator
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    separator = Separator(output_dir=str(out_dir), output_format="WAV")
+    separator.load_model(model_filename=model)
+    separator.separate(
+        str(vocals_wav),
+        custom_output_names={"Vocals": "lead_only", "Instrumental": "backing_only"},
+    )
+
+    produced = sorted(out_dir.glob("*.wav"))
+    for wanted in ("backing_only", "(instrumental)", "instrumental"):
+        for path in produced:
+            if wanted in path.name.lower():
+                return path
+
+    raise RuntimeError(
+        f"audio-separator rodou mas não achei o stem de vozes de apoio em {out_dir} "
+        f"(arquivos gerados: {[p.name for p in produced]})."
+    )
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Etapa 2: separação vocal (Fase 0 - teste isolado)")
     parser.add_argument("--input", required=True, help="Arquivo .wav de entrada")

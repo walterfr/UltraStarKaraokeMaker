@@ -1,0 +1,95 @@
+name: Build Windows installer
+
+# Compila o instalador do USKMaker no Windows e o deixa disponível para
+# download como artefato da execução.
+#
+# PARA QUE ISTO EXISTE: o repositório só tinha o workflow de publicação no
+# winget, que roda DEPOIS de um release já existir. Sem um build de CI, testar
+# uma alteração exigia a cadeia de desenvolvimento inteira (Rust + Node +
+# Python) instalada na máquina de quem testa. Aqui a montagem acontece nos
+# runners do GitHub e o resultado é um .exe para baixar - útil tanto para CI
+# quanto para quem só quer experimentar uma branch sem virar desenvolvedor.
+#
+# O sidecar Python NÃO é empacotado aqui (nem deveria): o app baixa o ambiente
+# de IA na primeira execução, via setup-sidecar.ps1. Este build produz o app.
+
+on:
+  # Botão "Run workflow" na aba Actions - o modo normal de usar isto.
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - "feature/**"
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      # Sem cache, cada execução recompila as centenas de crates do Tauri do
+      # zero (~10 min). Com cache, uma alteração só no nosso código leva ~2.
+      - name: Cache das dependências Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: Instalar dependências do front-end
+        run: npm ci
+
+      # Roda ANTES do build pesado: um erro de tipo no React aparece em
+      # segundos, não depois de dez minutos compilando Rust.
+      - name: Checar tipos (TypeScript)
+        run: npx tsc --noEmit
+
+      - name: Testes do rust-core
+        run: cargo test --manifest-path rust-core/Cargo.toml
+
+      # O tauri.conf.json já roda `npm run build` (beforeBuildCommand), então
+      # o front-end é montado dentro deste passo.
+      - name: Build do instalador
+        run: npm run tauri build
+
+      - name: Publicar o instalador como artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: USKMaker-windows-installer
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: 30
+
+  # Os testes do sidecar rodam em paralelo, em Linux (são lógica pura - não
+  # precisam de GPU, de ffmpeg nem de Windows).
+  sidecar-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar o mínimo para os testes de lógica
+        run: pip install pytest numpy
+      - name: pytest
+        working-directory: python-sidecar
+        # Só os módulos de lógica pura: os demais importam a pilha de IA
+        # inteira (torch/whisperx/demucs), que não cabe num runner de CI.
+        run: |
+          python -m pytest \
+            tests/test_video_export_logic.py \
+            tests/test_filenames_logic.py \
+            tests/test_ultrastar_format_conventions.py \
+            -v

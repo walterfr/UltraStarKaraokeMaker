@@ -14,17 +14,23 @@
       "all": true,
       "protocol": {
         "asset": true,
-        "assetScope": ["**"]
+        "assetScope": [
+          "**"
+        ]
       },
       "http": {
         "all": true,
         "request": true,
-        "scope": ["https://lrclib.net/api/*"]
+        "scope": [
+          "https://lrclib.net/api/*"
+        ]
       }
     },
     "bundle": {
       "active": true,
-      "targets": ["nsis"],
+      "targets": [
+        "nsis"
+      ],
       "identifier": "br.com.walterfr.uskmaker",
       "icon": [
         "icons/32x32.png",
@@ -35,6 +41,8 @@
         "../python-sidecar/main.py",
         "../python-sidecar/server.py",
         "../python-sidecar/read_tags.py",
+        "../python-sidecar/update_ytdlp.py",
+        "../python-sidecar/read_video_info.py",
         "../python-sidecar/fetch_assets.py",
         "../python-sidecar/verify_setup.py",
         "../python-sidecar/requirements.txt",
@@ -44,7 +52,10 @@
       "windows": {
         "nsis": {
           "installMode": "perMachine",
-          "languages": ["PortugueseBR", "English"]
+          "languages": [
+            "PortugueseBR",
+            "English"
+          ]
         }
       }
     },

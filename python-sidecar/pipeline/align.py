@@ -272,11 +272,38 @@ def match_lrc_to_lines(
     return result
 
 
+# Piso de reconhecimento abaixo do qual o .lrc passa a MANDAR nos inícios de
+# linha, em vez de só preencher vãos (ver seed_line_anchors / measured_recall).
+#
+# É o MESMO 0,60 que o main.py usa para avisar o usuário ("o Whisper pode ter
+# ancorado no lugar errado"), e de propósito: o aviso e a correção têm que
+# disparar no mesmo ponto. Não faz sentido dizer que as âncoras são suspeitas
+# e continuar preferindo-as ao .lrc. O número lá foi escolhido por curva
+# medida (n=60): as 5 falhas reais tinham 0,16-0,589, as 51 boas mediana 0,89.
+LRC_OVERRIDE_RECALL_FLOOR = 0.60
+
+
+def measured_recall(anchors: list[Anchor | None]) -> float:
+    """
+    Fração da letra que o Whisper de fato reconheceu: âncoras exatas + fuzzy
+    sobre o total de palavras. Medida ANTES do realinhamento e do .lrc, que
+    é quando ela responde "quanto do que ancorou veio da letra de verdade".
+    """
+    if not anchors:
+        return 0.0
+    measured = sum(
+        1 for a in anchors
+        if a is not None and a[3] in (SOURCE_ANCHOR, SOURCE_FUZZY)
+    )
+    return measured / len(anchors)
+
+
 def seed_line_anchors(
     anchors: list[Anchor | None],
     lyric_lines: list[tuple[str, int]],
     lrc_lines: list[tuple[float, str]],
     tolerance: float = 0.6,
+    override_measured: bool = False,
 ) -> int:
     """
     Semeia âncoras de linha (LRCLIB) na PRIMEIRA palavra de cada linha da
@@ -284,11 +311,26 @@ def seed_line_anchors(
     relação às âncoras vizinhas já existentes. Muta `anchors` in-place e
     retorna quantas âncoras foram semeadas.
 
-    Só entra onde o Whisper NÃO mediu nada (anchors[i] is None) - as âncoras
-    exatas/fuzzy do áudio são mais precisas que o início de linha do .lrc e
-    têm prioridade. O valor do .lrc brilha justamente nos vãos que o Whisper
-    deixou (trechos mal transcritos, sem match), encurtando as janelas de
-    interpolação e dando limites corretos ao realinhamento acústico (passe 3).
+    Por padrão só entra onde o Whisper NÃO mediu nada (anchors[i] is None) -
+    as âncoras exatas/fuzzy do áudio são mais precisas que o início de linha
+    do .lrc e têm prioridade. O valor do .lrc brilha justamente nos vãos que o
+    Whisper deixou (trechos mal transcritos, sem match), encurtando as janelas
+    de interpolação e dando limites corretos ao realinhamento acústico.
+
+    `override_measured=True` inverte essa prioridade nos inícios de linha.
+
+    POR QUE ISSO PRECISA EXISTIR (relato real, 03/09/2026, "Cause & Effect -
+    Inside Out", eletrônica de 1994): a premissa "a âncora do Whisper é mais
+    precisa que o .lrc" vale enquanto o Whisper ENTENDEU a música. Naquele
+    caso ele reconheceu 38% das palavras, e a própria checagem contra o .lrc
+    demoveu 45 âncoras dele por implausíveis - ou seja, o .lrc estava
+    demonstravelmente mais certo que o Whisper. Mesmo assim, em todo início
+    de linha onde o Whisper tinha ancorado (mesmo errado), o .lrc não entrava:
+    a fonte confiável cedia lugar à duvidosa, exatamente onde não devia.
+
+    O modo só é ligado quando DUAS condições valem juntas (ver o chamador):
+    reconhecimento abaixo do piso E duração do .lrc batendo com o áudio. Com
+    reconhecimento bom nada muda, então música que já funciona não regride.
     """
     line_texts = [t for t, _ in lyric_lines]
     matched = match_lrc_to_lines(line_texts, lrc_lines)
@@ -299,7 +341,9 @@ def seed_line_anchors(
     seeded = 0
     for line_idx, (_, start_word) in enumerate(lyric_lines):
         t = matched.get(line_idx)
-        if t is None or start_word >= n or anchors[start_word] is not None:
+        if t is None or start_word >= n:
+            continue
+        if anchors[start_word] is not None and not override_measured:
             continue
         # âncora medida imediatamente anterior/posterior (não-None)
         prev_end = None
@@ -312,17 +356,48 @@ def seed_line_anchors(
             if anchors[k] is not None:
                 next_start = anchors[k][0]
                 break
-        # monotonicidade: o tempo do .lrc precisa caber entre os vizinhos
-        if prev_end is not None and t < prev_end - tolerance:
-            continue
-        if next_start is not None and t > next_start + tolerance:
-            continue
+        # Monotonicidade: o tempo do .lrc precisa caber entre os vizinhos.
+        #
+        # No modo override esse teste é PULADO de propósito: os vizinhos são
+        # justamente as âncoras do Whisper que não estamos confiando, e deixá-
+        # las vetar o .lrc devolveria o problema que o modo existe para
+        # resolver. Os tempos do .lrc já são monotônicos entre si por
+        # construção (uma letra sincronizada avança no tempo), então a ordem
+        # continua garantida.
+        if not override_measured:
+            if prev_end is not None and t < prev_end - tolerance:
+                continue
+            if next_start is not None and t > next_start + tolerance:
+                continue
         end = t + 0.25
-        if next_start is not None:
+        if next_start is not None and not override_measured:
             end = min(end, max(t + 0.02, next_start - 0.02))
         anchors[start_word] = (t, end, 0.0, SOURCE_LRC)
         seeded += 1
     return seeded
+
+
+_LRC_APPROVED_RE = re.compile(r"\[uskmapproved:\s*1\s*\]", re.IGNORECASE)
+
+
+def lrc_is_approved(text: str) -> bool:
+    """
+    Diz se este .lrc foi CONFERIDO DE OUVIDO pelo usuário na tela de revisão
+    (tabela "Tempos da letra") e gravado na biblioteca de letras aprovadas.
+
+    A marca é a tag `[uskmapproved:1]` que o app escreve no topo do arquivo.
+    Tag alfabética: o `parse_lrc` aqui do lado a ignora sozinho, então o mesmo
+    arquivo continua sendo um .lrc comum para todo o resto do código.
+
+    POR QUE ISSO MUDA TUDO: as defesas deste módulo (duração implícita, piso
+    de reconhecimento, demoção de âncoras) existem porque o LRCLIB é um palpite
+    de terceiros e pode ser de OUTRA gravação. Uma letra aprovada não é
+    palpite: uma pessoa ouviu a música e conferiu os inícios de linha nesta
+    gravação. Desconfiar dela seria trocar uma medida humana por uma
+    heurística - exatamente o contrário do que as heurísticas existem para
+    fazer.
+    """
+    return _LRC_APPROVED_RE.search(text) is not None
 
 
 def lrc_duration_mismatch(
@@ -1150,28 +1225,80 @@ def align_lyrics_to_audio(
     #     poluição de matches espúrios ANTES dela envenenar a interpolação
     #     ao redor), depois preenche os vãos que o Whisper não mediu.
     if synced_lyrics_path is not None and Path(synced_lyrics_path).exists():
-        lrc_lines = parse_lrc(Path(synced_lyrics_path).read_text(encoding="utf-8"))
+        lrc_text = Path(synced_lyrics_path).read_text(encoding="utf-8")
+        lrc_lines = parse_lrc(lrc_text)
         lyric_lines = _lyric_lines_with_start_index(lyrics_path)
         audio_duration = float(len(audio)) / 16000  # whisperx.audio.SAMPLE_RATE
+        approved = lrc_is_approved(lrc_text)
 
         # Guarda-chuva: o LRCLIB é buscado só por artista/título (sem
         # duração), pode devolver a letra de OUTRA gravação (ao vivo, remix,
         # edição estendida) - ver lrc_duration_mismatch. Medido: 66% das
         # letras encontradas na biblioteca gold divergiam >15s na duração.
-        if lrc_duration_mismatch(lrc_lines, audio_duration):
+        #
+        # Uma letra APROVADA pelo usuário pula essa checagem e todo o resto da
+        # desconfiança: ela foi conferida de ouvido NESTA gravação (ver
+        # lrc_is_approved).
+        if approved:
+            print(
+                "[INFO] Letra sincronizada APROVADA pelo usuário - os inícios de linha "
+                "conferidos de ouvido mandam sobre as âncoras do Whisper, e as checagens "
+                "de duração/reconhecimento não se aplicam."
+            )
+            # Semeia PRIMEIRO (mesma ordem do modo de baixo reconhecimento):
+            # os inícios aprovados entram como verdade e passam a limitar as
+            # janelas do realinhamento; a demoção depois limpa as âncoras do
+            # Whisper que brigam com eles.
+            seeded = seed_line_anchors(anchors, lyric_lines, lrc_lines,
+                                       override_measured=True)
+            if seeded:
+                print(f"[INFO] Letra aprovada: {seeded} inícios de linha semeados (prioritários).")
+            demoted = demote_anchors_conflicting_with_lrc(
+                anchors, lyric_lines, lrc_lines, audio_duration=audio_duration
+            )
+            if demoted:
+                print(f"[INFO] Letra aprovada: {demoted} âncoras implausíveis demovidas.")
+        elif lrc_duration_mismatch(lrc_lines, audio_duration):
             print(
                 "[AVISO] Letra sincronizada (.lrc) ignorada: a duração implícita não bate "
                 "com a gravação baixada (provável versão diferente - ao vivo, remix, edição). "
                 "O alinhamento segue só com Whisper + forced alignment."
             )
         else:
-            demoted = demote_anchors_conflicting_with_lrc(anchors, lyric_lines, lrc_lines, audio_duration=audio_duration)
-            if demoted:
-                print(f"[INFO] Âncoras de linha do .lrc: {demoted} âncoras implausíveis demovidas.")
+            # Quem manda nos inícios de linha depende de QUANTO o Whisper
+            # entendeu. Com reconhecimento normal, a âncora medida é mais
+            # precisa que o início de linha do .lrc e continua ganhando. Abaixo
+            # do piso, as âncoras são reconhecidamente suspeitas (é a mesma
+            # condição que faz o app avisar o usuário) e o .lrc - já validado
+            # contra a duração do áudio logo acima - passa a ser a fonte boa.
+            recall = measured_recall(anchors)
+            trust_lrc = recall < LRC_OVERRIDE_RECALL_FLOOR
 
-            seeded = seed_line_anchors(anchors, lyric_lines, lrc_lines)
-            if seeded:
-                print(f"[INFO] Âncoras de linha do .lrc: {seeded} inícios de linha semeados.")
+            if trust_lrc:
+                print(
+                    f"[INFO] Reconhecimento baixo ({100*recall:.0f}%) e .lrc com duração "
+                    f"compatível - os inícios de linha da letra sincronizada passam a "
+                    f"ter prioridade sobre as âncoras do Whisper."
+                )
+                # Semeia PRIMEIRO: os postes do .lrc entram como verdade, e só
+                # depois a demoção limpa as âncoras do Whisper que brigam com
+                # eles. Na ordem inversa, a demoção julgaria contra postes que
+                # ainda não existem nos inícios de linha.
+                seeded = seed_line_anchors(anchors, lyric_lines, lrc_lines,
+                                           override_measured=True)
+                if seeded:
+                    print(f"[INFO] Âncoras de linha do .lrc: {seeded} inícios de linha semeados (prioritários).")
+                demoted = demote_anchors_conflicting_with_lrc(anchors, lyric_lines, lrc_lines, audio_duration=audio_duration)
+                if demoted:
+                    print(f"[INFO] Âncoras de linha do .lrc: {demoted} âncoras implausíveis demovidas.")
+            else:
+                demoted = demote_anchors_conflicting_with_lrc(anchors, lyric_lines, lrc_lines, audio_duration=audio_duration)
+                if demoted:
+                    print(f"[INFO] Âncoras de linha do .lrc: {demoted} âncoras implausíveis demovidas.")
+
+                seeded = seed_line_anchors(anchors, lyric_lines, lrc_lines)
+                if seeded:
+                    print(f"[INFO] Âncoras de linha do .lrc: {seeded} inícios de linha semeados.")
 
     # o fim do áudio limita o encadeamento das palavras sem âncora - sem isso
     # a interpolação vaza pra depois da música (ver timings_from_anchors)
