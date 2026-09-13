@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Every version has a ready-to-use installer on **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — each release's notes also carry the install instructions.
 
-## [Unreleased]
+## [0.21.0] — 2026-09-13 (contribution by [@DJ-Joel](https://github.com/DJ-Joel))
 
 ### Added
 
