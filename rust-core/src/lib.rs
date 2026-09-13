@@ -7,4 +7,4 @@
 
 pub mod ultrastar_writer;
 
-pub use ultrastar_writer::{Note, Song};
+pub use ultrastar_writer::{Note, NoteOverlap, Song};

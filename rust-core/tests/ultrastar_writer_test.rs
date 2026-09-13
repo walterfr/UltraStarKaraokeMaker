@@ -100,6 +100,22 @@ fn detects_forced_overlap() {
 }
 
 #[test]
+fn find_overlaps_devolve_os_numeros_sem_texto() {
+    // O app monta a frase no idioma do usuário a partir DESTES campos - por
+    // isso eles importam mais que o texto em si.
+    let mut song = load_fixture();
+    song.notes[0].duration_beats = 100;
+    let found = song.find_overlaps();
+    assert_eq!(found.len(), 1, "deveria achar exatamente um overlap");
+    let o = found[0];
+    assert_eq!(o.first_index, 0);
+    assert_eq!(o.second_index, 1);
+    assert_eq!(o.first_end_beat, song.notes[0].start_beat + 100);
+    assert_eq!(o.second_start_beat, song.notes[1].start_beat);
+    assert!(o.second_start_beat < o.first_end_beat);
+}
+
+#[test]
 fn no_overlap_in_clean_fixture() {
     let song = load_fixture();
     let warnings = song.validate_no_overlap();

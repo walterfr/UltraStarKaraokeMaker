@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/tauri";
 import { ask } from "@tauri-apps/api/dialog";
+import { PitchDetector } from "pitchy";
 import { useI18n } from "../i18n";
+import LyricTimingPanel from "./LyricTimingPanel";
+import {
+  approvedSettledForRows,
+  approvedTimesForRows,
+  buildTimingRows,
+  formatTimeExact,
+  parseApprovedMeta,
+  parseTimeInput,
+} from "./lrcTiming";
 
 // USKMaker - Fase 4: tela de revisão manual do alinhamento (estilo Yass).
 //
@@ -119,6 +129,10 @@ interface ReviewData {
   audioPath: string | null;
   vocalsPath: string | null;
   outDir: string;
+  /** Raw _synced_lyrics.lrc of the package, when the package still has one. */
+  syncedLyrics: string | null;
+  /** Link this package was generated from, when it can still be recovered. */
+  sourceUrl: string | null;
 }
 
 interface SaveResult {
@@ -129,6 +143,16 @@ interface SaveResult {
 interface Props {
   outDir: string;
   onClose: () => void;
+  /**
+   * Sends this song's details back to the main form so it can be generated
+   * again without hunting for the link and retyping the name. Optional: the
+   * review screen also opens from places where there is no form to fill.
+   */
+  onSendToForm?: (details: {
+    artist: string;
+    title: string;
+    sourceUrl: string | null;
+  }) => void;
 }
 
 // ---- conversões beat <-> segundos (fórmula oficial do UltraStar:
@@ -219,11 +243,27 @@ type DragMode =
   // Retângulo de seleção (Shift+arraste no fundo do piano roll).
   | { kind: "rubberband"; startX: number; startY: number; curX: number; curY: number };
 
-export default function ReviewScreen({ outDir, onClose }: Props) {
+export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   const { t, lang } = useI18n();
   const [song, setSong] = useState<USSong | null>(null);
   const [audioPath, setAudioPath] = useState<string | null>(null);
   const [vocalsPath, setVocalsPath] = useState<string | null>(null);
+  // Lyric timing table: the package's original .lrc, whether the panel is
+  // open, and the times the user typed (kept here so closing the panel does
+  // not throw the typing away).
+  const [syncedLyrics, setSyncedLyrics] = useState<string | null>(null);
+  const [sourceUrl, setSourceUrl] = useState<string | null>(null);
+  const [showTiming, setShowTiming] = useState(false);
+  const [lyricFixes, setLyricFixes] = useState<Record<number, string>>({});
+  // Linhas já resolvidas pelo usuário (índice da linha no .lrc): tempo
+  // digitado, ou ouvida e marcada como certa. Param de ser cobradas.
+  const [settledLines, setSettledLines] = useState<Set<number>>(new Set());
+  // Versão aprovada desta música na biblioteca (%LOCALAPPDATA%\USKMaker\
+  // approved-lyrics), se já existir - null = ainda não aprovada.
+  const [approvedText, setApprovedText] = useState<string | null>(null);
+  const [approvedPath, setApprovedPath] = useState<string | null>(null);
+  const [savingApproved, setSavingApproved] = useState(false);
+  const [approvedError, setApprovedError] = useState<string | null>(null);
   const [audioChoice, setAudioChoice] = useState<"mix" | "vocals">("mix");
   const [selected, setSelected] = useState<number | null>(null);
   // Seleção múltipla (issue #11): size<=1 = comportamento de sempre (inspector
@@ -236,6 +276,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
   const [dirty, setDirty] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const minimapRef = useRef<HTMLCanvasElement | null>(null);
@@ -258,13 +299,29 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
   const pianoRollRef = useRef<HTMLCanvasElement | null>(null);
   const pianoAudioRef = useRef<AudioContext | null>(null);
 
+  // Sing-along: microfone ligado é por-sessão, não persiste (pedir permissão
+  // sozinho ao reabrir a tela seria intrusivo). micTrailRef guarda os últimos
+  // ~5s de {tempo, pitch} amostrados do mic, pra desenhar o rastro em draw().
+  const [micEnabled, setMicEnabled] = useState(false);
+  const micEnabledRef = useRef(false);
+  const [micError, setMicError] = useState<string | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const micAnalyserRef = useRef<AnalyserNode | null>(null);
+  const micDetectorRef = useRef<PitchDetector<Float32Array> | null>(null);
+  const micTrailRef = useRef<{ t: number; pitch: number }[]>([]);
+  const MIC_TRAIL_S = 5;
+  const MIC_CLARITY_MIN = 0.9;
+
   const PIANO_ROLL_W = 92;
 
   // Fecha o AudioContext do piano roll ao desmontar - sem isso, cada vez que
   // a tela de revisão abre/fecha na mesma sessão sobra um contexto de áudio
-  // vivo (o navegador tem teto de contextos simultâneos).
+  // vivo (o navegador tem teto de contextos simultâneos). Para o microfone
+  // também: fechar só o AudioContext NÃO libera o hardware - sem parar as
+  // tracks, o indicador de gravação do navegador fica aceso.
   useEffect(() => {
     return () => {
+      micStreamRef.current?.getTracks().forEach((t) => t.stop());
       pianoAudioRef.current?.close();
     };
   }, []);
@@ -272,6 +329,30 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
   songRef.current = song;
   selectedRef.current = selected;
   multiSelectedRef.current = multiSelected;
+  micEnabledRef.current = micEnabled;
+
+  // Busca a versão aprovada assim que artista/título são conhecidos. Não
+  // achar é o caso normal (a maioria das músicas nunca foi conferida), então
+  // erro aqui só apaga o estado - nunca atrapalha a revisão.
+  useEffect(() => {
+    if (!song) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const text = await invoke<string | null>("load_approved_lyrics", {
+          artist: song.artist,
+          title: song.title,
+          lang,
+        });
+        if (!cancelled) setApprovedText(text ?? null);
+      } catch {
+        if (!cancelled) setApprovedText(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [song?.artist, song?.title, lang]);
 
   // ---------------------------------------------------------------- carga
   useEffect(() => {
@@ -283,6 +364,8 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
         setSong(data.song);
         setAudioPath(data.audioPath);
         setVocalsPath(data.vocalsPath);
+        setSyncedLyrics(data.syncedLyrics ?? null);
+        setSourceUrl(data.sourceUrl ?? null);
         if (!data.audioPath && data.vocalsPath) setAudioChoice("vocals");
         // enquadra o início da música (primeira nota - 1s)
         if (data.song.notes.length > 0) {
@@ -432,6 +515,58 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
     oscillator.start();
     oscillator.stop(ctx.currentTime + 1);
   }, []);
+
+  // Liga/desliga o microfone pro sing-along. Reusa o MESMO AudioContext do
+  // piano roll (pianoAudioRef) em vez de criar um segundo - o navegador tem
+  // teto de contextos simultâneos e não há motivo pra gastar dois. O node do
+  // mic NÃO se conecta ao destino (ctx.destination) - só ao analyser -, senão
+  // o áudio do microfone tocaria de volta no alto-falante.
+  const toggleMic = useCallback(async () => {
+    if (micEnabled) {
+      micStreamRef.current?.getTracks().forEach((t) => t.stop());
+      micStreamRef.current = null;
+      micAnalyserRef.current = null;
+      micDetectorRef.current = null;
+      micTrailRef.current = [];
+      setMicEnabled(false);
+      return;
+    }
+
+    setMicError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      const AudioContextClass =
+        window.AudioContext ||
+        (
+          window as typeof window & {
+            webkitAudioContext?: typeof AudioContext;
+          }
+        ).webkitAudioContext;
+      if (!AudioContextClass) throw new Error("AudioContext indisponível");
+      if (!pianoAudioRef.current) {
+        pianoAudioRef.current = new AudioContextClass();
+      }
+      const ctx = pianoAudioRef.current;
+      if (ctx.state === "suspended") {
+        void ctx.resume();
+      }
+
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 2048;
+      source.connect(analyser);
+
+      micStreamRef.current = stream;
+      micAnalyserRef.current = analyser;
+      micDetectorRef.current = PitchDetector.forFloat32Array(analyser.fftSize);
+      micTrailRef.current = [];
+      setMicEnabled(true);
+    } catch (e) {
+      setMicError(t("micPermissionDenied"));
+      console.error("getUserMedia falhou:", e);
+    }
+  }, [micEnabled, t]);
 
   // ------------------------------------------------------------- desenho
   const draw = useCallback(() => {
@@ -756,6 +891,21 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
       ctx.strokeRect(rx, ry, rw, rh);
     }
 
+    // --- rastro do sing-along (mic), por cima das notas ---
+    if (micEnabledRef.current && micTrailRef.current.length > 1) {
+      ctx.strokeStyle = "#ff3fa4";
+      ctx.fillStyle = "#ff3fa4";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      micTrailRef.current.forEach((sample, i) => {
+        const mx = xOf(sample.t);
+        const my = yOfPitch(sample.pitch);
+        if (i === 0) ctx.moveTo(mx, my);
+        else ctx.lineTo(mx, my);
+      });
+      ctx.stroke();
+    }
+
     // --- playhead ---
     const audio = audioRef.current;
     if (audio && !isNaN(audio.currentTime)) {
@@ -822,6 +972,122 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
 
   // versos derivados (painel lateral de navegação)
   const verses = useMemo(() => (song ? deriveVerses(song, t("revNoText")) : []), [song, t]);
+
+  // Linhas da tabela "Tempos da letra": cada linha do .lrc do LRCLIB ao lado
+  // do que a IA realmente mediu naquele verso. Só existe quando o pacote
+  // ainda tem o _synced_lyrics.lrc.
+  const timingRows = useMemo(() => {
+    if (!song || !syncedLyrics) return [];
+    return buildTimingRows(syncedLyrics, verses, song.notes, (beat) =>
+      beatToSec(song, beat)
+    );
+  }, [song, syncedLyrics, verses]);
+  const timingSuspectCount = useMemo(
+    () => timingRows.filter((r) => r.suspect && !settledLines.has(r.lrcIndex)).length,
+    [timingRows, settledLines]
+  );
+
+  const toggleSettled = useCallback((lrcIndex: number, value: boolean) => {
+    setSettledLines((prev) => {
+      const next = new Set(prev);
+      if (value) next.add(lrcIndex);
+      else next.delete(lrcIndex);
+      return next;
+    });
+  }, []);
+
+  // Digitar um tempo válido JÁ é uma decisão sobre a linha - não faz sentido
+  // pedir para o usuário marcar a caixinha depois de corrigir o tempo.
+  const handleCorrectionChange = useCallback((lrcIndex: number, raw: string) => {
+    setLyricFixes((prev) => ({ ...prev, [lrcIndex]: raw }));
+    if (parseTimeInput(raw) !== null) {
+      setSettledLines((prev) => {
+        if (prev.has(lrcIndex)) return prev;
+        const next = new Set(prev);
+        next.add(lrcIndex);
+        return next;
+      });
+    }
+  }, []);
+
+  // Preenche a coluna "tempo correto" com o que já foi aprovado antes, só
+  // onde o tempo aprovado DIFERE do .lrc do pacote - assim a tabela continua
+  // sendo uma comparação, e o que o usuário digitou não se perde.
+  useEffect(() => {
+    if (!approvedText || timingRows.length === 0) return;
+    const times = approvedTimesForRows(approvedText, timingRows);
+    setLyricFixes((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const row of timingRows) {
+        const t = times[row.lrcIndex];
+        if (t === undefined) continue;
+        if (Math.abs(t - row.lrcTime) <= 0.05) continue;
+        if (next[row.lrcIndex] !== undefined) continue;
+        next[row.lrcIndex] = formatTimeExact(t);
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+    setSettledLines((prev) => {
+      const marks = approvedSettledForRows(approvedText, timingRows);
+      if (marks.size === 0) return prev;
+      const next = new Set(prev);
+      let changed = false;
+      marks.forEach((idx) => {
+        if (!next.has(idx)) {
+          next.add(idx);
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [approvedText, timingRows]);
+
+  // Duração do áudio conferido quando a aprovação foi salva, se houver.
+  const approvedAudioSeconds = useMemo(
+    () => (approvedText ? parseApprovedMeta(approvedText).audioSeconds : null),
+    [approvedText]
+  );
+
+  const handleSaveApproved = useCallback(async () => {
+    const s0 = songRef.current;
+    if (!s0 || timingRows.length === 0) return;
+    setSavingApproved(true);
+    setApprovedError(null);
+    try {
+      const lines = timingRows.map((r) => {
+        const typed = parseTimeInput(lyricFixes[r.lrcIndex] ?? "");
+        return { time: typed ?? r.lrcTime, text: r.lrcText };
+      });
+      // Posições DENTRO de `lines` (mesma ordem das linhas da tabela) - é
+      // assim que o arquivo grava quais o usuário já resolveu.
+      const settled = timingRows
+        .map((r, i) => (settledLines.has(r.lrcIndex) ? i : -1))
+        .filter((i) => i >= 0);
+      const path = await invoke<string>("save_approved_lyrics", {
+        artist: s0.artist,
+        title: s0.title,
+        lines,
+        settled,
+        audioSeconds: peaksRef.current?.duration ?? 0,
+        lang,
+      });
+      setApprovedPath(path);
+      // Relê o que acabou de ser gravado: o painel passa a mostrar o estado
+      // real do arquivo, não uma suposição do que foi enviado.
+      const text = await invoke<string | null>("load_approved_lyrics", {
+        artist: s0.artist,
+        title: s0.title,
+        lang,
+      });
+      setApprovedText(text ?? null);
+    } catch (err) {
+      setApprovedError(typeof err === "string" ? err : t("ltSaveError"));
+    } finally {
+      setSavingApproved(false);
+    }
+  }, [timingRows, lyricFixes, settledLines, lang, t]);
   const versesRef = useRef<Verse[]>([]);
   versesRef.current = verses;
 
@@ -899,6 +1165,24 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
         if (audio.currentTime > visibleEnd - 1 || audio.currentTime < start) {
           viewRef.current.start = Math.max(0, audio.currentTime - 1);
         }
+        // Sing-along: amostra o mic só enquanto toca (o rastro só faz
+        // sentido acompanhando a reprodução).
+        if (micEnabledRef.current && micAnalyserRef.current && micDetectorRef.current) {
+          const analyser = micAnalyserRef.current;
+          const detector = micDetectorRef.current;
+          const buffer = new Float32Array(analyser.fftSize);
+          analyser.getFloatTimeDomainData(buffer);
+          const [hz, clarity] = detector.findPitch(buffer, analyser.context.sampleRate);
+          if (clarity >= MIC_CLARITY_MIN && hz > 0) {
+            const midi = 69 + 12 * Math.log2(hz / 440);
+            const pitch = midi - 60; // UltraStar pitch 0 == C4 == MIDI 60
+            micTrailRef.current.push({ t: audio.currentTime, pitch });
+          }
+          const cutoff = audio.currentTime - MIC_TRAIL_S;
+          while (micTrailRef.current.length && micTrailRef.current[0].t < cutoff) {
+            micTrailRef.current.shift();
+          }
+        }
         draw();
       }
       rafRef.current = requestAnimationFrame(tick);
@@ -935,6 +1219,38 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
     },
     [draw]
   );
+
+  // Usado pela tabela de tempos: posiciona e TOCA a partir de um segundo
+  // qualquer (o seekTo só posiciona). Limpa o playUntil pra não herdar a
+  // parada automática do "tocar só esta nota".
+  const playFrom = useCallback((sec: number) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    playUntilRef.current = null;
+    audio.currentTime = Math.max(0, sec);
+    audio.play();
+    draw();
+  }, [draw]);
+
+  // Devolve a música ao formulário principal. Alterações não salvas pedem
+  // confirmação, igual a fechar: sair daqui descarta do mesmo jeito.
+  const handleSendToForm = useCallback(async () => {
+    const s0 = songRef.current;
+    if (!s0 || !onSendToForm) return;
+    if (dirty) {
+      const ok = await ask(t("revConfirmDiscard"), { title: "USKMaker" });
+      if (!ok) return;
+    }
+    onSendToForm({ artist: s0.artist, title: s0.title, sourceUrl });
+  }, [onSendToForm, dirty, sourceUrl, t]);
+
+  // Para a reprodução - a tabela de tempos usa o mesmo botão pra tocar e parar.
+  const pausePlayback = useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    playUntilRef.current = null;
+    audio.pause();
+  }, []);
 
   const playNote = useCallback(
     (idx: number) => {
@@ -1310,6 +1626,11 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
         addNote();
         return;
       }
+      if (e.key.toLowerCase() === "m") {
+        e.preventDefault();
+        void toggleMic();
+        return;
+      }
 
       const sel = selectedRef.current;
       const s = songRef.current;
@@ -1410,7 +1731,7 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [togglePlay, undo, redo, mutate, playNote, draw]);
+  }, [togglePlay, undo, redo, mutate, playNote, draw, toggleMic]);
 
   // ------------------------------------------------------ ações pontuais
   // Generalização de deleteNote pra várias notas de uma vez (issue #11):
@@ -1537,6 +1858,30 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
     }
   }
 
+  // Refaz o .mp4 com os tempos recém-salvos. Deliberadamente um BOTÃO, e não
+  // parte do Save: renderizar leva de segundos a minutos, e quem está
+  // corrigindo alinhamento salva várias vezes seguidas - fazer isso a cada
+  // Save transformaria uma ação instantânea numa espera repetida.
+  async function handleRegenerateVideo() {
+    // Só faz sentido sobre o que está no disco. Com alterações pendentes o
+    // vídeo sairia com os tempos ANTIGOS - exatamente o problema que este
+    // botão existe para resolver.
+    if (dirty) {
+      setStatusMsg(t("regenVideoSaveFirst"));
+      return;
+    }
+    setRegenerating(true);
+    setStatusMsg(t("regenVideoRunning"));
+    try {
+      await invoke<string>("regenerate_video", { outDir, lang });
+      setStatusMsg(t("regenVideoDone"));
+    } catch (err) {
+      setError(typeof err === "string" ? err : t("revSaveError"));
+    } finally {
+      setRegenerating(false);
+    }
+  }
+
   async function handleClose() {
     if (dirty) {
       const leave = await ask(t("revConfirmDiscard"), { title: "USKMaker", type: "warning" });
@@ -1612,8 +1957,34 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
           <button className="secondary" onClick={handleClose}>
             {t("revClose")}
           </button>
+          {onSendToForm && (
+            <button
+              className="secondary"
+              title={t("revToFormHint")}
+              onClick={handleSendToForm}
+            >
+              {t("revToForm")}
+            </button>
+          )}
+          <button
+            className="secondary"
+            title={timingRows.length > 0 ? t("ltButtonHint") : t("ltNoLrc")}
+            onClick={() => setShowTiming(true)}
+            disabled={timingRows.length === 0}
+          >
+            {t("ltButton")}
+            {timingSuspectCount > 0 ? ` (${timingSuspectCount})` : ""}
+          </button>
           <button className="submit-button compact" onClick={handleSave} disabled={saving || !dirty}>
             {saving ? t("revSaving") : t("revSave")}
+          </button>
+          <button
+            className="secondary"
+            title={t("regenVideoHint")}
+            onClick={handleRegenerateVideo}
+            disabled={saving || regenerating}
+          >
+            {regenerating ? t("regenVideoRunning") : t("regenVideoButton")}
           </button>
         </div>
       </div>
@@ -1635,6 +2006,14 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
             <option value="vocals">{t("revListenVocals")}</option>
           </select>
         )}
+        <button
+          className={micEnabled ? "mic-on" : undefined}
+          onClick={() => void toggleMic()}
+          title={t("micToggleHint")}
+        >
+          {t("micToggleLabel")}
+        </button>
+        {micError && <span className="field-hint">{micError}</span>}
         <span className="toolbar-sep" />
         <label className="inline-label">
           {t("revGap")}
@@ -1896,6 +2275,27 @@ export default function ReviewScreen({ outDir, onClose }: Props) {
         </div>
       )}
       {!currentAudioFile && <div className="error-box">{t("revNoAudio")}</div>}
+
+      {showTiming && (
+        <LyricTimingPanel
+          rows={timingRows}
+          corrections={lyricFixes}
+          onCorrectionChange={handleCorrectionChange}
+          settled={settledLines}
+          onToggleSettled={toggleSettled}
+          onPlayFrom={playFrom}
+          onPause={pausePlayback}
+          isPlaying={playing}
+          hasApproved={approvedText !== null}
+          approvedAudioSeconds={approvedAudioSeconds}
+          audioSeconds={peaksRef.current?.duration ?? null}
+          approvedPath={approvedPath}
+          approvedError={approvedError}
+          saving={savingApproved}
+          onSaveApproved={handleSaveApproved}
+          onClose={() => setShowTiming(false)}
+        />
+      )}
 
       <audio
         ref={audioRef}

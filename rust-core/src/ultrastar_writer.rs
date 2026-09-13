@@ -52,6 +52,17 @@ fn default_note_type() -> String {
     ":".to_string()
 }
 
+/// Duas notas vizinhas que se sobrepõem no tempo: a primeira termina depois
+/// de a segunda começar. Índices são posições em `Song.notes`, e os tempos
+/// são BEATS (a mesma unidade da tela de revisão).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NoteOverlap {
+    pub first_index: usize,
+    pub first_end_beat: i64,
+    pub second_index: usize,
+    pub second_start_beat: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Song {
     pub title: String,
@@ -123,19 +134,42 @@ impl Song {
     /// Verifica a regra da spec: notas não podem se sobrepor
     /// (start da próxima >= fim da anterior). Retorna avisos, não erros -
     /// espelha o comportamento do Python (avisa mas ainda escreve o arquivo).
-    pub fn validate_no_overlap(&self) -> Vec<String> {
-        let mut warnings = Vec::new();
+    /// Sobreposições encontradas, em DADOS - sem texto.
+    ///
+    /// A mensagem para o usuário mora em quem tem idioma: o app (src-tauri)
+    /// monta o aviso em PT ou EN a partir daqui. Este crate não conhece
+    /// idioma nenhum, e não deveria: fixar a frase aqui foi o que fez os
+    /// avisos de validação chegarem em português a quem usa o app em inglês
+    /// (relatado pelo usuário, 07/09/2026).
+    pub fn find_overlaps(&self) -> Vec<NoteOverlap> {
+        let mut found = Vec::new();
         for i in 0..self.notes.len().saturating_sub(1) {
             let current_end = self.notes[i].start_beat + self.notes[i].duration_beats;
             let next_start = self.notes[i + 1].start_beat;
             if next_start < current_end {
-                warnings.push(format!(
-                    "Sobreposição entre nota {} (fim={}) e nota {} (início={})",
-                    i, current_end, i + 1, next_start
-                ));
+                found.push(NoteOverlap {
+                    first_index: i,
+                    first_end_beat: current_end,
+                    second_index: i + 1,
+                    second_start_beat: next_start,
+                });
             }
         }
-        warnings
+        found
+    }
+
+    /// Mesmas sobreposições já escritas em português, para o CLI deste crate
+    /// (`write_txt` imprime no stderr). O app NÃO usa isto - ver find_overlaps.
+    pub fn validate_no_overlap(&self) -> Vec<String> {
+        self.find_overlaps()
+            .into_iter()
+            .map(|o| {
+                format!(
+                    "Sobreposição entre nota {} (fim={}) e nota {} (início={})",
+                    o.first_index, o.first_end_beat, o.second_index, o.second_start_beat
+                )
+            })
+            .collect()
     }
 
     pub fn to_txt(&self) -> String {

@@ -35,6 +35,19 @@
 # foi pensado para rodar em GPU).
 
 # --- Download / extração de áudio ---
+# O yt-dlp ENVELHECE RÁPIDO: o YouTube muda o site e o download quebra até
+# sair versão nova. Um piso antigo aqui não é problema (o pip/uv instala a
+# mais recente), mas a versão instalada NÃO se atualiza sozinha depois.
+#
+# Quando um download começar a falhar (403 Forbidden, "unable to download
+# video data"), atualize só o yt-dlp - sem refazer o ambiente inteiro:
+#
+#   uv pip install --python <venv>\Scripts\python.exe --upgrade yt-dlp
+#
+# Se a versão estável ainda estiver quebrada, o canal de teste costuma ter a
+# correção antes (é onde as quebras do YouTube são consertadas primeiro):
+#
+#   ...--upgrade --prerelease allow "yt-dlp[default]"
 yt-dlp>=2024.4.9
 
 # --- Separação vocal ---
@@ -53,6 +66,22 @@ demucs>=4.0.1
 # o setup-sidecar.ps1 instala o extra certo depois deste arquivo; em install
 # manual, rode também: pip install "audio-separator[gpu]>=0.44.0" ([cpu] sem GPU).
 audio-separator>=0.44.0
+
+# audioread: o audio-separator FAZ `import audioread` (uvr_lib_v5/spec_utils.py)
+# mas NAO declara essa dependencia - ela vinha "de carona" no librosa, que a
+# exigia ate a 0.11.x. O librosa 1.0.0 deixou de exigir o audioread, entao o
+# pacote saiu como orfao na primeira atualizacao de verdade e o resgate de voz
+# principal quebrou com "ModuleNotFoundError: No module named 'audioread'".
+#
+# CASO REAL (2026-09-05): o setup passou a atualizar as libs de fato, trouxe o
+# librosa 1.0.0 e derrubou o resgate - sem erro visivel na geracao, so a
+# qualidade caindo (volta pro stem do Demucs). VERIFICADO nos metadados do
+# PyPI: librosa 0.11.0 declara `audioread>=2.1.9`; librosa 1.0.0 nao declara;
+# audio-separator 0.47.0 tambem nao declara, mas importa.
+#
+# Declarado aqui de proposito: e dependencia REAL do codigo que roda. Depender
+# do transitivo de outro pacote ja custou o resgate uma vez.
+audioread>=3.0.0
 
 # --- Forced alignment / transcrição ---
 # whisperx traz o whisper + wav2vec2 CTC para alinhamento por palavra.

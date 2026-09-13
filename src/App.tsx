@@ -9,6 +9,7 @@ import { isPermissionGranted, requestPermission, sendNotification } from "@tauri
 import { getVersion } from "@tauri-apps/api/app";
 import ReviewScreen from "./review/ReviewScreen";
 import { useI18n, StrKey } from "./i18n";
+import { isApprovedLrc } from "./review/lrcTiming";
 
 // USKMaker - tela principal.
 //
@@ -91,6 +92,69 @@ interface LrclibTrack {
   plainLyrics: string | null;
   syncedLyrics: string | null;
   instrumental?: boolean;
+  trackName?: string;
+  artistName?: string;
+  duration?: number;
+}
+
+/// Diferença máxima de duração, em segundos, para aceitar os TEMPOS de um
+/// registro do LRCLIB como sendo desta gravação.
+///
+/// Abaixo disto é a mesma música com ripagem/codificação levemente diferente,
+/// e os tempos servem. Acima, é outra montagem - versão extendida, ao vivo,
+/// edit de rádio com um verso a menos - cujos tempos não estão "um pouco
+/// errados", estão errados de um jeito que atrapalha. Nesse caso o pipeline
+/// fica só com o texto puro, que é o comportamento de antes.
+const MAX_DURATION_DIFF_S = 15;
+
+// Espelha lrc_duration_mismatch (python-sidecar/pipeline/align.py). Os dois
+// números têm de andar juntos: se divergirem, a UI escolhe um .lrc que o
+// sidecar depois joga fora - exatamente o que queremos parar de fazer.
+const LRC_HARD_MARGIN_S = 5;
+const LRC_MIN_COVERAGE = 0.5;
+
+/**
+ * Último instante REALMENTE cantado num .lrc: o maior timestamp que ainda
+ * tem texto depois dele. Linhas só com timestamp (marcadores de fim ou de
+ * trecho instrumental) não contam - é a mesma regra do parse_lrc do sidecar.
+ *
+ * POR QUE ISTO EXISTE, e não basta olhar o campo `duration` do registro:
+ * o LRCLIB é colaborativo e esse campo PODE ESTAR ERRADO. Caso real
+ * (2026-09-06, "Peter Murphy - Cuts You Up"): o registro 19409675 declara
+ * 254,8 s - batendo com a gravação - e carrega uma letra que vai até 5:12.
+ * Escolhendo pelo campo, pegávamos justamente esse; o sidecar então
+ * descartava a letra e a música saía com 17 linhas espremidas em 8 segundos.
+ * Os tempos DENTRO do arquivo não mentem; o metadado ao lado dele, sim.
+ */
+function lrcLastSungSecond(lrc: string): number | null {
+  let last: number | null = null;
+  for (const raw of lrc.split(/\r?\n/)) {
+    const stamps = [...raw.matchAll(/\[(\d+):(\d{1,2})(?:[.:](\d{1,3}))?\]/g)];
+    if (!stamps.length) continue;
+    const tail = stamps[stamps.length - 1];
+    const after = raw.slice((tail.index ?? 0) + tail[0].length).trim();
+    if (!after) continue;
+    for (const m of stamps) {
+      const secs =
+        parseInt(m[1], 10) * 60 + parseInt(m[2], 10) + (m[3] ? parseFloat("0." + m[3]) : 0);
+      if (last === null || secs > last) last = secs;
+    }
+  }
+  return last;
+}
+
+/** O .lrc pode ser desta gravação? Mesma regra do sidecar, aplicada ANTES. */
+function lrcFitsAudio(lrc: string, audioSeconds: number | null): boolean {
+  if (!audioSeconds || audioSeconds <= 0) return true; // sem duração não dá para julgar
+  const last = lrcLastSungSecond(lrc);
+  if (last === null) return false;
+  if (last > audioSeconds + LRC_HARD_MARGIN_S) return false;
+  return last / audioSeconds >= LRC_MIN_COVERAGE;
+}
+
+function fmtMMSS(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
 /// Converte um .lrc em letra "plana" (uma linha por frase, sem timestamps) -
@@ -114,7 +178,10 @@ interface PersistedSettings {
   withStems: boolean;
   duet: boolean;
   backtrack: boolean;
+  keepHarmonies: boolean;
   yargExport: boolean;
+  mp4Export: boolean;
+  whisperModel: string;
   romanize: boolean;
   audioFormat: "ogg" | "mp3";
   maxVideoResolution: number;
@@ -245,7 +312,17 @@ function App() {
   const [withStems, setWithStems] = useState(saved.withStems ?? false);
   const [duet, setDuet] = useState(saved.duet ?? false);
   const [backtrack, setBacktrack] = useState(saved.backtrack ?? false);
+  // Devolve as vozes de apoio ao instrumental. Só vale com o backtrack
+  // ligado - é ele que faz o áudio do pacote ser o instrumental.
+  const [keepHarmonies, setKeepHarmonies] = useState(saved.keepHarmonies ?? false);
   const [yargExport, setYargExport] = useState(saved.yargExport ?? false);
+  const [mp4Export, setMp4Export] = useState(saved.mp4Export ?? false);
+  const [whisperModel, setWhisperModel] = useState<string>(saved.whisperModel ?? "auto");
+  // Duração da faixa em segundos, quando conhecida (Buscar dados do vídeo, ou
+  // as tags de um arquivo local). É o que desempata a escolha de letra no
+  // LRCLIB - ver a nota longa em searchLyrics().
+  const [trackDuration, setTrackDuration] = useState<number | null>(null);
+  const [fetchingInfo, setFetchingInfo] = useState(false);
   const [romanize, setRomanize] = useState(saved.romanize ?? false);
   const [audioFormat, setAudioFormat] = useState<"ogg" | "mp3">(saved.audioFormat ?? "ogg");
   const [maxVideoResolution, setMaxVideoResolution] = useState(saved.maxVideoResolution ?? 1080);
@@ -300,6 +377,10 @@ function App() {
   const [setupLog, setSetupLog] = useState<string[]>([]);
   const [setupDone, setSetupDone] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
+  // Mesmo comando para os dois fluxos (o setup-sidecar.ps1 e idempotente e,
+  // desde 05/09/2026, atualiza as libs ao rodar de novo). O modo so decide
+  // QUAIS TEXTOS mostrar - nao muda o que e executado.
+  const [setupMode, setSetupMode] = useState<"setup" | "update">("setup");
 
   // splash: visível na abertura, some com fade (leve - overlay, sem janela extra)
   const [splashState, setSplashState] = useState<"show" | "fade" | "gone">("show");
@@ -343,9 +424,9 @@ function App() {
 
   // ------------------------------------------------ persistência leve
   useEffect(() => {
-    const settings: PersistedSettings = { sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, yargExport, romanize, audioFormat, maxVideoResolution };
+    const settings: PersistedSettings = { sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, keepHarmonies, yargExport, mp4Export, whisperModel, romanize, audioFormat, maxVideoResolution };
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  }, [sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, yargExport, romanize, audioFormat, maxVideoResolution]);
+  }, [sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, keepHarmonies, yargExport, mp4Export, whisperModel, romanize, audioFormat, maxVideoResolution]);
 
   // ------------------------------------------------ SÓ EM DEV: preview de estado
   // Abre a UI num estado simulado sem precisar do backend Tauri, para inspecionar
@@ -423,6 +504,24 @@ function App() {
     };
   }, []);
 
+  // ------------------------------------------- yt-dlp sempre em dia
+  // O yt-dlp envelhece rápido: o YouTube muda e o download quebra até sair
+  // versão nova, e a instalada não se atualiza sozinha depois do setup (um
+  // usuário levou 403 com uma instalação de dois meses). Roda UMA vez por
+  // abertura, em segundo plano, sem segurar nada da interface: se der errado,
+  // o app funciona exatamente como antes. O script preserva o canal instalado
+  // (estável ou teste) - atualizar quem está no teste "para o último estável"
+  // seria um downgrade que devolve o erro já resolvido.
+  useEffect(() => {
+    invoke<{ changed?: boolean; before?: string; after?: string }>("update_ytdlp", { lang })
+      .then((r) => {
+        if (r?.changed) console.info(`[yt-dlp] ${r.before} -> ${r.after}`);
+      })
+      .catch(() => {});
+    // Sem dependências: uma vez por abertura, e não a cada troca de idioma.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // --------------------------------------------- checagem de ambiente
   // Refaz ao trocar de idioma para a mensagem de erro (se houver) vir traduzida.
   useEffect(() => {
@@ -467,7 +566,8 @@ function App() {
     };
   }, []);
 
-  async function handleSetup() {
+  async function handleSetup(mode: "setup" | "update" = "setup") {
+    setSetupMode(mode);
     setSettingUp(true);
     setSetupLog([]);
     setSetupError(null);
@@ -539,6 +639,42 @@ function App() {
     }
   }
 
+  // Lê artista/título/duração do vídeo sem baixar nada. A duração é o ponto:
+  // sem ela, escolher entre as dezenas de registros do LRCLIB é sorteio.
+  async function fetchVideoInfo() {
+    const url = youtubeUrl.trim();
+    if (!url) return;
+    setFetchingInfo(true);
+    setLyricsSearchMsg(null);
+    try {
+      const info = await invoke<{
+        title?: string | null; artist?: string | null; duration?: number | null;
+      }>("fetch_video_info", { url, lang });
+      // Preenche, mas NÃO é a palavra final: o usuário confere e corrige antes
+      // de buscar a letra. Título de vídeo é território de "Official Video
+      // [HD Remaster]", e um artista errado envenena a consulta ao LRCLIB
+      // antes de qualquer ordenação por duração poder ajudar.
+      if (info?.artist) setArtist(info.artist);
+      if (info?.title) setTitle(info.title);
+      if (info?.duration && info.duration > 0) {
+        setTrackDuration(info.duration);
+        const mins = Math.floor(info.duration / 60);
+        const secs = Math.round(info.duration % 60);
+        setLyricsSearchMsg({
+          kind: "ok",
+          text: t("fetchInfoDone", { dur: `${mins}:${String(secs).padStart(2, "0")}` }),
+        });
+      } else {
+        setLyricsSearchMsg({ kind: "warn", text: t("fetchInfoFailed") });
+      }
+    } catch {
+      // Conveniência, nunca um bloqueio: dá pra digitar tudo à mão.
+      setLyricsSearchMsg({ kind: "warn", text: t("fetchInfoFailed") });
+    } finally {
+      setFetchingInfo(false);
+    }
+  }
+
   async function searchLyrics() {
     if (!artist.trim() || !title.trim()) {
       setLyricsSearchMsg({ kind: "err", text: t("lyricsNeedArtistTitle") });
@@ -551,6 +687,30 @@ function App() {
     setLyricsSearching(true);
     setLyricsSearchMsg(null);
     try {
+      // ANTES do LRCLIB: uma letra APROVADA por ouvido (tela de revisão ->
+      // "Tempos da letra") já foi conferida NESTA gravação, então vale mais
+      // que qualquer palpite da base colaborativa. Existindo, nem consulta a
+      // internet - e o sidecar reconhece a marca de aprovação e desliga as
+      // checagens de desconfiança (ver align.lrc_is_approved).
+      try {
+        const approved = await invoke<string | null>("load_approved_lyrics", {
+          artist: artist.trim(),
+          title: title.trim(),
+          lang,
+        });
+        const approvedText = approved?.trim() ?? "";
+        const approvedPlain = approvedText ? lrcToPlain(approvedText) : "";
+        if (approvedPlain) {
+          setLyricsText(approvedPlain);
+          setSyncedLyrics(approvedText);
+          setLyricsSearchMsg({ kind: "ok", text: t("lyricsApprovedUsed") });
+          return;
+        }
+      } catch {
+        // Biblioteca indisponível é perder um atalho, não a busca: segue
+        // normalmente para o LRCLIB.
+      }
+
       const resp = await httpFetch<LrclibTrack>("https://lrclib.net/api/get", {
         method: "GET",
         timeout: 20,
@@ -567,8 +727,121 @@ function App() {
         }
         return;
       }
-      const synced = resp.data.syncedLyrics?.trim() || null;
-      const plain = resp.data.plainLyrics?.trim() || (synced ? lrcToPlain(synced) : "");
+      // ---------------------------------------------------------------
+      // ESCOLHA DO REGISTRO
+      //
+      // O /api/get devolve UM "melhor palpite". A base é colaborativa e a
+      // mesma música costuma ter dezenas de registros (edit de rádio, versão
+      // de álbum, extendida), então esse palpite pode ser um SEM sincronia -
+      // ou um COM sincronia que é de OUTRA gravação.
+      //
+      // BUG DA PRIMEIRA VERSÃO (03/09/2026): a checagem de duração só rodava
+      // quando o /api/get não trazia sincronia. Se ele trouxesse, o registro
+      // era aceito sem conferir o tamanho - e todo o mecanismo de duração
+      // ficava de fora justamente no caminho mais comum. A duração tem que
+      // decidir QUAL registro, não só servir de plano B.
+      //
+      // Regra: sincronia é FILTRO (um registro sem tempos não acrescenta
+      // nada - o texto puro é igual em todos); a duração ORDENA entre os
+      // sincronizados; e além de MAX_DURATION_DIFF_S não é a mesma gravação,
+      // é outra montagem, cujos tempos atrapalham mais do que ajudam.
+      // ---------------------------------------------------------------
+      const primary = resp.data;
+      const known = trackDuration && trackDuration > 0 ? trackDuration : null;
+      const gapOf = (r: LrclibTrack): number | null =>
+        known && r.duration ? Math.abs(r.duration - known) : null;
+
+      let synced: string | null = null;
+      let plain = "";
+      let durationPickNote: string | null = null;
+      // O registro escolhido cabe nesta gravacao? Decide a mensagem no fim.
+      let timingFits = true;
+
+      const primaryGap = gapOf(primary);
+      const primaryUsable =
+        !!primary.syncedLyrics?.trim() &&
+        (primaryGap === null || primaryGap <= MAX_DURATION_DIFF_S) &&
+        // Campo `duration` batendo NAO basta - ver lrcLastSungSecond.
+        lrcFitsAudio(primary.syncedLyrics!.trim(), known);
+
+      if (primaryUsable) {
+        synced = primary.syncedLyrics!.trim();
+        if (primaryGap !== null) durationPickNote = String(Math.round(primaryGap));
+      }
+
+      // Procura quando o palpite não serve: sem sincronia, ou sincronizado mas
+      // de uma gravação com outra duração.
+      if (!synced) {
+        try {
+          const alt = await httpFetch<LrclibTrack[]>("https://lrclib.net/api/search", {
+            method: "GET",
+            timeout: 20,
+            responseType: ResponseType.JSON,
+            query: { artist_name: artist.trim(), track_name: title.trim() },
+            headers: { "Lrclib-Client": "USKMaker/0.1.0 (https://github.com/walterfr/UltraStarKaraokeMaker)" },
+          });
+          if (alt.ok && Array.isArray(alt.data)) {
+            const wantedArtist = artist.trim().toLowerCase();
+            const wantedTitle = title.trim().toLowerCase();
+
+            let candidates = alt.data.filter((r) => r.syncedLyrics?.trim());
+            const exact = candidates.filter(
+              (r) =>
+                (r.artistName ?? "").toLowerCase() === wantedArtist &&
+                (r.trackName ?? "").toLowerCase() === wantedTitle
+            );
+            if (exact.length) candidates = exact;
+
+            if (known && candidates.length) {
+              // PRIMEIRO os que realmente CABEM no audio, medidos pelos
+              // tempos de DENTRO do arquivo. Entre eles, o que termina mais
+              // perto do fim da musica - e o que cobre a gravacao inteira.
+              const fitting = candidates.filter((r) =>
+                lrcFitsAudio(r.syncedLyrics!.trim(), known)
+              );
+              if (fitting.length) {
+                const byEnd = fitting
+                  .map((r) => ({
+                    r,
+                    d: Math.abs((lrcLastSungSecond(r.syncedLyrics!.trim()) ?? 0) - known),
+                  }))
+                  .sort((a, b) => a.d - b.d);
+                synced = byEnd[0].r.syncedLyrics!.trim();
+                plain = byEnd[0].r.plainLyrics?.trim() || "";
+              } else {
+                // Nenhum cabe. Nao somos nos que decidimos jogar fora - o
+                // sidecar ainda faz essa checagem, e agora o usuario e
+                // avisado ANTES de gerar. Melhor o menos ruim do que nada.
+                const scored = candidates
+                  .map((r) => ({ r, d: Math.abs((r.duration ?? 0) - known) }))
+                  .sort((a, b) => a.d - b.d);
+                if (scored[0].d <= MAX_DURATION_DIFF_S) {
+                  synced = scored[0].r.syncedLyrics!.trim();
+                  plain = scored[0].r.plainLyrics?.trim() || "";
+                  durationPickNote = String(Math.round(scored[0].d));
+                  timingFits = false;
+                }
+              }
+            } else if (candidates.length) {
+              // Sem duração conhecida (o usuário não usou "Buscar dados do
+              // vídeo"): melhor um sincronizado qualquer que nenhum.
+              synced = candidates[0].syncedLyrics!.trim();
+              plain = candidates[0].plainLyrics?.trim() || "";
+            }
+          }
+        } catch {
+          // Busca alternativa é bônus: falhar nela nunca pode derrubar a
+          // consulta principal, que já tinha dado certo.
+        }
+      }
+
+      // Texto puro: do registro escolhido, senão do palpite, senão derivado
+      // do .lrc. Sempre há letra para o usuário revisar, mesmo sem tempos.
+      plain =
+        plain ||
+        primary.plainLyrics?.trim() ||
+        (synced ? lrcToPlain(synced) : "");
+
       if (!plain) {
         // inclui o caso instrumental=true (faixa sem letra)
         setLyricsSearchMsg({ kind: "warn", text: t("lyricsNotFound") });
@@ -576,9 +849,19 @@ function App() {
       }
       setLyricsText(plain);
       setSyncedLyrics(synced);
+      if (synced && !lrcFitsAudio(synced, known)) timingFits = false;
       setLyricsSearchMsg(
         synced
-          ? { kind: "ok", text: t("lyricsFoundSynced") }
+          ? !timingFits
+            ? { kind: "warn", text: t("lyricsTimingSuspect") }
+            : {
+                kind: "ok",
+                text: durationPickNote
+                  ? t("lyricsPickedByDuration", { diff: durationPickNote })
+                  : known
+                    ? t("lyricsPickedByTiming")
+                    : t("lyricsFoundSynced"),
+              }
           : { kind: "warn", text: t("lyricsFoundPlain") }
       );
     } catch (err) {
@@ -639,8 +922,11 @@ function App() {
       withStems,
       duet,
       backtrack,
+      keepHarmonies: backtrack ? keepHarmonies : false,
       transpose: parseInt(transpose, 10) || 0,
       yargExport,
+      mp4Export,
+      whisperModel,
       romanize,
       audioFormat,
       maxVideoResolution: sourceMode === "youtube" && withVideo ? maxVideoResolution : 0,
@@ -794,6 +1080,28 @@ function App() {
   async function handleGenerate() {
     if (isRunning) return;
     const formErr = validate();
+
+    // AVISO ANTES DE GERAR (2026-09-06): uma letra sincronizada cujos tempos
+    // nao cabem no audio e o sintoma de gravacao errada, e o sidecar VAI
+    // descarta-la (lrc_duration_mismatch) - o alinhamento entao corre so com
+    // a IA e costuma sair bem pior. Antes disto o usuario so descobria depois
+    // de tres minutos de processamento. A checagem e a mesma; a diferenca e
+    // que agora ela roda enquanto ainda da para trocar a letra.
+    // Letra aprovada não passa por aqui: os tempos foram conferidos de
+    // ouvido nesta gravação, e o sidecar também não vai descartá-los.
+    if (!formErr && syncedLyrics && !isApprovedLrc(syncedLyrics) &&
+        trackDuration && trackDuration > 0 &&
+        !lrcFitsAudio(syncedLyrics, trackDuration)) {
+      const lastSung = lrcLastSungSecond(syncedLyrics);
+      const ok = await ask(
+        t("lyricsTimingConfirm", {
+          lrc: lastSung === null ? "?" : fmtMMSS(lastSung),
+          audio: fmtMMSS(trackDuration),
+        }),
+        { title: "USKMaker" }
+      );
+      if (!ok) return;
+    }
     const pending = queue.filter((it) => it.status === "pending");
 
     // Se o formulário está preenchido, a música atual entra como último item.
@@ -921,7 +1229,31 @@ function App() {
   }
 
   if (reviewDir) {
-    return <ReviewScreen outDir={reviewDir} onClose={() => setReviewDir(null)} />;
+    return (
+      <ReviewScreen
+        outDir={reviewDir}
+        onClose={() => setReviewDir(null)}
+        onSendToForm={(d) => {
+          // Volta ao formulário já preenchido: nome, e o link quando ele pôde
+          // ser recuperado do log. A letra é LIMPA de propósito - o passo
+          // seguinte é "Buscar letra", que traz a versão APROVADA se existir.
+          setArtist(d.artist);
+          setTitle(d.title);
+          if (d.sourceUrl) {
+            setSourceMode("youtube");
+            setYoutubeUrl(d.sourceUrl);
+          }
+          setLyricsText("");
+          setSyncedLyrics(null);
+          setTrackDuration(null);
+          setLyricsSearchMsg({
+            kind: "ok",
+            text: d.sourceUrl ? t("revToFormDone") : t("revToFormDoneNoUrl"),
+          });
+          setReviewDir(null);
+        }}
+      />
+    );
   }
 
   // Painel de análise do pacote escolhido: sugere baixar capa/fundo/vídeo que
@@ -1047,6 +1379,16 @@ function App() {
           )}
         </div>
         <div className="header-actions">
+          {env && envProblems.length === 0 && (
+            <button
+              className="mini-button"
+              onClick={() => handleSetup("update")}
+              disabled={isRunning || settingUp}
+              title={t("updateHint")}
+            >
+              {t("updateButton")}
+            </button>
+          )}
           <button className="mini-button" onClick={pickPackageToReview} disabled={isRunning}>
             {t("reviewExisting")}
           </button>
@@ -1073,7 +1415,7 @@ function App() {
           </ul>
           {!settingUp ? (
             <>
-              <button className="submit-button compact" onClick={handleSetup}>
+              <button className="submit-button compact" onClick={() => handleSetup("setup")}>
                 {t("setupButton")}
               </button>
               <p className="field-hint">{t("setupHint")}</p>
@@ -1097,7 +1439,26 @@ function App() {
           )}
         </div>
       )}
-      {setupDone && env?.sidecarOk && <div className="info-box">{t("setupDone")}</div>}
+      {settingUp && setupMode === "update" && (
+        <div className="info-box setup-progress">
+          <p>
+            <span className="spinner" /> {t("updateRunning")}
+          </p>
+          <div className="setup-log">
+            {setupLog.slice(-14).map((l, i) => (
+              <div key={i}>{l}</div>
+            ))}
+          </div>
+        </div>
+      )}
+      {setupError && setupMode === "update" && !settingUp && (
+        <div className="error-box">
+          {t("updateErrorPrefix")} {setupError}
+        </div>
+      )}
+      {setupDone && env?.sidecarOk && (
+        <div className="info-box">{setupMode === "update" ? t("updateDone") : t("setupDone")}</div>
+      )}
 
       <div className="workspace">
       <section className={`ws-left${isRunning ? " dim" : ""}`}>
@@ -1128,6 +1489,14 @@ function App() {
             placeholder="https://www.youtube.com/watch?v=..."
             disabled={isRunning}
           />
+          <button
+            className="secondary compact"
+            title={t("fetchInfoHint")}
+            onClick={fetchVideoInfo}
+            disabled={isRunning || fetchingInfo || !youtubeUrl.trim()}
+          >
+            {fetchingInfo ? t("fetchInfoRunning") : t("fetchInfoButton")}
+          </button>
           <label className="checkbox-line" title={t("withVideoTip")}>
             <input
               type="checkbox"
@@ -1309,6 +1678,18 @@ function App() {
           </select>
         </div>
         <div className="field-group">
+          <label title={t("whisperModelHint")}>
+            {t("whisperModelLabel")}
+            <select
+              value={whisperModel}
+              onChange={(e) => setWhisperModel(e.target.value)}
+              disabled={isRunning}
+            >
+              <option value="auto">{t("whisperAuto")}</option>
+              <option value="medium">{t("whisperFast")}</option>
+              <option value="large-v3">{t("whisperBest")}</option>
+            </select>
+          </label>
           <label title={t("audioFormatHint")}>
             {t("audioFormatLabel")}
             <span className="tip-mark" aria-hidden="true">?</span>
@@ -1359,6 +1740,26 @@ function App() {
             disabled={isRunning}
           />
           {t("backtrackLabel")}
+          <span className="tip-mark" aria-hidden="true">?</span>
+        </label>
+        <label className="checkbox-line" title={t("keepHarmoniesHint")}>
+          <input
+            type="checkbox"
+            checked={backtrack && keepHarmonies}
+            onChange={(e) => setKeepHarmonies(e.target.checked)}
+            disabled={isRunning || !backtrack}
+          />
+          {t("keepHarmoniesLabel")}
+          <span className="tip-mark" aria-hidden="true">?</span>
+        </label>
+        <label className="checkbox-line" title={t("mp4ExportHint")}>
+          <input
+            type="checkbox"
+            checked={mp4Export}
+            onChange={(e) => setMp4Export(e.target.checked)}
+            disabled={isRunning}
+          />
+          {t("mp4ExportLabel")}
           <span className="tip-mark" aria-hidden="true">?</span>
         </label>
         <label className="checkbox-line" title={t("yargExportHint")}>

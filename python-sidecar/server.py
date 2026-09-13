@@ -14,7 +14,9 @@ PROTOCOLO
     {"url":..., "file":..., "lyrics_path":..., "title":..., "artist":...,
      "language":..., "out_dir":..., "bpm":..., "gap_ms":..., "device":...,
      "with_video":..., "bg_video":..., "bg_video_url":..., "clean_work":...,
-     "with_stems":..., "duet":..., "backtrack":..., "transpose":..., "yarg_export":..., "romanize":...,
+     "with_stems":..., "duet":..., "backtrack":..., "transpose":..., "yarg_export":...,
+#      "keep_harmonies":...,
+     "mp4_export":..., "romanize":...,
      "synced_lyrics_path":..., "audio_format":..., "max_video_resolution":...}
     {"cmd":"shutdown"}  -> encerra o servidor.
 
@@ -35,6 +37,7 @@ em diante eles já estão quentes.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
@@ -43,6 +46,35 @@ from pathlib import Path
 from rich.console import Console
 
 import main as pipeline_main
+
+# Nome do arquivo-marcador que liga o vídeo de karaokê sem passar pela UI.
+MP4_MARKER_FILENAME = "MP4-ON.txt"
+
+
+def _mp4_export_fallback() -> bool:
+    """
+    Valor de `mp4_export` quando o job NÃO traz a chave.
+
+    Para que isto existe: o app instalado carrega os .py deste sidecar como
+    ARQUIVOS SOLTOS (ver a lista `resources` em src-tauri/tauri.conf.json), mas
+    o executável que monta o job é compilado. Ou seja: dá para atualizar o
+    Python de uma instalação existente copiando arquivos por cima, enquanto
+    qualquer campo NOVO no job exige recompilar o app inteiro (Rust + Node).
+    Este fallback quebra essa dependência - quem já tem o USKMaker instalado
+    consegue testar o vídeo antes de existir a caixinha na tela.
+
+    Duas formas de ligar, as duas fáceis de desfazer:
+      - criar um arquivo vazio chamado MP4-ON.txt nesta mesma pasta; ou
+      - definir a variável de ambiente USKMAKER_MP4=1.
+
+    Quando a UI passar "mp4_export" no job, o valor da UI MANDA e este
+    fallback nem é consultado (é o default do .get). Então isto não vira uma
+    segunda fonte de verdade competindo com a caixinha - só cobre o caso em
+    que a chave não veio.
+    """
+    if os.environ.get("USKMAKER_MP4", "").strip() in ("1", "true", "True"):
+        return True
+    return (Path(__file__).resolve().parent / MP4_MARKER_FILENAME).exists()
 
 
 def _run_one(job: dict) -> None:
@@ -86,6 +118,9 @@ def _run_one(job: dict) -> None:
                     backtrack=job.get("backtrack", False),
                     transpose=job.get("transpose", 0),
                     yarg_export=job.get("yarg_export", False),
+                    keep_harmonies=job.get("keep_harmonies", False),
+                    mp4_export=job.get("mp4_export", _mp4_export_fallback()),
+                    whisper_model=job.get("whisper_model", "auto"),
                     romanize=job.get("romanize", False),
                     synced_lyrics_path=job.get("synced_lyrics_path"),
                     audio_format=job.get("audio_format", "ogg"),

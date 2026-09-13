@@ -53,7 +53,8 @@ from pipeline.download import download_background_video, get_source_audio
 from pipeline.filenames import sanitize_filename
 from pipeline.metadata import fetch_metadata
 from pipeline.proc_utils import ensure_ffmpeg_on_path, ffmpeg_exe, run_subprocess
-from pipeline.separate import isolate_lead_vocal, separate_vocals
+from pipeline.separate import isolate_backing_vocals, isolate_lead_vocal, separate_vocals
+from pipeline.video_export import export_karaoke_video, ffmpeg_has_libass
 
 # Quando o stdout/stderr do Python não está conectado a um terminal real (é
 # o caso ao rodar via Tauri), o Python usa buffer em bloco por padrão.
@@ -112,6 +113,26 @@ ALIGNMENT_FAILED_PCT = 50.0
 # gold/áudio, não erro do pipeline - não disparam, corretamente.)
 WHISPER_RECALL_FLOOR = 0.60
 
+# Teto de interpolação abaixo do qual um word-recall baixo deixa de ser alarme
+# e vira informação - DESDE QUE a letra sincronizada tenha entrado de verdade.
+#
+# POR QUE: o aviso de recall mede só o que o Whisper reconheceu SOZINHO
+# (anchor + fuzzy). Ele não enxerga o realinhamento nem o .lrc - a limitação
+# que o comentário do WHISPER_RECALL_FLOOR acima já registra ("o realinhamento
+# salva, mas o word-recall não sabe disso", caso Chop Suey).
+#
+# MEDIDO (2026-09-06, três músicas reais do usuário, todas com recall parecido):
+#   Peter Murphy - Cuts You Up   recall 55%, .lrc RECUSADO  -> 38% interpoladas
+#   Killing Joke - Sanity        recall 53%, .lrc aceito    ->  0% interpoladas
+#   Ministry - Revenge           recall 59%, .lrc aceito    ->  0,3% interpoladas
+#
+# Ou seja: o recall quase não previu a qualidade; o .lrc caber na gravação
+# previu tudo. As duas boas levaram o mesmo susto vermelho da quebrada, o que
+# treina o usuário a ignorar o aviso - e aí ele não serve pra nada quando
+# importa. `by_source["lrc"] > 0` só acontece quando a letra sincronizada
+# passou na checagem de duração E semeou inícios de linha de fato.
+LRC_RESCUE_INTERP_PCT = 5.0
+
 _debug_log_path: Path | None = None
 
 
@@ -165,6 +186,59 @@ def resolve_device(requested: str) -> str:
     return "cpu"
 
 
+# Modelo do Whisper usado no alinhamento.
+#
+# POR QUE ISTO VIROU UMA OPÇÃO (relato real, 02/09/2026 - "Camouflage - The
+# Great Commandment"): o tamanho estava FIXO em "medium", como default de
+# parâmetro do align_lyrics_to_audio, e não era exposto em lugar nenhum -
+# nem CLI, nem servidor, nem interface. Toda música do mundo usava "medium".
+#
+# Naquele caso o Whisper reconheceu 50% das palavras; abaixo disso as âncoras
+# começam a cair na sílaba errada e o que está entre elas é esticado pra caber.
+# O log AVISOU ("reconhecimento da letra ficou baixo"), a pipeline tentou dois
+# resgates e os dois pioraram - mas não havia nenhuma alavanca pra puxar.
+# Música densa, voz processada, banda alemã cantando em inglês: é exatamente o
+# terreno onde um modelo maior ouve mais palavras.
+#
+# O "large-v3" pede ~3 GB de VRAM em float16 contra ~1,6 GB do "medium" - o
+# projeto nasceu numa RTX 4060 de 8 GB, onde "medium" era a escolha prudente,
+# mas a folga existe em qualquer placa moderna.
+WHISPER_MODEL_DEFAULT = "medium"
+WHISPER_MODEL_BEST = "large-v3"
+
+# VRAM (em GB) a partir da qual o "auto" escolhe o modelo grande. 6 GB é
+# deliberadamente folgado: o large-v3 usa ~3 GB, e a margem cobre o
+# fragmento que o torch já mantém reservado. Abaixo disso, "medium" - melhor
+# um alinhamento razoável que um estouro de memória no meio da música.
+WHISPER_LARGE_MIN_VRAM_GB = 6.0
+
+
+def resolve_whisper_model(requested: str, device: str) -> str:
+    """
+    Traduz a escolha do usuário no nome real do modelo.
+
+    "auto" (padrão) olha a VRAM: placa com folga usa o modelo grande, o resto
+    segue no "medium" de antes. Assim quem tem GPU boa ganha precisão sem
+    pedir nada, e nenhuma máquina modesta passa a estourar memória - a
+    correção não pode piorar quem já estava funcionando.
+
+    Na CPU é SEMPRE "medium": o large-v3 na CPU levaria dezenas de minutos por
+    música, o que na prática é o mesmo que travar.
+    """
+    if requested and requested not in ("auto", ""):
+        return requested
+    if device != "cuda":
+        return WHISPER_MODEL_DEFAULT
+    try:
+        import torch
+        vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+        if vram_gb >= WHISPER_LARGE_MIN_VRAM_GB:
+            return WHISPER_MODEL_BEST
+    except Exception:
+        pass
+    return WHISPER_MODEL_DEFAULT
+
+
 def get_audio_duration_seconds(path: Path) -> float:
     """Lê só o cabeçalho do áudio (rápido, não carrega o arquivo inteiro)."""
     info = sf.info(str(path))
@@ -203,6 +277,28 @@ def convert_audio(source_wav: Path, dest: Path, audio_format: str = "ogg",
     else:
         cmd += ["-c:a", "libvorbis", "-q:a", str(quality)]
     cmd += [str(dest)]
+    run_subprocess(cmd)
+
+
+def mix_backing_into_instrumental(instrumental: Path, backing: Path, dest: Path) -> None:
+    """
+    Soma as vozes de apoio de volta ao instrumental, no nível natural delas.
+
+    `normalize=0` é o detalhe que importa: por padrão o filtro amix divide
+    cada entrada pelo número de entradas, o que baixaria a música inteira
+    ~6 dB sem ninguém pedir. Medido em teste antes de entrar aqui: com um
+    stem de apoio SILENCIOSO, o volume médio da saída fica idêntico ao do
+    instrumental sozinho - prova de que nada foi atenuado no caminho.
+    """
+    cmd = [
+        ffmpeg_exe(), "-y",
+        "-i", str(instrumental),
+        "-i", str(backing),
+        "-filter_complex",
+        "[0:a][1:a]amix=inputs=2:duration=longest:normalize=0[out]",
+        "-map", "[out]",
+        str(dest),
+    ]
     run_subprocess(cmd)
 
 
@@ -349,6 +445,9 @@ def run_pipeline(
     backtrack: bool = False,
     transpose: int = 0,
     yarg_export: bool = False,
+    keep_harmonies: bool = False,
+    mp4_export: bool = False,
+    whisper_model: str = "auto",
     romanize: bool = False,
     audio_format: str = "ogg",
     max_video_resolution: int = 0,
@@ -451,8 +550,12 @@ def run_pipeline(
 
     console.rule("[bold cyan]Etapa 4/6 — Alinhando letra ao áudio (WhisperX, âncora+interpolação)")
     debug_log("ETAPA 4 - iniciando align_lyrics_to_audio")
+    whisper_model_size = resolve_whisper_model(whisper_model, device)
+    debug_log(f"ETAPA 4 - modelo Whisper: {whisper_model_size} (pedido: {whisper_model})")
+    console.print(f"[cyan]Modelo de reconhecimento:[/cyan] {whisper_model_size}")
     word_timings = align_lyrics_to_audio(
         stems.vocals, Path(lyrics_path), language=language, device=device,
+        whisper_model_size=whisper_model_size,
         synced_lyrics_path=Path(synced_lyrics_path) if synced_lyrics_path else None,
     )
     debug_log(f"ETAPA 4 - concluída. {len(word_timings)} palavras")
@@ -489,6 +592,7 @@ def run_pipeline(
             lead_vocals = isolate_lead_vocal(stems.vocals, work_path / "lead_vocal")
             retry_timings = align_lyrics_to_audio(
                 lead_vocals, Path(lyrics_path), language=language, device=device,
+                whisper_model_size=whisper_model_size,
                 synced_lyrics_path=Path(synced_lyrics_path) if synced_lyrics_path else None,
             )
             retry_interp = alignment_stats(retry_timings)["by_source"]["interpolated"]
@@ -545,6 +649,7 @@ def run_pipeline(
         try:
             vad_retry_timings = align_lyrics_to_audio(
                 stems.vocals, Path(lyrics_path), language=language, device=device,
+                whisper_model_size=whisper_model_size,
                 synced_lyrics_path=Path(synced_lyrics_path) if synced_lyrics_path else None,
                 vad_options={"vad_onset": 0.3, "vad_offset": 0.2},
             )
@@ -606,6 +711,7 @@ def run_pipeline(
             stems2 = separate_vocals(source.audio_wav, work_path / "stems_retry", device=device)
             retry_timings = align_lyrics_to_audio(
                 stems2.vocals, Path(lyrics_path), language=language, device=device,
+                whisper_model_size=whisper_model_size,
                 synced_lyrics_path=Path(synced_lyrics_path) if synced_lyrics_path else None,
             )
             retry_interp = alignment_stats(retry_timings)["by_source"]["interpolated"]
@@ -684,20 +790,37 @@ def run_pipeline(
     # "ancorada", só que no lugar errado).
     measured = by_source["anchor"] + by_source["fuzzy"]
     wrecall = measured / max(len(word_timings), 1)
+    # A letra sincronizada segurou o alinhamento? Ver LRC_RESCUE_INTERP_PCT.
+    lrc_carried = by_source["lrc"] > 0 and pct <= LRC_RESCUE_INTERP_PCT
     if wrecall < WHISPER_RECALL_FLOOR and pct <= ALIGNMENT_FAILED_PCT:
         # o "pct <= ..." evita avisar duas vezes a mesma música (se o interp já
         # disparou o alarme forte acima, não repete)
-        console.print(
-            f"[bold red]ATENÇÃO[/bold red] O reconhecimento da letra ficou baixo "
-            f"({100*wrecall:.0f}% das palavras) - o Whisper pode ter entendido outra "
-            "coisa e ancorado no lugar errado. O pacote pode sair fora de sincronia."
-        )
-        console.print(
-            "    [yellow]Vale conferir a sincronia e, se estiver ruim, GERAR DE NOVO "
-            "(a separação de voz varia a cada tentativa). Confira também se a letra bate "
-            "com ESTA gravação.[/yellow]"
-        )
-        debug_log(f"WORD-RECALL BAIXO: {100*wrecall:.0f}% (âncoras podem estar erradas)")
+        if lrc_carried:
+            # Recall baixo, mas quase nada foi estimado E o .lrc entrou: o risco
+            # que este aviso descreve (ancorar no lugar errado) foi justamente o
+            # que o .lrc corrigiu, demovendo âncoras implausíveis. Informa, sem
+            # alarme - um vermelho aqui seria treinar o usuário a ignorá-lo.
+            console.print(
+                f"[green]OK[/green] O Whisper reconheceu pouco ({100*wrecall:.0f}% das "
+                f"palavras), mas a letra sincronizada foi aceita e segurou o alinhamento "
+                f"({by_source['lrc']} inícios de linha, {pct:.1f}% estimadas)."
+            )
+            debug_log(
+                f"WORD-RECALL BAIXO: {100*wrecall:.0f}% - coberto pelo .lrc "
+                f"({by_source['lrc']} inícios de linha, {pct:.1f}% interpoladas)"
+            )
+        else:
+            console.print(
+                f"[bold red]ATENÇÃO[/bold red] O reconhecimento da letra ficou baixo "
+                f"({100*wrecall:.0f}% das palavras) - o Whisper pode ter entendido outra "
+                "coisa e ancorado no lugar errado. O pacote pode sair fora de sincronia."
+            )
+            console.print(
+                "    [yellow]Vale conferir a sincronia e, se estiver ruim, GERAR DE NOVO "
+                "(a separação de voz varia a cada tentativa). Confira também se a letra bate "
+                "com ESTA gravação.[/yellow]"
+            )
+            debug_log(f"WORD-RECALL BAIXO: {100*wrecall:.0f}% (âncoras podem estar erradas)")
 
     # Checagem de cobertura: avisa se a letra termina muito antes do áudio
     # (refrão repetido escrito só uma vez - erro comum de letras "(2x)").
@@ -865,6 +988,28 @@ def run_pipeline(
     # fonte. Alinhamento/pitch usam o VOCAL e não são afetados. A qualidade é a
     # da separação do Demucs (nunca perfeita - pode sobrar resíduo de voz).
     audio_src = stems.instrumental if backtrack else source.audio_wav
+
+    # Harmonias de volta (opt-in): o Demucs tira TODA voz, inclusive o apoio.
+    # Aqui um segundo modelo separa voz principal de apoio DENTRO do stem
+    # vocal, e só o apoio volta pro instrumental. Não-fatal: se falhar, o
+    # pacote sai com o instrumental puro de sempre, como antes.
+    if backtrack and keep_harmonies:
+        console.print("[cyan]Recuperando vozes de apoio/harmonias...[/cyan]")
+        debug_log("HARMONIAS - iniciando isolate_backing_vocals")
+        try:
+            backing = isolate_backing_vocals(stems.vocals, work_path / "backing_vocals")
+            mixed = work_path / "instrumental_com_harmonias.wav"
+            mix_backing_into_instrumental(stems.instrumental, backing, mixed)
+            audio_src = mixed
+            debug_log(f"HARMONIAS - concluído. fonte do áudio final: {mixed}")
+            console.print("[green]OK[/green] Vozes de apoio somadas ao instrumental.")
+        except Exception as e:
+            debug_log(f"HARMONIAS - falhou (ignorado): {e}")
+            console.print(
+                f"[yellow]AVISO[/yellow] Não consegui recuperar as vozes de apoio: {e}. "
+                f"O pacote sai com o instrumental normal."
+            )
+
     debug_log(f"Convertendo áudio final para .ogg (backtrack={backtrack}, transpose={transpose}, fonte={audio_src})")
     final_audio_dest = out_path / final_audio_name
     convert_audio(audio_src, final_audio_dest, audio_format=audio_format, pitch_semitones=transpose)
@@ -897,6 +1042,49 @@ def run_pipeline(
                 f"[yellow]AVISO[/yellow] Não consegui exportar para o YARG: {e}. "
                 f"O pacote UltraStar está OK."
             )
+
+    # Vídeo de karaokê (opt-in): renderiza "<base> (Karaoke).mp4" - a letra
+    # preenchendo sílaba a sílaba por cima do fundo, para tocar em qualquer
+    # TV/telefone, sem precisar do jogo instalado.
+    #
+    # Roda por ÚLTIMO de propósito. É o passo mais demorado depois da IA
+    # (minutos, dependendo do tamanho do fundo) e é o mais dispensável: quando
+    # ele chega, o pacote UltraStar inteiro já está escrito e válido no disco.
+    # Por isso o try/except só AVISA - a mesma regra do YARG acima: um extra
+    # não derruba uma geração que já deu certo.
+    #
+    # Reusa `final_audio_dest` (o áudio que foi para o pacote), então backtrack
+    # e transposição valem no vídeo sem nenhum código extra aqui. E ANTES do
+    # clean_work, que não importa para este passo (nada vem de _work) mas
+    # mantém a ordem "tudo que gera arquivo primeiro, limpeza depois".
+    if mp4_export:
+        debug_log("Exportando vídeo de karaokê (.mp4)")
+        if not ffmpeg_has_libass():
+            console.print(
+                "[yellow]AVISO[/yellow] O ffmpeg encontrado não tem suporte a "
+                "legendas (libass), então não dá para gravar a letra no vídeo. "
+                "O pacote UltraStar está OK. Rode o setup do ambiente de novo "
+                "para baixar o ffmpeg completo."
+            )
+        else:
+            console.print("[cyan]Renderizando vídeo de karaokê (.mp4)...[/cyan]")
+            try:
+                mp4_path = export_karaoke_video(
+                    song,
+                    out_path,
+                    file_base,
+                    audio_path=final_audio_dest,
+                    video_path=(out_path / video_filename) if video_filename else None,
+                    background_path=(out_path / background_filename) if background_filename else None,
+                    cover_path=metadata.cover_path,
+                )
+                console.print(f"[green]OK[/green] Vídeo de karaokê pronto: {mp4_path}")
+            except Exception as e:
+                debug_log(f"Falha ao renderizar o vídeo de karaokê (ignorada): {e}")
+                console.print(
+                    f"[yellow]AVISO[/yellow] Não consegui renderizar o vídeo de "
+                    f"karaokê: {e}. O pacote UltraStar está OK."
+                )
 
     # Limpeza opcional da pasta _work (intermediários: áudio bruto, stems do
     # Demucs, vídeo bruto). Só roda se o usuário pediu, e nunca derruba um
@@ -956,6 +1144,11 @@ if __name__ == "__main__":
     parser.add_argument("--backtrack", action="store_true", help="Backtrack: o áudio do pacote é o INSTRUMENTAL (sem voz-guia), karaokê puro")
     parser.add_argument("--transpose", type=int, default=0, help="Transpõe o pacote N semitons (áudio via rubberband + pitches das notas). 0 = tom original")
     parser.add_argument("--yarg-export", action="store_true", help="Exporta também uma subpasta no layout do YARG (notes.txt + song.ini + stems song.ogg/vocals.ogg)")
+    parser.add_argument("--keep-harmonies", action="store_true", help="Mantém as vozes de apoio/harmonias no áudio do pacote (só a voz principal é removida). Custa uma separação a mais.")
+    parser.add_argument("--whisper-model", default="auto",
+                        choices=["auto", "medium", "large-v3", "large-v2", "small"],
+                        help="Modelo de reconhecimento do alinhamento. auto = large-v3 em GPU com VRAM sobrando, senão medium")
+    parser.add_argument("--mp4-export", action="store_true", help="Renderiza também um vídeo de karaokê '<base> (Karaoke).mp4' (letra sincronizada gravada por cima do fundo)")
     parser.add_argument("--romanize", action="store_true", help="Reescreve o texto das notas em romaji (Hepburn) via pykakasi - para letras japonesas")
     parser.add_argument(
         "--synced-lyrics",
@@ -989,6 +1182,9 @@ if __name__ == "__main__":
             backtrack=args.backtrack,
             transpose=args.transpose,
             yarg_export=args.yarg_export,
+            keep_harmonies=args.keep_harmonies,
+            mp4_export=args.mp4_export,
+            whisper_model=args.whisper_model,
             romanize=args.romanize,
             synced_lyrics_path=args.synced_lyrics,
             audio_format=args.audio_format,

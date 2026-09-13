@@ -26,6 +26,105 @@ from pathlib import Path
 
 from .proc_utils import ffmpeg_exe, run_subprocess
 
+# Quantas vezes tentar de novo quando o YouTube recusa de forma TRANSITÓRIA.
+# 403 no meio do download é um modo de falha conhecido e INTERMITENTE do lado
+# do YouTube (yt-dlp issue #17395, aberta): a mesma URL costuma funcionar numa
+# nova tentativa, sem mudar nada. Uma tentativa extra é barata; várias só
+# fariam o usuário esperar mais por algo que não vai melhorar sozinho.
+YT_DLP_RETRIES = 1
+
+# Trechos que marcam uma falha TRANSITÓRIA (vale tentar de novo). Qualquer
+# outra coisa - vídeo privado, removido, restrição de idade - é permanente e
+# repetir só gastaria o tempo do usuário.
+_TRANSIENT_MARKERS = (
+    "403", "forbidden", "unable to download video data",
+    "timed out", "timeout", "connection reset", "temporarily",
+    "429", "too many requests",
+)
+
+# Falhas permanentes que têm uma explicação ÚTIL em português. O objetivo é o
+# usuário ler UMA linha e saber o que fazer, em vez de um traceback de Python.
+_KNOWN_CAUSES = (
+    ("sign in to confirm your age",
+     "O vídeo tem restrição de idade e exige login no YouTube."),
+    ("private video",
+     "O vídeo é privado."),
+    ("video unavailable",
+     "O vídeo não está disponível (removido ou bloqueado na sua região)."),
+    ("sign in to confirm you",
+     "O YouTube pediu verificação de robô para este download."),
+    ("requested format is not available",
+     "O YouTube não ofereceu nenhum formato compatível para este vídeo."),
+    ("403", "O YouTube recusou o download (403). Costuma ser temporário."),
+)
+
+
+def _extract_yt_dlp_error(output: str) -> str:
+    """
+    Pesca a linha que interessa da saída do yt-dlp.
+
+    O yt-dlp escreve o motivo real numa linha "ERROR: ..." no meio de dezenas
+    de linhas de progresso. Sem isto, o que chega ao usuário é o traceback do
+    subprocess.CalledProcessError - que mostra o COMANDO inteiro e esconde o
+    MOTIVO. Foi exatamente o que aconteceu num relato real (02/09/2026): o
+    "HTTP Error 403: Forbidden" estava lá, enterrado.
+    """
+    for line in reversed((output or "").splitlines()):
+        if line.strip().upper().startswith("ERROR:"):
+            return line.strip()[6:].strip()
+    return ""
+
+
+def _friendly_download_error(raw: str) -> str:
+    """Traduz o erro do yt-dlp para uma frase acionável (ou devolve o cru)."""
+    low = raw.lower()
+    for marker, explanation in _KNOWN_CAUSES:
+        if marker in low:
+            return explanation
+    return raw or "o yt-dlp falhou sem dizer o motivo"
+
+
+def run_yt_dlp(cmd: list[str], what: str = "o vídeo") -> None:
+    """
+    Roda o yt-dlp, tentando de novo em falha transitória e reportando o
+    motivo REAL em vez do traceback do subprocesso.
+
+    POR QUE ISTO EXISTE (relato real, 02/09/2026): um download falhou com
+    "HTTP Error 403: Forbidden" e o usuário recebeu na tela o
+    CalledProcessError cru - a linha de comando inteira com todos os
+    argumentos, e nenhuma pista do motivo. Quem não programa não tem como
+    ler aquilo. O motivo estava no log, mas ninguém deveria precisar abrir
+    o log para descobrir que o YouTube simplesmente recusou.
+    """
+    import subprocess
+
+    last_error = ""
+    for attempt in range(YT_DLP_RETRIES + 1):
+        try:
+            run_subprocess(cmd)
+            return
+        except subprocess.CalledProcessError as e:
+            output = (e.stderr or "") + "\n" + (e.output or "")
+            last_error = _extract_yt_dlp_error(output)
+            transient = any(m in last_error.lower() for m in _TRANSIENT_MARKERS)
+
+            if transient and attempt < YT_DLP_RETRIES:
+                print(
+                    f"[download] O YouTube recusou ({last_error}). "
+                    f"Isso costuma ser temporário - tentando mais uma vez..."
+                )
+                continue
+
+            detalhe = _friendly_download_error(last_error)
+            dica = (
+                " Se persistir, use o modo ARQUIVO LOCAL (baixe a música por "
+                "fora e aponte o app para ela) ou atualize o yt-dlp - o YouTube "
+                "muda com frequência e o yt-dlp precisa acompanhar."
+            )
+            raise RuntimeError(
+                f"Não consegui baixar {what} do YouTube. {detalhe}{dica}"
+            ) from None
+
 
 @dataclass
 class SourceAudio:
@@ -101,7 +200,7 @@ def download_from_youtube(url: str, out_dir: Path) -> Path:
     # NOTA: se o YouTube pedir autenticação (idade/região), gere um cookies.txt
     # e adicione "--cookies", "cookies.txt" na lista acima.
 
-    run_subprocess(cmd)
+    run_yt_dlp(cmd, "o áudio")
 
     if not audio_wav.exists():
         raise RuntimeError("yt-dlp rodou mas " + str(audio_wav) + " não foi encontrado.")
@@ -147,9 +246,19 @@ def download_from_youtube_with_video(url: str, out_dir: Path, max_resolution: in
         "-o", output_template,
         url,
     ]
-    run_subprocess(cmd)
+    run_yt_dlp(cmd, "o vídeo")
 
-    video_candidates = list(out_dir.glob("video.*"))
+    # SÓ containers de vídeo entram aqui. O .wav extraído logo abaixo é
+    # escrito NESTA pasta com o mesmo prefixo "video." - e numa SEGUNDA
+    # geração na mesma pasta (intermediários mantidos, "Gerar de novo") ele
+    # é o "video.*" mais recente, porque o yt-dlp nem toca no .mp4 que já
+    # estava baixado. O caminho do vídeo virava então o próprio .wav, e o
+    # ffmpeg recebia a mesma coisa como entrada E saída:
+    #   "Output ... same as Input #0 - exiting / cannot edit files in-place"
+    # Bug real relatado pelo usuário em 08/09/2026.
+    video_candidates = [
+        p for p in out_dir.glob("video.*") if p.suffix.lower() != ".wav"
+    ]
     if not video_candidates:
         raise RuntimeError("yt-dlp rodou mas nenhum vídeo foi encontrado em " + str(out_dir))
     video_path = max(video_candidates, key=lambda p: p.stat().st_mtime)
@@ -207,7 +316,10 @@ def download_background_video(url_or_query: str, out_dir: Path) -> Path | None:
         url_or_query,
     ]
     try:
-        run_subprocess(cmd)
+        # Também passa pelo run_yt_dlp: ganha a retentativa em falha
+        # transitória. Continua NÃO-FATAL - o fundo é um extra, e um pacote
+        # sem videoclipe é perfeitamente válido.
+        run_yt_dlp(cmd, "o videoclipe de fundo")
     except Exception as e:
         print(f"[AVISO] Download do videoclipe de fundo falhou (seguindo sem vídeo): {e}")
         return None
