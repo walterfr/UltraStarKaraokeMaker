@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/tauri";
 import { ask } from "@tauri-apps/api/dialog";
+import { PitchDetector } from "pitchy";
 import { useI18n } from "../i18n";
 import LyricTimingPanel from "./LyricTimingPanel";
 import {
@@ -298,13 +299,29 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   const pianoRollRef = useRef<HTMLCanvasElement | null>(null);
   const pianoAudioRef = useRef<AudioContext | null>(null);
 
+  // Sing-along: microfone ligado é por-sessão, não persiste (pedir permissão
+  // sozinho ao reabrir a tela seria intrusivo). micTrailRef guarda os últimos
+  // ~5s de {tempo, pitch} amostrados do mic, pra desenhar o rastro em draw().
+  const [micEnabled, setMicEnabled] = useState(false);
+  const micEnabledRef = useRef(false);
+  const [micError, setMicError] = useState<string | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const micAnalyserRef = useRef<AnalyserNode | null>(null);
+  const micDetectorRef = useRef<PitchDetector<Float32Array> | null>(null);
+  const micTrailRef = useRef<{ t: number; pitch: number }[]>([]);
+  const MIC_TRAIL_S = 5;
+  const MIC_CLARITY_MIN = 0.9;
+
   const PIANO_ROLL_W = 92;
 
   // Fecha o AudioContext do piano roll ao desmontar - sem isso, cada vez que
   // a tela de revisão abre/fecha na mesma sessão sobra um contexto de áudio
-  // vivo (o navegador tem teto de contextos simultâneos).
+  // vivo (o navegador tem teto de contextos simultâneos). Para o microfone
+  // também: fechar só o AudioContext NÃO libera o hardware - sem parar as
+  // tracks, o indicador de gravação do navegador fica aceso.
   useEffect(() => {
     return () => {
+      micStreamRef.current?.getTracks().forEach((t) => t.stop());
       pianoAudioRef.current?.close();
     };
   }, []);
@@ -312,6 +329,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   songRef.current = song;
   selectedRef.current = selected;
   multiSelectedRef.current = multiSelected;
+  micEnabledRef.current = micEnabled;
 
   // Busca a versão aprovada assim que artista/título são conhecidos. Não
   // achar é o caso normal (a maioria das músicas nunca foi conferida), então
@@ -497,6 +515,58 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     oscillator.start();
     oscillator.stop(ctx.currentTime + 1);
   }, []);
+
+  // Liga/desliga o microfone pro sing-along. Reusa o MESMO AudioContext do
+  // piano roll (pianoAudioRef) em vez de criar um segundo - o navegador tem
+  // teto de contextos simultâneos e não há motivo pra gastar dois. O node do
+  // mic NÃO se conecta ao destino (ctx.destination) - só ao analyser -, senão
+  // o áudio do microfone tocaria de volta no alto-falante.
+  const toggleMic = useCallback(async () => {
+    if (micEnabled) {
+      micStreamRef.current?.getTracks().forEach((t) => t.stop());
+      micStreamRef.current = null;
+      micAnalyserRef.current = null;
+      micDetectorRef.current = null;
+      micTrailRef.current = [];
+      setMicEnabled(false);
+      return;
+    }
+
+    setMicError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      const AudioContextClass =
+        window.AudioContext ||
+        (
+          window as typeof window & {
+            webkitAudioContext?: typeof AudioContext;
+          }
+        ).webkitAudioContext;
+      if (!AudioContextClass) throw new Error("AudioContext indisponível");
+      if (!pianoAudioRef.current) {
+        pianoAudioRef.current = new AudioContextClass();
+      }
+      const ctx = pianoAudioRef.current;
+      if (ctx.state === "suspended") {
+        void ctx.resume();
+      }
+
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 2048;
+      source.connect(analyser);
+
+      micStreamRef.current = stream;
+      micAnalyserRef.current = analyser;
+      micDetectorRef.current = PitchDetector.forFloat32Array(analyser.fftSize);
+      micTrailRef.current = [];
+      setMicEnabled(true);
+    } catch (e) {
+      setMicError(t("micPermissionDenied"));
+      console.error("getUserMedia falhou:", e);
+    }
+  }, [micEnabled, t]);
 
   // ------------------------------------------------------------- desenho
   const draw = useCallback(() => {
@@ -821,6 +891,21 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
       ctx.strokeRect(rx, ry, rw, rh);
     }
 
+    // --- rastro do sing-along (mic), por cima das notas ---
+    if (micEnabledRef.current && micTrailRef.current.length > 1) {
+      ctx.strokeStyle = "#ff3fa4";
+      ctx.fillStyle = "#ff3fa4";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      micTrailRef.current.forEach((sample, i) => {
+        const mx = xOf(sample.t);
+        const my = yOfPitch(sample.pitch);
+        if (i === 0) ctx.moveTo(mx, my);
+        else ctx.lineTo(mx, my);
+      });
+      ctx.stroke();
+    }
+
     // --- playhead ---
     const audio = audioRef.current;
     if (audio && !isNaN(audio.currentTime)) {
@@ -1079,6 +1164,24 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
         const visibleEnd = start + w / pxPerSec;
         if (audio.currentTime > visibleEnd - 1 || audio.currentTime < start) {
           viewRef.current.start = Math.max(0, audio.currentTime - 1);
+        }
+        // Sing-along: amostra o mic só enquanto toca (o rastro só faz
+        // sentido acompanhando a reprodução).
+        if (micEnabledRef.current && micAnalyserRef.current && micDetectorRef.current) {
+          const analyser = micAnalyserRef.current;
+          const detector = micDetectorRef.current;
+          const buffer = new Float32Array(analyser.fftSize);
+          analyser.getFloatTimeDomainData(buffer);
+          const [hz, clarity] = detector.findPitch(buffer, analyser.context.sampleRate);
+          if (clarity >= MIC_CLARITY_MIN && hz > 0) {
+            const midi = 69 + 12 * Math.log2(hz / 440);
+            const pitch = midi - 60; // UltraStar pitch 0 == C4 == MIDI 60
+            micTrailRef.current.push({ t: audio.currentTime, pitch });
+          }
+          const cutoff = audio.currentTime - MIC_TRAIL_S;
+          while (micTrailRef.current.length && micTrailRef.current[0].t < cutoff) {
+            micTrailRef.current.shift();
+          }
         }
         draw();
       }
@@ -1523,6 +1626,11 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
         addNote();
         return;
       }
+      if (e.key.toLowerCase() === "m") {
+        e.preventDefault();
+        void toggleMic();
+        return;
+      }
 
       const sel = selectedRef.current;
       const s = songRef.current;
@@ -1623,7 +1731,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [togglePlay, undo, redo, mutate, playNote, draw]);
+  }, [togglePlay, undo, redo, mutate, playNote, draw, toggleMic]);
 
   // ------------------------------------------------------ ações pontuais
   // Generalização de deleteNote pra várias notas de uma vez (issue #11):
@@ -1898,6 +2006,14 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
             <option value="vocals">{t("revListenVocals")}</option>
           </select>
         )}
+        <button
+          className={micEnabled ? "mic-on" : undefined}
+          onClick={() => void toggleMic()}
+          title={t("micToggleHint")}
+        >
+          {t("micToggleLabel")}
+        </button>
+        {micError && <span className="field-hint">{micError}</span>}
         <span className="toolbar-sep" />
         <label className="inline-label">
           {t("revGap")}
