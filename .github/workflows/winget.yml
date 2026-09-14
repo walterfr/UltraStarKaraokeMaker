@@ -53,6 +53,26 @@ jobs:
             $version = "${{ inputs.catchup_version }}".TrimStart('v')
           }
           $url = "https://github.com/walterfr/UltraStarKaraokeMaker/releases/download/v${version}/USKMaker_${version}_x64-setup.exe"
+
+          if ("${{ github.event_name }}" -eq "release") {
+            Write-Host "Aguardando o instalador ficar disponivel (o build do Windows leva ~10 min)..."
+            $max_retries = 30
+            $retry_count = 0
+            while ($retry_count -lt $max_retries) {
+              try {
+                $response = Invoke-WebRequest -Uri $url -Method Head -UseBasicParsing
+                if ($response.StatusCode -eq 200 -or $response.StatusCode -eq 302) {
+                  Write-Host "Instalador encontrado! Prosseguindo..."
+                  break
+                }
+              } catch {
+                Write-Host "Instalador ainda nao disponivel (tentativa $($retry_count+1)/$max_retries). Esperando 30s..."
+              }
+              Start-Sleep -Seconds 30
+              $retry_count++
+            }
+          }
+
           Invoke-WebRequest -Uri "https://aka.ms/wingetcreate/latest" -OutFile wingetcreate.exe
           .\wingetcreate.exe update walterfr.USKMaker `
             --version $version `
