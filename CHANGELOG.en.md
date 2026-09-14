@@ -4,7 +4,13 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
-Every version has a ready-to-use installer on **[Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases)** — each release's notes also carry the install instructions.
+## [Unreleased]
+
+## [0.21.1] — 2026-09-13
+
+### Fixed
+
+- **RTX 40-series GPUs (Ada Lovelace, sm_89) were being ignored and falling back to the CPU.** PyTorch compatibility checks required the exact GPU compute capability to be textually listed in the pre-compiled kernels (`torch.cuda.get_arch_list()`). Since PyTorch often omits explicit sm_89 binaries to save space (since the architecture runs Ampere kernels flawlessly), modern GPUs were being preemptively blocked by the check. The validation now only requires the GPU to be equal to or newer than the oldest supported architecture.
 
 ## [0.21.0] — 2026-09-13 (contribution by [@DJ-Joel](https://github.com/DJ-Joel))
 
