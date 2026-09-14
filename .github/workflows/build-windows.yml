@@ -20,6 +20,8 @@ on:
     branches:
       - main
       - "feature/**"
+    tags:
+      - "v*"
   pull_request:
     branches:
       - main
@@ -71,6 +73,12 @@ jobs:
           path: src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
           retention-days: 30
+
+      - name: Anexar instalador ao Release do GitHub
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: src-tauri/target/release/bundle/nsis/*.exe
 
   # Os testes do sidecar rodam em paralelo, em Linux (são lógica pura - não
   # precisam de GPU, de ffmpeg nem de Windows).
