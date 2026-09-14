@@ -174,11 +174,21 @@ def resolve_device(requested: str) -> str:
         import torch
         if torch.cuda.is_available():
             major, minor = torch.cuda.get_device_capability(0)
-            if f"sm_{major}{minor}" in torch.cuda.get_arch_list():
+            # Pega a menor arquitetura que este torch suporta (ex: 61 de 'sm_61')
+            archs = [int(a.replace("sm_", "")) for a in torch.cuda.get_arch_list() if a.startswith("sm_")]
+            min_arch = min(archs) if archs else 0
+            sm_val = int(f"{major}{minor}")
+
+            # Se a placa é mais nova ou igual à mais antiga suportada (sm_val >= min_arch),
+            # o torch consegue rodar (usando PTX JIT se a placa não estiver explícita na lista, ex: sm_89).
+            # O erro "no kernel image" só ocorre em placas MAIS ANTIGAS que o min_arch (ex: sm_50 < sm_61).
+            if sm_val >= min_arch:
                 return "cuda"
+            
             print(
                 f"[AVISO] GPU detectada (capacidade sm_{major}{minor}) mas o torch "
-                f"instalado só tem kernels para {torch.cuda.get_arch_list()} - "
+                f"instalado só suporta a partir de sm_{min_arch} "
+                f"(kernels disponíveis: {torch.cuda.get_arch_list()}) - "
                 "caindo para CPU (mais lento, mas funciona)."
             )
     except Exception:
