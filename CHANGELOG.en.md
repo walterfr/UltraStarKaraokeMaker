@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **Most notes came out as freestyle (no score) since v0.21.2.** swift-f0 0.2 reports lower pitch confidence than 0.1 on real singing, and the old 0.85 threshold discarded most good frames. Recalibrated to 0.55 (measured on 4 songs): on a test song freestyle notes dropped from 60% to 21%.
+
 ## [0.21.3] — 2026-09-25 (contribution by [@DJ-Joel](https://github.com/DJ-Joel))
 
 ### Fixed

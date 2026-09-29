@@ -6,6 +6,10 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 ## [Não lançado]
 
+### Corrigido
+
+- **A maioria das notas saía freestyle (sem pontuação) desde a v0.21.2.** A swift-f0 0.2 dá confiança de pitch mais baixa que a 0.1 em canto real, e o threshold antigo de 0.85 descartava a maior parte dos quadros bons. Recalibrado para 0.55 (medido em 4 músicas): numa música de teste as notas freestyle caíram de 60% para 21%.
+
 ## [0.21.3] — 2026-09-25 (contribuição [@DJ-Joel](https://github.com/DJ-Joel))
 
 ### Corrigido
