@@ -6,6 +6,10 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 ## [Não lançado]
 
+### Corrigido
+
+- **Notas ocasionais uma a três oitavas fora na pista de notas.** Sílabas isoladas com erro de oitava agora são dobradas de volta para perto da melodia ao redor (mesma nota, então a pontuação não muda).
+
 ## [0.21.3] — 2026-09-25 (contribuição [@DJ-Joel](https://github.com/DJ-Joel))
 
 ### Corrigido
