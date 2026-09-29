@@ -29,6 +29,8 @@ import json
 import re
 import sys
 
+from pipeline.proc_utils import ensure_ffmpeg_on_path
+
 # Ruído que gravadora/uploader grudam no título e que não é o nome da música.
 # Removido do TÍTULO, nunca do artista - "(Band)" não existe, "(Live)" sim.
 _NOISE_PATTERNS = (
@@ -158,6 +160,7 @@ def read_video_info(url: str) -> dict:
     `skip_download` + `quiet`: só a extração de informação, que é uma consulta
     rápida à página. Nenhum arquivo é escrito.
     """
+    ensure_ffmpeg_on_path()
     from yt_dlp import YoutubeDL
 
     opts = {

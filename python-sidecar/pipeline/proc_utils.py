@@ -33,6 +33,8 @@ import os
 import subprocess
 import sys
 
+from update_ytdlp import data_dir as app_data_dir
+
 
 def ffmpeg_exe() -> str:
     """
@@ -90,7 +92,7 @@ def _expose_ffmpeg_dlls(ff_dir: str) -> None:
 
 def ensure_ffmpeg_on_path() -> None:
     """
-    Coloca a PASTA do ffmpeg embutido no PATH do processo.
+    Coloca a pasta de ferramentas do USKMaker no PATH do processo.
 
     Nossas chamadas usam ffmpeg_exe() (caminho absoluto), e o yt-dlp recebe
     --ffmpeg-location - mas algumas bibliotecas chamam "ffmpeg"/"ffprobe" CRU
@@ -98,20 +100,32 @@ def ensure_ffmpeg_on_path() -> None:
     `pyannote` (VAD). Quem não tem ffmpeg no PATH do sistema - a maioria, já que
     o ponto do ffmpeg embutido é justamente não exigir isso - quebrava ali com
     `FileNotFoundError: [WinError 2]`, MESMO com o ffmpeg embutido presente e
-    tudo antes (download, separação) funcionando.
+    tudo antes (download, separação) funcionando. A mesma pasta também contém
+    o Deno instalado pelo setup, que o yt-dlp precisa para resolver desafios
+    JavaScript do YouTube. Ela deve entrar no PATH mesmo quando o download do
+    ffmpeg embutido falha e o app usa o ffmpeg do sistema.
 
-    Idempotente. Sem USKMAKER_FFMPEG (dev com ffmpeg no PATH), não faz nada.
+    Idempotente. Em desenvolvimento, sem ffmpeg embutido e sem pasta de
+    ferramentas instalada, o PATH continua inalterado.
     """
     ff = os.environ.get("USKMAKER_FFMPEG")
-    if not ff:
+    if ff:
+        tools_dir = os.path.dirname(ff)
+    else:
+        app_dir = app_data_dir()
+        if app_dir is None:
+            return
+        tools_dir = str(app_dir / "bin")
+        if not os.path.isdir(tools_dir):
+            return
+    if not tools_dir:
         return
-    ff_dir = os.path.dirname(ff)
-    if not ff_dir:
-        return
+
     parts = os.environ.get("PATH", "").split(os.pathsep)
-    if ff_dir not in parts:
-        os.environ["PATH"] = os.pathsep.join([ff_dir, *parts])
-    _expose_ffmpeg_dlls(ff_dir)
+    if tools_dir not in parts:
+        os.environ["PATH"] = os.pathsep.join([tools_dir, *parts])
+    if ff:
+        _expose_ffmpeg_dlls(tools_dir)
 
 
 def _print_captured(text: str) -> None:

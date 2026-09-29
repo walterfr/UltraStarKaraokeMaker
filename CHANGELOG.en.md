@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Deno is now available in every YouTube lookup path.** The user's tools folder is added to `PATH` even without bundled FFmpeg, on Windows and Linux; artist/title/duration lookups prepare the same environment before calling yt-dlp.
+
 ## [0.21.3] — 2026-09-25 (contribution by [@DJ-Joel](https://github.com/DJ-Joel))
 
 ### Fixed

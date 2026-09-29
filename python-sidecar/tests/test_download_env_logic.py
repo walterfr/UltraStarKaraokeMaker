@@ -54,14 +54,24 @@ def test_ffmpeg_location_ainda_e_passado_quando_ha_embutido():
 
 # --- bug 2: ensure_ffmpeg_on_path --------------------------------------------
 
-def _run_with_env(ffmpeg_val, path_val, fn):
+def _run_with_env(ffmpeg_val, path_val, fn, local_app_data=None):
     old_ff = os.environ.get("USKMAKER_FFMPEG")
     old_path = os.environ.get("PATH")
+    old_local_app_data = os.environ.get("LOCALAPPDATA")
+    old_xdg_data_home = os.environ.get("XDG_DATA_HOME")
+    old_home = os.environ.get("HOME")
     try:
         if ffmpeg_val is None:
             os.environ.pop("USKMAKER_FFMPEG", None)
         else:
             os.environ["USKMAKER_FFMPEG"] = ffmpeg_val
+        if local_app_data is None:
+            os.environ.pop("LOCALAPPDATA", None)
+            os.environ.pop("XDG_DATA_HOME", None)
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["LOCALAPPDATA"] = str(local_app_data)
+            os.environ["XDG_DATA_HOME"] = str(local_app_data)
         os.environ["PATH"] = path_val
         fn()
         return os.environ.get("PATH")
@@ -70,6 +80,18 @@ def _run_with_env(ffmpeg_val, path_val, fn):
             os.environ.pop("USKMAKER_FFMPEG", None)
         else:
             os.environ["USKMAKER_FFMPEG"] = old_ff
+        if old_local_app_data is None:
+            os.environ.pop("LOCALAPPDATA", None)
+        else:
+            os.environ["LOCALAPPDATA"] = old_local_app_data
+        if old_xdg_data_home is None:
+            os.environ.pop("XDG_DATA_HOME", None)
+        else:
+            os.environ["XDG_DATA_HOME"] = old_xdg_data_home
+        if old_home is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = old_home
         if old_path is not None:
             os.environ["PATH"] = old_path
 
@@ -103,6 +125,19 @@ def test_sem_ffmpeg_embutido_nao_mexe_no_path():
     original = os.pathsep.join([_SYS_DIR, _BIN_DIR])
     new_path = _run_with_env(None, original, proc_utils.ensure_ffmpeg_on_path)
     assert new_path == original
+
+
+def test_pasta_de_ferramentas_entra_no_path_sem_ffmpeg_embutido(tmp_path):
+    # Se o download do ffmpeg falhar, o Deno na mesma pasta ainda precisa ser
+    # encontrado pelo yt-dlp para resolver os desafios JavaScript do YouTube.
+    tools_dir = tmp_path / "USKMaker" / "bin"
+    tools_dir.mkdir(parents=True)
+    new_path = _run_with_env(
+        None, _SYS_DIR, proc_utils.ensure_ffmpeg_on_path,
+        local_app_data=tmp_path,
+    )
+    assert new_path.split(os.pathsep)[0] == str(tools_dir)
+    assert _SYS_DIR in new_path.split(os.pathsep)
 
 
 if __name__ == "__main__":

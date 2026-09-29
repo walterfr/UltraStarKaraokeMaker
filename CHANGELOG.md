@@ -6,6 +6,8 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 ## [Não lançado]
 
+- **O Deno agora fica acessível em todos os caminhos de consulta ao YouTube.** A pasta de ferramentas do usuário entra no `PATH` mesmo sem FFmpeg embutido, em Windows e Linux; a consulta de artista/título/duração prepara o mesmo ambiente antes de chamar o yt-dlp.
+
 ## [0.22.0] - 2026-09-29 (contribuição [@osklu002](https://github.com/osklu002))
 
 ### Adicionado

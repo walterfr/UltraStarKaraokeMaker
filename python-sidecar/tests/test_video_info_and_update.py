@@ -7,12 +7,14 @@ atualização) - sem rede, sem yt-dlp, sem instalar nada.
 Rodar:  python -m pytest tests/ -v
 """
 import sys
+import types
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import read_video_info
 from read_video_info import pick_artist_title, split_artist_title, strip_title_noise
 from update_ytdlp import build_upgrade_command, data_dir, is_prerelease
 
@@ -122,6 +124,36 @@ def test_uploader_e_o_ultimo_recurso_para_artista():
 
 def test_info_vazia_nao_quebra():
     assert pick_artist_title({}) == (None, None)
+
+
+def test_busca_de_metadados_prepara_path_para_o_deno(monkeypatch):
+    events = []
+
+    class FakeYoutubeDL:
+        def __init__(self, opts):
+            events.append("yt-dlp")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def extract_info(self, url, download):
+            return {"title": "Artist - Song", "duration": 180}
+
+    monkeypatch.setattr(
+        read_video_info, "ensure_ffmpeg_on_path",
+        lambda: events.append("tools-path"),
+    )
+    monkeypatch.setitem(
+        sys.modules, "yt_dlp", types.SimpleNamespace(YoutubeDL=FakeYoutubeDL),
+    )
+
+    result = read_video_info.read_video_info("https://example.com/video")
+
+    assert events == ["tools-path", "yt-dlp"]
+    assert result["duration"] == 180
 
 
 # ---------------------------------------------------------------------------
