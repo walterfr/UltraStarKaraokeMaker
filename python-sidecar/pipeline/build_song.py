@@ -461,6 +461,117 @@ def snap_octave_outliers(
     return notes
 
 
+# SEGUNDA REDE DE OITAVA (29/09/2026). O snap_octave_outliers acima deixa
+# escapar um tipo de erro que ficou mais comum depois que o threshold de
+# confiança do SwiftF0 caiu de 0.85 pra 0.55 (ver pitch.py): mais quadros
+# contam como vozeados, e uma sílaba de vez em quando sai com a oitava
+# totalmente errada. Caso real (Rick Astley - Never Gonna Give You Up, notas
+# todas entre -4 e 10): "Ne" saiu com pitch 36, TRÊS oitavas acima. Não custa
+# ponto (o jogo pontua classe de nota, ignorando a oitava), mas na trilha de
+# notas aparece lá em cima, sozinha, e o chart parece quebrado.
+#
+# Por que o snap não pegou - três motivos, todos vistos nesse caso:
+#   1. só tenta ±1 e ±2 oitavas: 36-24 = 12 ainda fica longe das vizinhas;
+#   2. as vizinhas IMEDIATAS eram freestyle ("F", pitch 0 de enfeite, porque
+#      não tinham quadro vozeado nenhum) - o snap usa o pitch delas como se
+#      fosse medido;
+#   3. exige ficar perto das DUAS vizinhas (tol 4); quando elas mesmas estão
+#      separadas por um intervalo maior que isso, nenhuma dobra passa.
+#
+# Esta função olha um CONTEXTO maior e só com notas que pontuam: a mediana de
+# até OCTAVE_FOLD_WINDOW notas pontuáveis de cada lado (do mesmo cantor, pra
+# não misturar voz masculina e feminina num dueto). Nota longe demais dessa
+# mediana é dobrada de oitava em oitava até cair perto dela - MESMA classe de
+# nota, então a pontuação não muda nada; só o desenho.
+#
+# Proteção de salto melódico REAL (a oitava pode ser de verdade dentro de uma
+# frase), em dois degraus:
+#   - desvio > OCTAVE_FOLD_MAX_DEV e <= OCTAVE_FOLD_ALWAYS_DEV: só dobra se a
+#     nota estiver ISOLADA - nenhuma vizinha pontuável imediata a até
+#     OCTAVE_FOLD_ISOLATION_TOL semitons dela. Um salto real vem com contexto
+#     (a nota seguinte continua no agudo, ou é o "~" da mesma sílaba); um erro
+#     do detector é uma nota sozinha;
+#   - desvio > OCTAVE_FOLD_ALWAYS_DEV (mais de oitava e meia da mediana local):
+#     dobra sempre. Voz cantando duas oitavas longe das 8 notas em volta não é
+#     melodia, é o detector - e o erro às vezes vem em par (a sílaba e o "~"
+#     dela), que a regra de isolamento sozinha deixaria passar.
+#
+# CALIBRAÇÃO (29/09/2026, threshold 0.55, alinhamento fixo, só esta função
+# variando), em 4 músicas: Rick Astley, Adele - Rolling in the Deep, Nirvana -
+# Smells Like Teen Spirit, Marisa Monte - Ainda Bem (1537 notas pontuáveis).
+# Desvio de cada nota pra mediana das 8 vizinhas: a massa das notas fica em
+# ±8 (salto real mais longe visto: 9, no "say goodbye" do Rick; em ~10 há
+# casos ambíguos); fora disso aparecem ±12, ±24, ±36 - o padrão de erro de
+# oitava. Daí os limiares:
+#   - MAX_DEV 10: estritamente acima do maior salto real visto (9) e dos
+#     ambíguos (10); com 9 a regra já dobrava duas notas duvidosas (Adele
+#     "your" 10->-2, Nirvana "do" -5->7), então fica 10;
+#   - ALWAYS_DEV 18: oitava e meia; o maior desvio de nota real visto é ~10;
+#   - ISOLATION_TOL 4 (terça maior): mesma tolerância do snap acima;
+#   - WINDOW 4: 8 notas ~ uma linha da letra, sem depender do "-" da frase
+#     (há frases de 2-3 notas pontuáveis, curtas demais pra ter mediana).
+#
+#     música     notas >12 da mediana da música   notas mudadas
+#     Rick            1 -> 0  ([36])                    1
+#     Adele           5 -> 0  ([24,24,-12,24,24])       5
+#     Nirvana         1 -> 0  ([36])                    3
+#     Marisa Monte    2 -> 0  ([-15,34])                2
+# As 11 notas mudadas mantêm a classe de nota; todas as outras ficam
+# idênticas. O que SOBRA de propósito: pares de notas (a sílaba e a vizinha)
+# uma oitava abaixo da frase, ex. Nirvana "we are" -11/-12 no meio de 1s -
+# pode ser erro em par, mas também pode ser real, e a regra de isolamento
+# prefere não mexer (desvio ~12-14, longe do absurdo de 36).
+OCTAVE_FOLD_WINDOW = 4
+OCTAVE_FOLD_MAX_DEV = 10
+OCTAVE_FOLD_ALWAYS_DEV = 18
+OCTAVE_FOLD_ISOLATION_TOL = 4
+
+
+def fold_octave_outliers_to_context(
+    notes: list[Note],
+    window: int = OCTAVE_FOLD_WINDOW,
+    max_dev: int = OCTAVE_FOLD_MAX_DEV,
+    always_dev: int = OCTAVE_FOLD_ALWAYS_DEV,
+    isolation_tol: int = OCTAVE_FOLD_ISOLATION_TOL,
+) -> list[Note]:
+    """
+    Dobra por oitavas inteiras (±12k, mantendo a classe de nota) a nota
+    pontuável cujo pitch está a mais de `max_dev` semitons da mediana das até
+    `window` notas pontuáveis de cada lado (mesmo cantor). Ver o bloco de
+    comentário acima pra regra completa e o porquê.
+
+    - Freestyle ("F") nunca é referência nem é mexida: o pitch dela é um 0 de
+      enfeite, não uma medida.
+    - Precisa de pelo menos 2 vizinhas pontuáveis pra ter mediana confiável;
+      com menos, não mexe.
+    - Referência usa os pitches ORIGINAIS (snapshot): a ordem não importa e
+      uma dobra não puxa a próxima. In-place, devolve a mesma lista.
+    """
+    ref = [nt.pitch for nt in notes]  # snapshot antes de qualquer dobra
+    groups: dict[int, list[int]] = {}
+    for i, nt in enumerate(notes):
+        if nt.note_type != "F":
+            groups.setdefault(nt.singer, []).append(i)
+
+    for idx in groups.values():
+        for pos, i in enumerate(idx):
+            neigh = idx[max(0, pos - window):pos] + idx[pos + 1:pos + 1 + window]
+            if len(neigh) < 2:
+                continue
+            med = float(np.median([ref[j] for j in neigh]))
+            dev = ref[i] - med
+            if abs(dev) <= max_dev:
+                continue
+            if abs(dev) <= always_dev:
+                adjacent = idx[max(0, pos - 1):pos] + idx[pos + 1:pos + 2]
+                if any(abs(ref[i] - ref[j]) <= isolation_tol for j in adjacent):
+                    continue  # tem companhia no mesmo registro: salto real
+            k = int(np.floor(dev / 12 + 0.5))  # oitavas até a mediana (meio pra cima)
+            if k:
+                notes[i].pitch = int(ref[i] - 12 * k)
+    return notes
+
+
 def build_notes(
     word_timings: list[WordTiming],
     vocals_wav_path: Path,
@@ -540,6 +651,7 @@ def build_notes(
 
     notes = fix_rounding_overlaps(notes)
     notes = snap_octave_outliers(notes)
+    notes = fold_octave_outliers_to_context(notes)
     notes = apply_golden_notes(notes, min_duration_beats=golden_min_beats(grid))
 
     return notes, phrase_breaks
