@@ -1,5 +1,12 @@
 # USKMaker — UltraStar Karaoke Maker
 
+[![Release](https://img.shields.io/github/v/release/walterfr/UltraStarKaraokeMaker?color=blue)](https://github.com/walterfr/UltraStarKaraokeMaker/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-brightgreen)](https://github.com/walterfr/UltraStarKaraokeMaker/releases)
+[![WinGet](https://img.shields.io/badge/winget-walterfr.USKMaker-blue)](https://github.com/microsoft/winget-pkgs/tree/master/manifests/w/walterfr/USKMaker)
+[![Build Windows](https://github.com/walterfr/UltraStarKaraokeMaker/actions/workflows/build-windows.yml/badge.svg)](https://github.com/walterfr/UltraStarKaraokeMaker/actions/workflows/build-windows.yml)
+[![Build Linux](https://github.com/walterfr/UltraStarKaraokeMaker/actions/workflows/build-linux.yml/badge.svg)](https://github.com/walterfr/UltraStarKaraokeMaker/actions/workflows/build-linux.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **🇧🇷 [Versão em português](README.md)**
 
 **UltraStar** karaoke package maker from a YouTube link or a local audio file, with automatic lyric syncing, pitch extraction, BPM detection and metadata (cover, year, genre).
@@ -15,9 +22,9 @@ The pipeline has six steps:
 1. **Get audio** — downloads from YouTube (via `yt-dlp`) or normalizes a local file to WAV. Optionally downloads the video too, for an animated background in game.
 2. **Vocal separation** — isolates vocals and instrumental with Demucs (`htdemucs`).
 3. **BPM detection** — estimates the tempo with librosa.
-4. **Lyrics-to-audio alignment** — in four passes: WhisperX freely transcribes the audio and measures real acoustic timestamps; the transcription is matched against the provided lyrics (`difflib.SequenceMatcher`), producing *exact anchors*; words Whisper spelled differently are recovered by *fuzzy anchors* (character similarity with monotonic pairing); stretches still without an anchor go through a *second forced alignment* (wav2vec2) restricted to the audio window between neighboring anchors, using the missing text; whatever remains is interpolated with weights proportional to syllable count. When the lyrics come synced from **LRCLIB** (`.lrc`), each line's start time is added as an extra anchor in the gaps Whisper didn't measure, shortening interpolation.
-5. **Metadata** — fetches cover, year and genre in a cascade, each source filling only what is still missing: tags embedded in the file → MusicBrainz + Cover Art Archive → iTunes (600x600 cover, year and genre) → Deezer (1000px cover) → Last.fm (cover and genre; optional: set `LASTFM_API_KEY` with a [free key](https://www.last.fm/api/account/create)) → Discogs (optional: set `DISCOGS_TOKEN` with a [free personal token](https://www.discogs.com/settings/developers)). Optional sources are skipped when the corresponding variable is not set. For the **background image** (`#BACKGROUND`, 16:9): if `FANARTTV_API_KEY` is set (free personal key at [fanart.tv](https://fanart.tv/get-an-api-key/)), it fetches a real *artist background*; without a key or artwork, the background reuses the cover as `[BG].jpg` — so every package with a cover gets a `#BACKGROUND`.
-6. **Assembly** — extracts per-syllable pitch (SwiftF0), splits syllables (pyphen), automatically marks the longest notes as **golden** (`*`, scoring bonus, ~5% of notes — a pattern calibrated on hand-made charts) and builds the UltraStar `.txt` file, with audio converted to `.ogg`.
+4. **Lyrics-to-audio alignment** — direct global acoustic alignment (CTC / MMS / wav2vec2): the entire provided lyrics are aligned against the vocal track in a single fast pass, guaranteeing lyric order in seconds (with dedicated acoustic models per language, such as Swedish wav2vec2). Lines with lower confidence are flagged for review, and the classic WhisperX transcription + acoustic/fuzzy anchor alignment automatically acts as a fallback when overall confidence is low. When lyrics come synced from **LRCLIB** (`.lrc`) or an approved file, line start timings serve as fixed anchors. Non-Latin alphabets automatically keep WhisperX alignment.
+5. **Metadata** — fetches cover, year and genre in a cascade, each source filling only what is still missing: tags embedded in the file → MusicBrainz + Cover Art Archive (prioritizing original studio albums over compilations) → iTunes (600x600 cover, year and genre) → Deezer (1000px cover) → Last.fm (cover and genre; optional: set `LASTFM_API_KEY` with a [free key](https://www.last.fm/api/account/create)) → Discogs (optional: set `DISCOGS_TOKEN` with a [free personal token](https://www.discogs.com/settings/developers)). Optional sources are skipped when the corresponding variable is not set. For the **background image** (`#BACKGROUND`, 16:9): if `FANARTTV_API_KEY` is set (free personal key at [fanart.tv](https://fanart.tv/get-an-api-key/)), it fetches a real *artist background*; without a key or artwork, the background reuses the cover as `[BG].jpg` — so every package with a cover gets a `#BACKGROUND`.
+6. **Assembly** — extracts per-syllable pitch (SwiftF0 in optimized window slices), splits syllables with language-specific rules (Portuguese, English, Swedish via pyphen), places syllables exactly where phonemes are sung, calibrates held notes to follow voice duration, automatically marks the longest notes as **golden** (`*`, scoring bonus, ~5% of notes — a pattern calibrated on hand-made charts) and builds the UltraStar `.txt` file, with audio converted to `.ogg` or `.mp3`.
 
 ## Stack
 
@@ -35,7 +42,15 @@ The pipeline has six steps:
 
 ## Installation
 
-### Option A (Windows) — Installer (recommended for regular use)
+### Option A (Windows) — WinGet or Installer (recommended for regular use)
+
+Install directly from your terminal using **Windows Package Manager (WinGet)**:
+
+```powershell
+winget install walterfr.USKMaker
+```
+
+Or download the installer manually:
 
 1. Download the installer (`USKMaker_x.y.z_x64-setup.exe`) from the [Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases) page and install it normally.
 2. Open USKMaker and click **"Set up AI environment"**. It downloads Python 3.12 (via `uv`), a bundled ffmpeg (with libvorbis) and the AI libraries automatically, with a live progress bar (≈ 10–15 min the first time, ~2 GB, requires internet).
@@ -89,16 +104,26 @@ npm run tauri dev
 ## Usage
 
 1. Choose the source: YouTube link or local audio file. In local-file mode, you can optionally download a YouTube music video **just for the background** (`#VIDEO`) — the package audio remains your file (great for CD-ripped collections, with better quality than YouTube). Provide the video link or leave it blank for an automatic search by artist + title; if no video is found, the package ships with the cover only.
-2. Fill in **title, artist and language** (in local-file mode, title and artist are **auto-filled from the file's tags** — only the fields you haven't typed yet; double-check before generating). BPM is optional (detected automatically if left blank; the detector fixes the common "half/double" tempo error).
+2. Fill in **title, artist and language** (the app checks the lyrics offline and warns if the language seems different from the one selected, with a 1-click button to switch; in local-file mode, title and artist are **auto-filled from the file's tags** — only fields you haven't typed yet; double-check before generating). BPM is optional (detected automatically if left blank; the detector fixes the common "half/double" tempo error).
 3. Paste the lyrics — **one line per sung phrase**. Write repeated choruses out in full, as many times as they are sung (don't use "(2x)"); otherwise the repetitions get no notes. Or click **Search lyrics (LRCLIB)** to fill them automatically from the title + artist entered above (a free, open database); when a synced version exists, the line timings also help the alignment.
    - **Duet:** tick **Duet (two voices)** and, in the lyrics, start each singer's lines with a tag — `P1:`, `P2:`, or `P1&P2:` (when they sing together). A line with no tag stays with the previous singer. The package comes out in the community duet format: `#P1`/`#P2` headers (names derived from the artist, e.g. "Elton John & Kiki Dee"), a body split into two `P1`/`P2` blocks, and a `[DUET]` filename suffix.
-4. Choose the output folder and generate — the package is created in an `Artist - Title` subfolder (the UltraStar collection convention; point it at the game's `Songs` folder and you're done). To process several songs at once, use **+ Add to queue** and then **Generate queue**: they run one after another without reopening the app, with the AI models already loaded (from the second song on, alignment is much faster). Check **"Keep only the essentials"** to have the helper files (`.lrc`, `.log`, `.json`) deleted from each folder at the end of the queue — the package stays lean, but **without the review screen** (the `song_data.json` it reads is removed).
+4. Customize options as needed:
+   - **Audio format:** choose between **OGG** (default) and **MP3**.
+   - **Video resolution:** cap the downloaded video (defaults to **1080p** to avoid oversized 4K downloads).
+   - **Keep backing vocals:** isolates and mutes only the lead singer, keeping background harmonies in the instrumental track (requires *Backtrack* enabled).
+   - **YouTube cookies:** for restricted videos that prompt for sign-in ("Sign in to confirm you're not a bot"), enable the option and select your browser.
+5. Choose the output folder and generate — the package is created in an `Artist - Title` subfolder (the UltraStar collection convention; point it at the game's `Songs` folder and you're done). To process several songs at once, use **+ Add to queue** and then **Generate queue**: they run one after another without reopening the app, with the AI models already loaded (from the second song on, alignment is much faster). Check **"Keep only the essentials"** to have the helper files (`.lrc`, `.log`, `.json`) deleted from each folder at the end of the queue — the package stays lean, but **without the review screen** (the `song_data.json` it reads is removed).
 
-The resulting package contains the UltraStar `.txt`, the `.ogg` audio, the `[CO].jpg` cover (when found) and, if requested, the `.mp4` video. It can be loaded in UltraStar Deluxe or UltraStar Play.
+The resulting package contains the UltraStar `.txt`, the `.ogg`/`.mp3` audio, the `[CO].jpg` cover (when found) and, if requested, the `.mp4` video. It can be loaded in UltraStar Deluxe, UltraStar Play, or Vocaluxe.
 
-   **Karaoke video (optional):** tick **Make karaoke video (.mp4)** to also get an `Artist - Title (Karaoke).mp4` — the lyrics filling in syllable by syllable over the background, on exactly the timing the alignment already measured. It plays on any TV, phone or USB stick, with no game installed. The background is the package video when there is one, otherwise the background art or the cover; the audio is whatever the package uses, so **Backtrack** (instrumental) and transpose carry over automatically. Rendering happens last and is non-fatal: if it fails, the UltraStar package is still complete. The subtitle file it renders from is left in the folder as `_karaoke_subs.ass`, so the look can be tweaked and re-rendered without running the AI again.
+   **Karaoke video (optional):** tick **Make karaoke video (.mp4)** to also get an `Artist - Title (Karaoke).mp4` — the lyrics filling in syllable by syllable over the background, on exactly the timing the alignment already measured. It plays on any TV, phone or USB stick, with no game installed. The background is the package video when there is one, otherwise the background art or the cover; the audio is whatever the package uses, so **Backtrack** (instrumental) and transpose carry over automatically. Rendering happens last and is non-fatal: if it fails, the UltraStar package is still complete. The subtitle file it renders from is left in the folder as `_karaoke_subs.ass`, so the look can be tweaked and re-rendered in seconds from the review screen without running the AI again.
 
-5. (Optional) Click **Review alignment** at the end — or "Review an existing package..." on the home screen — to open the review editor: listen to the song (full mix or isolated vocals, if intermediates were kept), drag notes in time/pitch, adjust durations, syllables and phrase breaks, shift the global GAP and save to regenerate the `.txt`.
+6. (Optional) Click **Review alignment** at the end — or "Review an existing package..." on the home screen — to open the integrated review editor:
+   - Listen to the song (full mix or vocals only).
+   - Drag notes across time and pitch, split syllables, adjust phrase breaks and shift global GAP.
+   - Handy pitch reference via the interactive **piano roll** and bulk note-type changes (Normal, Golden, Freestyle, Rap).
+   - **🎤 Sing along:** turn on your microphone (shortcut `M`) to draw your live vocal pitch over the notes in real time.
+   - Safe saving: edits are never lost on error, and generating again keeps automatic `.bak` backups.
 
 ## Project status
 

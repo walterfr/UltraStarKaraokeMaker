@@ -1,5 +1,12 @@
 # USKMaker — UltraStar Karaoke Maker
 
+[![Release](https://img.shields.io/github/v/release/walterfr/UltraStarKaraokeMaker?color=blue)](https://github.com/walterfr/UltraStarKaraokeMaker/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-brightgreen)](https://github.com/walterfr/UltraStarKaraokeMaker/releases)
+[![WinGet](https://img.shields.io/badge/winget-walterfr.USKMaker-blue)](https://github.com/microsoft/winget-pkgs/tree/master/manifests/w/walterfr/USKMaker)
+[![Build Windows](https://github.com/walterfr/UltraStarKaraokeMaker/actions/workflows/build-windows.yml/badge.svg)](https://github.com/walterfr/UltraStarKaraokeMaker/actions/workflows/build-windows.yml)
+[![Build Linux](https://github.com/walterfr/UltraStarKaraokeMaker/actions/workflows/build-linux.yml/badge.svg)](https://github.com/walterfr/UltraStarKaraokeMaker/actions/workflows/build-linux.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **🇬🇧 [English version](README.en.md)**
 
 Gerador de pacotes de karaokê **UltraStar** a partir de um link do YouTube ou de um arquivo de áudio local, com sincronização de letra, extração de pitch, detecção de BPM e metadados (capa, ano, gênero) automáticos.
@@ -15,9 +22,9 @@ O pipeline tem seis etapas:
 1. **Obter áudio** — baixa do YouTube (via `yt-dlp`) ou normaliza um arquivo local para WAV. Opcionalmente baixa também o vídeo, para fundo animado no jogo.
 2. **Separação vocal** — isola voz e instrumental com Demucs (`htdemucs`).
 3. **Detecção de BPM** — estima o andamento com librosa.
-4. **Alinhamento letra-áudio** — em quatro passes: WhisperX transcreve livremente o áudio e mede timestamps acústicos reais; a transcrição é casada com a letra fornecida (`difflib.SequenceMatcher`) gerando *âncoras exatas*; palavras que o Whisper grafou diferente ("tá"/"está", "pra"/"para") são recuperadas por *âncoras fuzzy* (similaridade de caracteres com pareamento monotônico); trechos ainda sem âncora passam por um *segundo forced alignment* (wav2vec2) restrito à janela de áudio entre as âncoras vizinhas, com o texto que falta; o que restar é interpolado com peso proporcional ao número de sílabas. Quando a letra vem sincronizada do **LRCLIB** (`.lrc`), os tempos de início de cada linha entram como âncoras adicionais nos vãos que o Whisper não mediu, encurtando a interpolação.
-5. **Metadados** — busca capa, ano e gênero em cascata, cada fonte preenchendo só o que ainda falta: tags embutidas no arquivo → MusicBrainz + Cover Art Archive → iTunes (capa 600x600, ano e gênero) → Deezer (capa 1000px) → Last.fm (capa e gênero; opcional: defina `LASTFM_API_KEY` com uma [chave gratuita](https://www.last.fm/api/account/create)) → Discogs (opcional: defina `DISCOGS_TOKEN` com um [token pessoal gratuito](https://www.discogs.com/settings/developers)). As fontes opcionais são puladas quando a variável correspondente não existe. Para a **imagem de fundo** (`#BACKGROUND`, 16:9): se `FANARTTV_API_KEY` estiver definida (chave pessoal gratuita em [fanart.tv](https://fanart.tv/get-an-api-key/)), busca um *artist background* real; sem a chave ou sem arte, o fundo reaproveita a capa como `[BG].jpg` — assim todo pacote com capa tem `#BACKGROUND`.
-6. **Montagem** — extrai o pitch por sílaba (SwiftF0), separa sílabas (pyphen), marca automaticamente as notas mais longas como **douradas** (`*`, bônus de pontuação, ~5% das notas — padrão calibrado em charts feitos à mão) e monta o arquivo `.txt` no formato UltraStar, com áudio convertido para `.ogg`.
+4. **Alinhamento letra-áudio** — alinhamento acústico global direto (CTC / MMS / wav2vec2): a letra fornecida inteira é alinhada contra a faixa vocal em uma única passagem rápida, garantindo a ordem exata das frases (com modelos acústicos dedicados por idioma, como wav2vec2 sueco). Linhas com baixa confiança são sinalizadas para conferência, e o alinhamento clássico via WhisperX + âncoras acústicas/fuzzy atua automaticamente como fallback caso a confiança geral seja baixa. Quando a letra vem sincronizada do **LRCLIB** (`.lrc`) ou de arquivo aprovado, os tempos de início de linha entram como âncoras fixas. Letras em alfabetos não latinos mantêm o alinhamento via WhisperX automaticamente.
+5. **Metadados** — busca capa, ano e gênero em cascata, cada fonte preenchendo só o que ainda falta: tags embutidas no arquivo → MusicBrainz + Cover Art Archive (priorizando álbuns originais de estúdio sobre coletâneas) → iTunes (capa 600x600, ano e gênero) → Deezer (capa 1000px) → Last.fm (capa e gênero; opcional: defina `LASTFM_API_KEY` com uma [chave gratuita](https://www.last.fm/api/account/create)) → Discogs (opcional: defina `DISCOGS_TOKEN` com um [token pessoal gratuito](https://www.discogs.com/settings/developers)). As fontes opcionais são puladas quando a variável correspondente não existe. Para a **imagem de fundo** (`#BACKGROUND`, 16:9): se `FANARTTV_API_KEY` estiver definida (chave pessoal gratuita em [fanart.tv](https://fanart.tv/get-an-api-key/)), busca um *artist background* real; sem a chave ou sem arte, o fundo reaproveita a capa como `[BG].jpg` — assim todo pacote com capa tem `#BACKGROUND`.
+6. **Montagem** — extrai o pitch por sílaba (SwiftF0 em janelas otimizadas), separa sílabas com regras específicas do idioma (português, inglês, sueco via pyphen), posiciona as sílabas exatamente onde cada fonema foi cantado, calibra notas sustentadas acompanhando a voz, marca automaticamente as notas mais longas como **douradas** (`*`, bônus de pontuação, ~5% das notas — padrão calibrado em charts feitos à mão) e monta o arquivo `.txt` no formato UltraStar, com áudio convertido para `.ogg` ou `.mp3`.
 
 ## Stack
 
@@ -35,7 +42,15 @@ O pipeline tem seis etapas:
 
 ## Instalação
 
-### Opção A (Windows) — Instalador (recomendado para uso)
+### Opção A (Windows) — WinGet ou Instalador (recomendado para uso)
+
+Instale direto pelo terminal via **Windows Package Manager (WinGet)**:
+
+```powershell
+winget install walterfr.USKMaker
+```
+
+Ou baixe o instalador manualmente:
 
 1. Baixe o instalador (`USKMaker_x.y.z_x64-setup.exe`) na página de [Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases) e instale normalmente.
 2. Abra o USKMaker e clique em **"Configurar ambiente de IA"**. Ele baixa o Python 3.12 (via `uv`), um ffmpeg embutido (com libvorbis) e as bibliotecas de IA automaticamente, com progresso ao vivo (≈ 10–15 min na primeira vez, ~2 GB, requer internet).
@@ -89,16 +104,26 @@ npm run tauri dev
 ## Uso
 
 1. Escolha a fonte: link do YouTube ou arquivo de áudio local. No modo arquivo local, você pode opcionalmente baixar um videoclipe do YouTube **só para o fundo** (`#VIDEO`) — o áudio do pacote continua sendo o seu arquivo (útil para coleções ripadas de CD, com qualidade melhor que a do YouTube). Informe o link do clipe ou deixe em branco para busca automática por artista + título; se nenhum vídeo for encontrado, o pacote sai só com a capa.
-2. Preencha **título, artista e idioma** (no modo arquivo local, título e artista são **pré-preenchidos automaticamente a partir das tags do arquivo** — só os campos que você ainda não digitou; confira antes de gerar). O BPM é opcional (detectado automaticamente se em branco; a detecção corrige o erro comum de "meio/dobro" do andamento).
+2. Preencha **título, artista e idioma** (o app confere a letra offline e avisa se o texto parecer de outro idioma, com botão para trocar com 1 clique; no modo arquivo local, título e artista são **pré-preenchidos automaticamente a partir das tags do arquivo** — só os campos que você ainda não digitou; confira antes de gerar). O BPM é opcional (detectado automaticamente se em branco; a detecção corrige o erro comum de "meio/dobro" do andamento).
 3. Cole a letra — **uma linha por frase cantada**. Repita refrões por extenso, tantas vezes quantas forem cantados (não use "(2x)"); caso contrário, as repetições ficam sem notas. Ou clique em **Buscar letra (LRCLIB)** para preencher automaticamente pelo título + artista informados acima (banco aberto e gratuito); quando há versão sincronizada, os tempos das linhas ainda ajudam o alinhamento.
    - **Dueto:** marque **Dueto (duas vozes)** e, na letra, comece as linhas de cada cantor com uma tag — `P1:`, `P2:` ou `P1&P2:` (quando cantam juntos). Uma linha sem tag continua com o cantor da anterior. O pacote sai no formato de dueto da comunidade: headers `#P1`/`#P2` (nomes derivados do artista, ex.: "Elton John & Kiki Dee"), corpo em dois blocos `P1`/`P2` e sufixo `[DUET]` no arquivo.
-4. Escolha a pasta de saída e gere — o pacote é criado numa subpasta `Artista - Título` (padrão das coleções UltraStar; aponte para a pasta `Songs` do jogo e pronto). Para processar várias músicas de uma vez, use **+ Adicionar à fila** e depois **Gerar fila**: elas são processadas em série sem reabrir o app, com os modelos de IA já carregados (da 2ª música em diante o alinhamento é bem mais rápido). Marque **"Deixar só o essencial"** para que, ao fim da fila, os arquivos auxiliares (`.lrc`, `.log`, `.json`) sejam apagados de cada pasta — o pacote fica enxuto, mas **sem a tela de revisão** (o `song_data.json`, que ela lê, é removido).
+4. Ajuste as opções desejadas:
+   - **Formato de áudio:** escolha entre **OGG** (padrão) e **MP3**.
+   - **Resolução de vídeo:** limite o vídeo baixado (padrão **1080p** para evitar arquivos desnecessariamente pesados).
+   - **Manter backing vocals:** isola apenas o vocal principal e preserva coros e harmonias no áudio instrumental (requer opção *Backtrack* ativa).
+   - **Cookies do YouTube:** para vídeos restritos que exigem login ("Sign in to confirm you're not a bot"), ative a opção e aponte o navegador em que você está logado.
+5. Escolha a pasta de saída e gere — o pacote é criado numa subpasta `Artista - Título` (padrão das coleções UltraStar; aponte para a pasta `Songs` do jogo e pronto). Para processar várias músicas de uma vez, use **+ Adicionar à fila** e depois **Gerar fila**: elas são processadas em série sem reabrir o app, com os modelos de IA já carregados (da 2ª música em diante o alinhamento é bem mais rápido). Marque **"Deixar só o essencial"** para que, ao fim da fila, os arquivos auxiliares (`.lrc`, `.log`, `.json`) sejam apagados de cada pasta — o pacote fica enxuto, mas **sem a tela de revisão** (o `song_data.json`, que ela lê, é removido).
 
-O pacote resultante contém o `.txt` UltraStar, o áudio `.ogg`, a capa `[CO].jpg` (quando encontrada) e, se solicitado, o vídeo `.mp4`. Pode ser carregado no UltraStar Deluxe ou no UltraStar Play.
+O pacote resultante contém o `.txt` UltraStar, o áudio `.ogg`/`.mp3`, a capa `[CO].jpg` (quando encontrada) e, se solicitado, o vídeo `.mp4`. Pode ser carregado no UltraStar Deluxe, UltraStar Play ou Vocaluxe.
 
-   **Vídeo de karaokê (opcional):** marque **Gerar vídeo de karaokê (.mp4)** para sair também um `Artista - Título (Karaoke).mp4` — a letra preenchendo sílaba a sílaba por cima do fundo, exatamente no tempo que o alinhamento já mediu. Toca em qualquer TV, celular ou pendrive, sem o jogo instalado. O fundo é o vídeo do pacote (quando há), senão a arte de fundo ou a capa; o áudio é o mesmo do pacote, então **Backtrack** (instrumental) e transposição valem automaticamente. A renderização roda por último e não é fatal: se falhar, o pacote UltraStar continua completo. O arquivo de legenda usado fica na pasta como `_karaoke_subs.ass`, então dá para mexer no visual e re-renderizar sem rodar a IA de novo.
+   **Vídeo de karaokê (opcional):** marque **Gerar vídeo de karaokê (.mp4)** para sair também um `Artista - Título (Karaoke).mp4` — a letra preenchendo sílaba a sílaba por cima do fundo, exatamente no tempo que o alinhamento já mediu. Toca em qualquer TV, celular ou pendrive, sem o jogo instalado. O fundo é o vídeo do pacote (quando há), senão a arte de fundo ou a capa; o áudio é o mesmo do pacote, então **Backtrack** (instrumental) e transposição valem automaticamente. A renderização roda por último e não é fatal: se falhar, o pacote UltraStar continua completo. O arquivo de legenda usado fica na pasta como `_karaoke_subs.ass`, então dá para mexer no visual e re-renderizar em segundos pela tela de revisão sem rodar a IA de novo.
 
-5. (Opcional) Clique em **Revisar alinhamento** ao final — ou em "Revisar um pacote já gerado..." na tela inicial — para abrir o editor de revisão: ouça a música (mix completo ou só o vocal isolado, se os intermediários foram mantidos), arraste notas no tempo/pitch, ajuste durações, sílabas e quebras de frase, desloque o GAP global e salve para regenerar o `.txt`.
+6. (Opcional) Clique em **Revisar alinhamento** ao final — ou em "Revisar um pacote já gerado..." na tela inicial — para abrir o editor de revisão integrado:
+   - Ouça a música (mix completo ou só o vocal isolado).
+   - Arraste notas no tempo/pitch, divida sílabas, ajuste quebras de frase e altere o GAP global.
+   - Referência de tom via **piano roll** e edição de notas em lote (Normal, Golden, Freestyle, Rap).
+   - **🎤 Cantar junto:** ligue o microfone (atalho `M`) para desenhar sua voz em tempo real sobre as notas e testar a afinação na hora.
+   - Salve com segurança: alterações nunca são perdidas em caso de erro, e gerar novamente cria backup `.bak` automático.
 
 ## Estado do projeto
 
@@ -140,3 +165,7 @@ MIT. Veja o arquivo [LICENSE](LICENSE).
 ## Créditos
 
 Apoia-se em: [WhisperX](https://github.com/m-bain/whisperx), [Demucs](https://github.com/facebookresearch/demucs), [librosa](https://librosa.org/), [SwiftF0](https://github.com/lars76/swift-f0), [yt-dlp](https://github.com/yt-dlp/yt-dlp), [Tauri](https://tauri.app/), [MusicBrainz](https://musicbrainz.org/), [Cover Art Archive](https://coverartarchive.org/), [iTunes Search API](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/), [Deezer API](https://developers.deezer.com/api), [Last.fm](https://www.last.fm/api) e [Discogs](https://www.discogs.com/developers). Inspiração de fluxo: [UltraSinger](https://github.com/rakuri255/UltraSinger).
+
+---
+
+Made with ♥ in Fortaleza-CE, Brazil by [@prof.walterfr](https://www.instagram.com/prof.walterfr)
