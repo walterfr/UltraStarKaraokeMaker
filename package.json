@@ -11,7 +11,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "node --experimental-strip-types --no-warnings --test \"test/**/*.test.ts\""
+    "test": "node --experimental-strip-types --no-warnings --test \"test/**/*.test.ts\"",
+    "release": "powershell -ExecutionPolicy Bypass -File scripts/release.ps1"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.0",

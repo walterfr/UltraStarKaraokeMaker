@@ -42,6 +42,14 @@ fn parses_json_and_generates_valid_header() {
 }
 
 #[test]
+fn preserves_custom_creator_version() {
+    let mut song = load_fixture();
+    song.creator = "USKMaker v0.24.1".to_string();
+    let txt = song.to_txt();
+    assert!(txt.contains("#CREATOR:USKMaker v0.24.1\n"));
+}
+
+#[test]
 fn preserves_negative_pitch_and_continuation_syllables() {
     let song = load_fixture();
     let txt = song.to_txt();

@@ -16,15 +16,17 @@ name: Build Windows installer
 on:
   # Botão "Run workflow" na aba Actions - o modo normal de usar isto.
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - "feature/**"
-    tags:
-      - "v*"
-  pull_request:
-    branches:
-      - main
+  # DESATIVADO: Cota do GitHub Actions esgotada. Releases são compilados
+  # localmente via scripts/release.ps1 (npm run release).
+  # push:
+  #   branches:
+  #     - main
+  #     - "feature/**"
+  #   tags:
+  #     - "v*"
+  # pull_request:
+  #   branches:
+  #     - main
 
 permissions:
   contents: write

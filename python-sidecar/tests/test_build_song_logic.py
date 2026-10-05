@@ -587,3 +587,20 @@ def test_ctc_syllable_spans_reject_untrustworthy_input():
     assert ctc_syllable_spans([1.0, 1.99], 2, 1.0, 2.0) is None     # last one too short
     assert ctc_syllable_spans([1.0, 2.5], 2, 1.0, 2.0) is None      # outside the word
     assert ctc_syllable_spans([1.0], 1, 1.0, 2.0) is None           # single syllable
+
+
+def test_build_song_sets_creator():
+    from pipeline.build_song import build_song
+
+    grid = BeatGrid(bpm=120.0)
+    song = build_song(
+        title="Test",
+        artist="Artist",
+        mp3_filename="test.ogg",
+        word_timings=[],
+        vocals_wav_path=Path("dummy.wav"),
+        grid=grid,
+        creator="USKMaker v0.24.1",
+    )
+    assert song.creator == "USKMaker v0.24.1"
+    assert "#CREATOR:USKMaker v0.24.1" in song.to_txt()

@@ -835,6 +835,7 @@ def build_song(
     p1_name: str | None = None,
     p2_name: str | None = None,
     transpose: int = 0,
+    creator: str = "USKMaker",
 ) -> Song:
     pitch_extractor = PitchExtractor()
 
@@ -878,6 +879,7 @@ def build_song(
         background_filename=background_filename,
         vocals_filename=vocals_filename,
         instrumental_filename=instrumental_filename,
+        creator=creator,
         notes=notes,
         phrase_breaks_after_index=phrase_breaks,
         duet=duet,

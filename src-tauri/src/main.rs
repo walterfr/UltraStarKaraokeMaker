@@ -719,6 +719,7 @@ async fn run_pipeline(
         // o servidor é persistente e o usuário pode trocar o idioma no meio da
         // fila. Não confundir com "language" (idioma cantado da música).
         "ui_lang": lang,
+        "app_version": env!("CARGO_PKG_VERSION"),
     });
     let job_line = serde_json::to_string(&job)
         .map_err(|e| tr_err(lang, "job_serialize", &e))?;
@@ -780,11 +781,16 @@ async fn run_pipeline(
     // Rust é quem escreve o .txt final, usando o mesmo rust-core validado
     // contra dados reais.
     let json_path = out_dir.join("song_data.json");
-    let song = Song::from_json_file(&json_path).map_err(|e| {
+    let mut song = Song::from_json_file(&json_path).map_err(|e| {
         tr(lang, "read_json")
             .replace("{path}", &json_path.display().to_string())
             .replace("{err}", &e.to_string())
     })?;
+
+    // Issue #35: incluir a versão do USKMaker no header #CREATOR
+    if song.creator.is_empty() || song.creator == "USKMaker" {
+        song.creator = format!("USKMaker v{}", env!("CARGO_PKG_VERSION"));
+    }
 
     // mesmo nome que o sidecar usou pra criar o arquivo (ver
     // pipeline/filenames.py) - com o texto cru, um título "Quem?" não acharia
@@ -1483,8 +1489,13 @@ struct SaveResult {
 }
 
 #[tauri::command]
-fn save_song(out_dir: String, song: Song, lang: String) -> Result<SaveResult, String> {
+fn save_song(out_dir: String, mut song: Song, lang: String) -> Result<SaveResult, String> {
     let dir = PathBuf::from(&out_dir);
+
+    // Issue #35: incluir a versão do USKMaker no header #CREATOR
+    if song.creator.is_empty() || song.creator == "USKMaker" {
+        song.creator = format!("USKMaker v{}", env!("CARGO_PKG_VERSION"));
+    }
 
     let json_path = dir.join("song_data.json");
     let json = serde_json::to_string_pretty(&song)

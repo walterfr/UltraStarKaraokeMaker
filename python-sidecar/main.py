@@ -875,6 +875,8 @@ def run_pipeline(
     audio_format: str = "ogg",
     max_video_resolution: int = 0,
     aligner: str = DEFAULT_ALIGNER,
+    creator: str | None = None,
+    app_version: str | None = None,
 ):
     global _debug_log_path
 
@@ -1082,6 +1084,13 @@ def run_pipeline(
     # ("Elton John & Kiki Dee" -> "Elton John" / "Kiki Dee"). Só em dueto.
     p1_name, p2_name = split_duet_artists(artist) if duet else (None, None)
 
+    if creator:
+        effective_creator = creator
+    elif app_version:
+        effective_creator = f"USKMaker v{app_version}"
+    else:
+        effective_creator = "USKMaker"
+
     song = build_song(
         title=title,
         artist=artist,
@@ -1102,6 +1111,7 @@ def run_pipeline(
         p1_name=p1_name,
         p2_name=p2_name,
         transpose=transpose,
+        creator=effective_creator,
     )
     debug_log("ETAPA 6 - build_song concluído, escrevendo .txt")
 
@@ -1293,6 +1303,10 @@ if __name__ == "__main__":
     # idioma CANTADO da música). Default pt = o log de sempre. Ver pipeline/i18n.py.
     parser.add_argument("--ui-lang", default="pt", choices=list(SUPPORTED_LANGS),
                         help="Idioma das mensagens do log (pt/en)")
+    parser.add_argument("--app-version", default=None,
+                        help="Versão do USKMaker para o cabeçalho #CREATOR")
+    parser.add_argument("--creator", default=None,
+                        help="Sobrescreve o cabeçalho #CREATOR")
     args = parser.parse_args()
     if args.yt_cookies_browser:
         # mesmo caminho do servidor: o download lê a env (proc_utils.yt_cookies_browser)
@@ -1328,6 +1342,8 @@ if __name__ == "__main__":
             audio_format=args.audio_format,
             max_video_resolution=args.max_video_resolution,
             aligner=args.aligner,
+            creator=args.creator,
+            app_version=args.app_version,
         )
     except Exception:
         debug_log("EXCEÇÃO NÃO TRATADA:\n" + traceback.format_exc())

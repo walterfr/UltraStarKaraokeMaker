@@ -148,6 +148,8 @@ def _run_one(job: dict) -> None:
                     audio_format=job.get("audio_format", "ogg"),
                     max_video_resolution=job.get("max_video_resolution", 0),
                     aligner=job.get("aligner", pipeline_main.DEFAULT_ALIGNER),
+                    app_version=job.get("app_version"),
+                    creator=job.get("creator"),
                 )
             status_path.write_text(json.dumps({"status": "ok"}), encoding="utf-8")
         except Exception as e:
