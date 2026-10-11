@@ -169,6 +169,25 @@ def _extract_embedded_cover_bytes(mutagen_file) -> bytes | None:
             if str(key).startswith("APIC"):
                 return tags[key].data
 
+        # OGG / Vorbis comments (METADATA_BLOCK_PICTURE ou COVERART em base64):
+        for key in ("metadata_block_picture", "METADATA_BLOCK_PICTURE"):
+            if key in tags:
+                import base64
+                from mutagen.flac import Picture
+                for b64 in tags[key]:
+                    try:
+                        return Picture(base64.b64decode(b64)).data
+                    except Exception:
+                        pass
+        for key in ("coverart", "COVERART"):
+            if key in tags:
+                import base64
+                for b64 in tags[key]:
+                    try:
+                        return base64.b64decode(b64)
+                    except Exception:
+                        pass
+
         # MP4/M4A: capa fica em 'covr'
         if "covr" in tags:
             covr = tags["covr"]

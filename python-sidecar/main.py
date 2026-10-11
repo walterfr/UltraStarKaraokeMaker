@@ -1250,7 +1250,7 @@ def run_pipeline(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="USKMaker - pipeline completa")
     parser.add_argument("--url", help="Link do YouTube")
-    parser.add_argument("--file", help="Caminho de mp3/wav local")
+    parser.add_argument("--file", help="Caminho de áudio local (mp3/wav/ogg/flac/m4a)")
     parser.add_argument("--lyrics", required=True, help="Arquivo .txt com a letra (uma linha por frase)")
     parser.add_argument("--title", required=True)
     parser.add_argument("--artist", required=True)

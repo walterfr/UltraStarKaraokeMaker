@@ -329,8 +329,9 @@ def download_background_video(url_or_query: str, out_dir: Path) -> Path | None:
 
 def normalize_local_file(file_path: Path, out_dir: Path) -> Path:
     """
-    Para um mp3/wav local: copia para a pasta de trabalho e garante .wav
-    (via ffmpeg) para manter consistência com o resto da pipeline.
+    Para um arquivo de áudio local (mp3/wav/ogg/flac/m4a): copia para a pasta
+    de trabalho e garante .wav (via ffmpeg) para manter consistência com o
+    resto da pipeline.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     dest_wav = out_dir / (file_path.stem + ".wav")
@@ -379,7 +380,7 @@ def get_source_audio(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Etapa 1: obter áudio fonte (Fase 0 - teste isolado)")
     parser.add_argument("--url", help="Link do YouTube")
-    parser.add_argument("--file", help="Caminho de mp3/wav local")
+    parser.add_argument("--file", help="Caminho de áudio local (mp3/wav/ogg/flac/m4a)")
     parser.add_argument("--out", default="./work/raw", help="Pasta de saída")
     parser.add_argument("--with-video", action="store_true", help="Baixar também o vídeo (só YouTube)")
     args = parser.parse_args()

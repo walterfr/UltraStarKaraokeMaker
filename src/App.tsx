@@ -633,7 +633,7 @@ function App() {
   async function pickFile() {
     const selected = await openDialog({
       multiple: false,
-      filters: [{ name: t("fileFilterName"), extensions: ["mp3", "wav", "mp4", "m4a", "flac"] }],
+      filters: [{ name: t("fileFilterName"), extensions: ["mp3", "wav", "ogg", "flac", "m4a", "mp4"] }],
     });
     if (typeof selected === "string") {
       leaveLastRun();

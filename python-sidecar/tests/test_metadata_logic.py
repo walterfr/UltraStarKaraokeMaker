@@ -103,3 +103,30 @@ def test_itunes_only_compilations_falls_back_to_first():
     results = [{"collectionName": "X", "collectionArtistName": "Various Artists"}]
     assert _pick_itunes_result(results)["collectionName"] == "X"
     assert _pick_itunes_result([]) is None
+
+
+def test_extract_embedded_cover_ogg_vorbis():
+    import base64
+    from mutagen.flac import Picture
+    from pipeline.metadata import _extract_embedded_cover_bytes
+
+    class DummyOggFile:
+        def __init__(self, tags):
+            self.tags = tags
+
+    fake_png = b"\x89PNG\r\n\x1a\nfakeimagebytes"
+
+    # 1. Vorbis COVERART tag (base64 de imagem pura)
+    b64_cover = base64.b64encode(fake_png).decode("ascii")
+    dummy = DummyOggFile({"coverart": [b64_cover]})
+    assert _extract_embedded_cover_bytes(dummy) == fake_png
+
+    # 2. METADATA_BLOCK_PICTURE tag (base64 de bloco Picture FLAC)
+    pic = Picture()
+    pic.data = fake_png
+    pic.type = 3
+    pic.mime = "image/png"
+    b64_pic = base64.b64encode(pic.write()).decode("ascii")
+    dummy_mbp = DummyOggFile({"metadata_block_picture": [b64_pic]})
+    assert _extract_embedded_cover_bytes(dummy_mbp) == fake_png
+
