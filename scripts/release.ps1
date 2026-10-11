@@ -206,11 +206,8 @@ if (-not $localTag) {
     git push origin $tag
 }
 
-$releaseExists = $false
-$null = gh release view $tag 2>&1
-if ($LASTEXITCODE -eq 0) {
-    $releaseExists = $true
-}
+$existingReleases = (gh release list --limit 100 --json tagName -q ".[].tagName" 2>$null)
+$releaseExists = ($existingReleases -contains $tag)
 
 if ($releaseExists) {
     Write-Host "Release $tag já existe. Atualizando artefatos e notas..." -ForegroundColor Cyan
