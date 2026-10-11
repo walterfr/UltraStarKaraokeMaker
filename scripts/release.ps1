@@ -199,6 +199,13 @@ $tempNotesFile = [System.IO.Path]::GetTempFileName()
 # 7. Publicação no GitHub Releases
 Write-Host "`n[6/6] Publicando release $tag no GitHub..." -ForegroundColor Yellow
 
+$localTag = (git tag -l $tag)
+if (-not $localTag) {
+    Write-Host "Criando tag $tag no git..." -ForegroundColor Gray
+    git tag $tag
+    git push origin $tag
+}
+
 $releaseExists = $false
 $null = gh release view $tag 2>&1
 if ($LASTEXITCODE -eq 0) {
