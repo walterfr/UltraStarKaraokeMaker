@@ -168,7 +168,12 @@ class PitchExtractor:
             empty = np.array([])
             return PitchTrack(timestamps=empty, pitch_hz=empty, confidence=empty, voicing=np.array([], dtype=bool))
 
-        result = self.model.detect(segment, sr, fmin=self.fmin, fmax=self.fmax)
+        if hasattr(self.model, "detect"):
+            result = self.model.detect(segment, sr, fmin=self.fmin, fmax=self.fmax)
+        else:
+            self.model.fmin = self.fmin
+            self.model.fmax = self.fmax
+            result = self.model.detect_from_array(segment, sr)
         confidence = np.asarray(result.confidence)
         return PitchTrack(
             timestamps=np.asarray(result.timestamps) + start_s,  # absoluto

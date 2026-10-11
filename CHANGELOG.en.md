@@ -4,6 +4,13 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.24.3] — 2026-10-11
+
+### Fixed
+
+- **Backwards compatibility in pitch extractor for `swift-f0` 0.1.x.** Added fallback to `detect_from_array` when the Python environment has `swift-f0` versions prior to 0.2.0, preventing `AttributeError: 'SwiftF0' object has no attribute 'detect'` during Stage 6.
+- **Automated Linux package build and attachment on release.** `scripts/release.ps1` now triggers the GitHub Actions workflow to compile and attach `.deb`, `.rpm`, and `.AppImage` packages to the published release.
+
 ## [0.24.2] — 2026-10-11
 
 ### Added

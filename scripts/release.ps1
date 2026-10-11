@@ -226,6 +226,10 @@ if ($releaseExists) {
 
 Remove-Item -Path $tempNotesFile -Force -ErrorAction SilentlyContinue
 
+# Dispara compilação dos pacotes Linux (.deb, .rpm, .AppImage) via GitHub Actions
+Write-Host "`nDisparando build dos pacotes Linux no GitHub Actions..." -ForegroundColor Cyan
+gh workflow run build-linux.yml --ref $tag
+
 Write-Host "`n==========================================" -ForegroundColor Green
 Write-Host " Release $tag publicada com sucesso!" -ForegroundColor Green
 Write-Host " Acesse: https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/$tag" -ForegroundColor Green
