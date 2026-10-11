@@ -1,0 +1,62 @@
+# ==============================================================================
+# COMANDOS POWERSHELL PARA COMPILAÇÃO E ENVIO DE RELEASE (USKMAKER)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. OPÇÃO RÁPIDA / AUTOMATIZADA (RECOMENDADO)
+# ------------------------------------------------------------------------------
+
+# Release padrão (pega versão do package.json, roda testes, compila e envia pro GitHub):
+npm run release
+
+# Ou chamando o script PowerShell diretamente com opções:
+powershell -ExecutionPolicy Bypass -File scripts/release.ps1
+
+# Especificando uma versão específica:
+powershell -ExecutionPolicy Bypass -File scripts/release.ps1 -Version 0.24.1
+
+# Pular testes durante o processo:
+powershell -ExecutionPolicy Bypass -File scripts/release.ps1 -SkipTests
+
+# Criar release como rascunho (Draft):
+powershell -ExecutionPolicy Bypass -File scripts/release.ps1 -Draft
+
+# Criar release como pré-lançamento (Prerelease):
+powershell -ExecutionPolicy Bypass -File scripts/release.ps1 -Prerelease
+
+# Pular compilação (apenas re-enviar instalador já compilado):
+powershell -ExecutionPolicy Bypass -File scripts/release.ps1 -SkipBuild
+
+
+# ------------------------------------------------------------------------------
+# 2. OPÇÃO PASSO A PASSO (MANUAL)
+# ------------------------------------------------------------------------------
+
+# Passo 2.1: Verificar autenticação no GitHub CLI
+gh auth status
+# (Se não estiver conectado, rode: gh auth login)
+
+# Passo 2.2: Executar testes de validação
+npm test
+cargo test --manifest-path rust-core/Cargo.toml
+python-sidecar\venv\Scripts\pytest.exe python-sidecar\tests
+
+# Passo 2.3: Compilar instalador Windows (.exe NSIS)
+npm run tauri build
+
+# Passo 2.4: Localizar instalador e gerar checksum SHA256
+$installer = (Get-ChildItem -Path src-tauri\target\release\bundle\nsis\USKMaker_*_x64-setup.exe | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+$installerName = [System.IO.Path]::GetFileName($installer)
+$hash = (Get-FileHash -Path $installer -Algorithm SHA256).Hash.ToLower()
+$sha256File = "$installer.sha256"
+"$hash *$installerName" | Out-File -FilePath $sha256File -Encoding ascii
+
+# Passo 2.5: Enviar para o GitHub Releases
+$version = "0.24.1"   # Ajuste para a versão desejada
+$tag = "v$version"
+
+# Criar nova release:
+gh release create $tag $installer $sha256File --title "USKMaker $tag" --notes "Notas da versão $tag"
+
+# Ou atualizar release existente:
+gh release upload $tag $installer $sha256File --clobber

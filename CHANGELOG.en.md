@@ -4,6 +4,17 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.24.2] — 2026-10-11
+
+### Added
+
+- **Support for `.ogg` files as local input audio.** The local file picker now accepts `.ogg` files directly, in addition to `.mp3`, `.wav`, `.flac`, `.m4a`, and `.mp4`. The sidecar normalizes the input audio to `.wav` via ffmpeg before separation, and reads metadata and embedded cover art from Vorbis tags (`METADATA_BLOCK_PICTURE` and `COVERART`).
+- **Local release automation via PowerShell script.** Added `scripts/release.ps1` (`npm run release`) to build NSIS installer, generate SHA256 checksums, and publish directly to GitHub Releases via `gh` without consuming GitHub Actions quota.
+
+### Fixed
+
+- **App version included in the `#CREATOR` header of `.txt` files.** USKMaker now outputs `#CREATOR:USKMaker v<version>` (e.g., `#CREATOR:USKMaker v0.24.2`) in generated packages and saves from the review screen (closes #35).
+
 ## [0.24.1] — 2026-10-01 (contribution by [@osklu002](https://github.com/osklu002))
 
 ### Added
