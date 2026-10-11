@@ -20,6 +20,28 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
+      - name: Aguardar instalador Windows (.exe) no Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ inputs.release_tag || github.event.release.tag_name || github.ref_name }}"
+          echo "Aguardando o instalador Windows (.exe) ficar disponivel no release $TAG..."
+          MAX_RETRIES=40
+          COUNT=0
+          while [ $COUNT -lt $MAX_RETRIES ]; do
+            ASSETS=$(gh release view "$TAG" --repo "${{ github.repository }}" --json assets -q ".assets[].name" 2>/dev/null || true)
+            if echo "$ASSETS" | grep -q '\.exe$'; then
+              echo "Instalador .exe encontrado no release:"
+              echo "$ASSETS" | grep '\.exe$'
+              exit 0
+            fi
+            echo "Instalador ainda nao disponivel (tentativa $((COUNT+1))/$MAX_RETRIES). Aguardando 30s..."
+            sleep 30
+            COUNT=$((COUNT+1))
+          done
+          echo "Timeout: instalador .exe nao foi encontrado apos 20 minutos."
+          exit 1
+
       - name: Publish to WinGet
         uses: vedantmgoyal9/winget-releaser@v2
         with:
