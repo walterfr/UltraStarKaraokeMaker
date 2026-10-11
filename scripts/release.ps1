@@ -194,7 +194,7 @@ if (-not $notesContent) {
 }
 
 $tempNotesFile = [System.IO.Path]::GetTempFileName()
-[System.IO.File]::WriteAllText($tempNotesFile, $notesContent, [System.Text.Encoding]::UTF8)
+[System.IO.File]::WriteAllText($tempNotesFile, $notesContent, [System.Text.UTF8Encoding]::new($false))
 
 # 7. Publicação no GitHub Releases
 Write-Host "`n[6/6] Publicando release $tag no GitHub..." -ForegroundColor Yellow
