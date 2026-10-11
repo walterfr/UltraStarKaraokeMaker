@@ -78,8 +78,8 @@ if ($LASTEXITCODE -ne 0) {
     Write-Error "GitHub CLI ('gh') não autenticado. Execute 'gh auth login' antes de continuar."
 }
 
-# Verifica status do Git
-$gitStatus = (git status --porcelain)
+# Verifica status do Git (apenas arquivos rastreados modificados)
+$gitStatus = (git status --porcelain --untracked-files=no)
 if ($gitStatus -and -not $Force) {
     Write-Warning "Há alterações não commitadas na árvore de trabalho:"
     $gitStatus | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkYellow }
