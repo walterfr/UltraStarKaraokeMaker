@@ -1,17 +1,11 @@
 # AGENTS.md - Diretrizes do Projeto USKMaker
 
-## Regras Críticas de Release e CI (Importante)
-
-- **Cota do GitHub Actions esgotada**: NUNCA depender de GitHub Actions para builds, CI ou releases.
-- **Triggers automáticos desativados**: Os workflows em `.github/workflows/` (`build-windows.yml`, `build-linux.yml`, `winget.yml`) têm triggers `push` e `pull_request` comentados para evitar falhas de cota.
-- **Releases sempre locais**: Todos os lançamentos devem ser compilados na máquina local e enviados diretamente ao GitHub Releases via GitHub CLI (`gh`).
-- **Comando de Release**:
-  ```powershell
-  npm run release
-  # ou com parâmetros específicos:
-  powershell -ExecutionPolicy Bypass -File scripts/release.ps1 -Version 0.24.1 [-SkipTests] [-Draft] [-Prerelease]
-  ```
-  O script executa os testes, compila o instalador NSIS via `npm run tauri build`, gera checksums SHA256, extrai o changelog correspondente de `CHANGELOG.md` e publica no GitHub via `gh release`.
+## Regras de Release e CI
+ 
+- **Repositório Público**: GitHub Actions é gratuito e ilimitado.
+- **Triggers automáticos ativos**: Os workflows em `.github/workflows/` (`build-windows.yml`, `build-linux.yml`, `winget.yml`) rodam em push de tags `v*`.
+- **Releases via Git**: Ao dar push de uma tag `vX.Y.Z`, os workflows compilam os pacotes de Windows (.exe) e Linux (.deb, .rpm, .AppImage) e anexam ao Release no GitHub.
+- **Release local opcional**: O script `scripts/release.ps1` pode ser usado caso deseje compilar ou testar localmente.
 
 ## Convenções de Formato UltraStar
 

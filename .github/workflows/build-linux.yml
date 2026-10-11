@@ -10,17 +10,15 @@ name: Build Linux packages
 
 on:
   workflow_dispatch:
-  # DESATIVADO: Cota do GitHub Actions esgotada. Releases são compilados
-  # localmente via scripts/release.ps1 (npm run release).
-  # push:
-  #   branches:
-  #     - main
-  #     - "feature/**"
-  #   tags:
-  #     - "v*"
-  # pull_request:
-  #   branches:
-  #     - main
+  push:
+    branches:
+      - main
+      - "feature/**"
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write

@@ -7,9 +7,8 @@ name: Publish to Winget
 # da conta que possui o fork walterfr/winget-pkgs.
 
 on:
-  # DESATIVADO: Cota do GitHub Actions esgotada. Disparar via workflow_dispatch se necessário.
-  # release:
-  #   types: [published]
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       release_tag:

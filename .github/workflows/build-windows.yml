@@ -14,19 +14,16 @@ name: Build Windows installer
 # de IA na primeira execução, via setup-sidecar.ps1. Este build produz o app.
 
 on:
-  # Botão "Run workflow" na aba Actions - o modo normal de usar isto.
   workflow_dispatch:
-  # DESATIVADO: Cota do GitHub Actions esgotada. Releases são compilados
-  # localmente via scripts/release.ps1 (npm run release).
-  # push:
-  #   branches:
-  #     - main
-  #     - "feature/**"
-  #   tags:
-  #     - "v*"
-  # pull_request:
-  #   branches:
-  #     - main
+  push:
+    branches:
+      - main
+      - "feature/**"
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
