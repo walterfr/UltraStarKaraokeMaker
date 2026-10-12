@@ -1,5 +1,6 @@
 # USKMaker — UltraStar Karaoke Maker
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23325582.svg)](https://doi.org/10.5281/zenodo.23325582)
 [![Release](https://img.shields.io/github/v/release/walterfr/UltraStarKaraokeMaker?color=blue)](https://github.com/walterfr/UltraStarKaraokeMaker/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-brightgreen)](https://github.com/walterfr/UltraStarKaraokeMaker/releases)
 [![WinGet](https://img.shields.io/badge/winget-walterfr.USKMaker-blue)](https://github.com/microsoft/winget-pkgs/tree/master/manifests/w/walterfr/USKMaker)
