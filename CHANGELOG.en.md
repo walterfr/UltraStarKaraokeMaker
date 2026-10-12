@@ -4,6 +4,12 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.24.4] — 2026-10-12
+
+### Added
+
+- **"Skip song" button in the queue.** While generating, when another song is waiting, the button stops only the current song, marks it as "skipped" and moves on to the next one, without stopping the whole queue. Cancel still stops everything. The next song starts a few seconds slower, because the AI process restarts and reloads its models.
+
 ## [0.24.3] — 2026-10-11
 
 ### Fixed

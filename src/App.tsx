@@ -75,7 +75,7 @@ interface EnvCheck {
   gpuVendor: "nvidia" | "amd" | null;
 }
 
-type QueueStatus = "pending" | "running" | "done" | "error" | "cancelled";
+type QueueStatus = "pending" | "running" | "done" | "error" | "cancelled" | "skipped";
 
 interface QueueItem {
   id: number;
@@ -382,6 +382,10 @@ function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [cancelled, setCancelled] = useState(false);
+  // Pular: mesmo cancel_pipeline do Cancelar (mata só o job atual), mas o
+  // ref avisa o processQueue para seguir para a próxima em vez de parar.
+  const [skipping, setSkipping] = useState(false);
+  const skipRequestedRef = useRef(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PipelineResult | null>(null);
@@ -1078,6 +1082,8 @@ function App() {
       setElapsed(0);
       setCancelled(false);
       setCancelling(false);
+      setSkipping(false);
+      skipRequestedRef.current = false;
       startedAtRef.current = Date.now();
       appWindow.setTitle(t("windowGenerating", { song: `${item.artist} - ${item.title}` }));
 
@@ -1089,6 +1095,10 @@ function App() {
         setCurrentStep(STEP_KEYS.length + 1);
         doneItems.push({ id: item.id, dir: res.outDir });
       } catch (err) {
+        if (err === CANCELLED_MSG && skipRequestedRef.current) {
+          patchItem(item.id, { status: "skipped" });
+          continue; // pulou só esta - segue para a próxima
+        }
         if (err === CANCELLED_MSG) {
           patchItem(item.id, { status: "cancelled" });
           setCancelled(true);
@@ -1121,6 +1131,7 @@ function App() {
 
     setIsRunning(false);
     setCancelling(false);
+    setSkipping(false);
     appWindow.setTitle("USKMaker");
 
     // Avisa que terminou (janela fora de foco). Cancelamento não avisa.
@@ -1245,11 +1256,26 @@ function App() {
   }
 
   async function handleCancel() {
+    skipRequestedRef.current = false; // Cancelar vence um Pular pendente
     setCancelling(true);
     try {
       await invoke("cancel_pipeline", { lang });
     } catch {
       setCancelling(false);
+    }
+  }
+
+  // Pula só a música atual: mata o job (mesmo comando do Cancelar) e o
+  // processQueue, vendo o ref, marca "pulada" e segue a fila. O próximo job
+  // respawna o sidecar frio (recarrega modelos) - custo aceito.
+  async function handleSkip() {
+    skipRequestedRef.current = true;
+    setSkipping(true);
+    try {
+      await invoke("cancel_pipeline", { lang });
+    } catch {
+      skipRequestedRef.current = false;
+      setSkipping(false);
     }
   }
 
@@ -1985,6 +2011,8 @@ function App() {
                     ? "✗"
                     : it.status === "cancelled"
                     ? "⊘"
+                    : it.status === "skipped"
+                    ? "⏭"
                     : "○"}
                 </span>
                 <span className="queue-name">
@@ -2174,6 +2202,11 @@ function App() {
           <button className="submit-button" disabled>
             {t("generating", { time: `${minutes}:${seconds}` })}
           </button>
+          {queue.some((it) => it.status === "pending") && (
+            <button className="clear-button" onClick={handleSkip} disabled={skipping || cancelling}>
+              {skipping ? t("skipping") : t("skip")}
+            </button>
+          )}
           <button className="cancel-button" onClick={handleCancel} disabled={cancelling}>
             {cancelling ? t("cancelling") : t("cancel")}
           </button>

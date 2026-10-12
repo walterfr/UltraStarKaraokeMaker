@@ -4,6 +4,12 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto usa [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [0.24.4] - 2026-10-12
+
+### Adicionado
+
+- **Botão "Pular música" na fila.** Durante a geração, quando há outra música esperando, o botão interrompe só a música atual, marca como "pulada" e segue para a próxima, sem parar a fila inteira. O Cancelar continua parando tudo. A próxima música começa alguns segundos mais lenta, porque o processo de IA reinicia e recarrega os modelos.
+
 ## [0.24.3] - 2026-10-11
 
 ### Corrigido
