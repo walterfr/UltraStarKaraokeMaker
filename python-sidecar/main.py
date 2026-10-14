@@ -463,7 +463,8 @@ def romanize_notes(notes, language: str) -> None:
 
 def write_song_ini(dest: Path, name: str, artist: str,
                    length_ms: int | None = None, year: int | None = None,
-                   genre: str | None = None) -> None:
+                   genre: str | None = None,
+                   video_start_time: int | None = None) -> None:
     """
     Escreve o song.ini que o YARG lê (seção [song]). Todos os campos são
     opcionais na spec (GuitarGame_ChartFormats), então só emitimos os que
@@ -477,13 +478,16 @@ def write_song_ini(dest: Path, name: str, artist: str,
         lines.append(f"year={year}")
     if genre:
         lines.append(f"genre={genre}")
+    if video_start_time is not None:
+        lines.append(f"video_start_time={video_start_time}")
     dest.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def export_yarg(yarg_dir: Path, txt_path: Path, stems, source_audio: Path,
                 cover_path: Path | None, video_path: Path | None,
                 name: str, artist: str, year: int | None, genre: str | None,
-                transpose: int = 0, audio_format: str = "ogg") -> None:
+                transpose: int = 0, audio_format: str = "ogg",
+                video_gap: float | None = None) -> None:
     """
     Monta a pasta no layout do YARG. O YARG lê o UltraStar .txt NATIVAMENTE
     (ChartFormat.UltraStar) - não há conversão de formato, só empacotamento.
@@ -507,7 +511,9 @@ def export_yarg(yarg_dir: Path, txt_path: Path, stems, source_audio: Path,
         length_ms = int(sf.info(str(source_audio)).duration * 1000)
     except Exception:
         length_ms = None
-    write_song_ini(yarg_dir / "song.ini", name, artist, length_ms, year, genre)
+    video_start_time = round(-video_gap * 1000) if video_gap is not None else None
+    write_song_ini(yarg_dir / "song.ini", name, artist, length_ms, year, genre,
+                   video_start_time=video_start_time)
 
 
 def _meta_source_label(source: str) -> str:
@@ -952,6 +958,20 @@ def run_pipeline(
             debug_log("ETAPA 1b - sem vídeo (falha não-fatal)")
             console.print(t("main.bgvideo_fail"))
 
+    video_gap = None
+    if source.video_path and source.video_path.exists() and (bg_video or bg_video_url or not url):
+        debug_log("Estimando offset de sincronização de vídeo (#VIDEOGAP)...")
+        try:
+            from pipeline.video_sync import estimate_video_offset
+            video_gap = estimate_video_offset(source.audio_wav, source.video_path, work_dir=work_path / "sync")
+            if video_gap is not None:
+                debug_log(f"#VIDEOGAP medido com sucesso: {video_gap} s")
+                console.print(f"[green]Sincronia de vídeo (#VIDEOGAP): {video_gap:+.2f}s[/green]")
+            else:
+                debug_log("#VIDEOGAP: correlação inconclusiva ou vídeo sem áudio (usando 0)")
+        except Exception as e:
+            debug_log(f"Falha ao estimar #VIDEOGAP: {e}")
+
     console.rule(t("main.step2"))
     debug_log("ETAPA 2 - iniciando separate_vocals")
     stems = separate_vocals(source.audio_wav, work_path / "stems", device=device)
@@ -1116,6 +1136,7 @@ def run_pipeline(
         audio_url=audio_url,
         video_url=resolved_video_url,
         cover_url=metadata.cover_url,
+        video_gap=video_gap,
         vocals_filename=vocals_filename,
         instrumental_filename=instrumental_filename,
         duet=duet,
@@ -1196,6 +1217,7 @@ def run_pipeline(
                 metadata.cover_path, source.video_path,
                 title, artist, metadata.year, metadata.genre,
                 transpose=transpose, audio_format=audio_format,
+                video_gap=video_gap,
             )
             console.print(t("main.yarg_ok", path=yarg_dir))
         except Exception as e:

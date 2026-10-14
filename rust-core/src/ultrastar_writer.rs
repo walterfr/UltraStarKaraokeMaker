@@ -93,6 +93,8 @@ pub struct Song {
     #[serde(default)]
     pub cover_url: Option<String>,
     #[serde(default)]
+    pub video_gap: Option<f64>,
+    #[serde(default)]
     pub preview_start: Option<f64>,
     #[serde(default)]
     pub medley_start_beat: Option<i64>,
@@ -247,6 +249,9 @@ impl Song {
         }
         if let Some(video_url) = &self.video_url {
             lines.push(format!("#VIDEOURL:{}", video_url));
+        }
+        if let Some(video_gap) = self.video_gap {
+            lines.push(format!("#VIDEOGAP:{}", Self::format_number(video_gap)));
         }
         if let Some(bg) = &self.background_filename {
             lines.push(format!("#BACKGROUND:{}", bg));

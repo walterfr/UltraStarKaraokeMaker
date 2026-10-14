@@ -280,3 +280,16 @@ fn writes_preview_and_medley_tags_when_present() {
     assert!(txt_with.contains("#GAP:0\n#PREVIEWSTART:45.20\n#MEDLEYSTARTBEAT:120\n#MEDLEYENDBEAT:240\n"));
 }
 
+#[test]
+fn writes_videogap_tag_when_present() {
+    let mut song = load_fixture();
+    let txt_without = song.to_txt();
+    assert!(!txt_without.contains("#VIDEOGAP:"));
+
+    song.video_filename = Some("clip.mp4".to_string());
+    song.video_gap = Some(-2.5);
+
+    let txt_with = song.to_txt();
+    assert!(txt_with.contains("#VIDEO:clip.mp4\n#VIDEOGAP:-2.50\n"));
+}
+

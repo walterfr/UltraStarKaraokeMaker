@@ -411,7 +411,8 @@ def build_ass(song: Song, lead_in_s: float = LEAD_IN_S) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _background_input_args(background: Path | None) -> tuple[list[str], str]:
+def _background_input_args(background: Path | None,
+                           video_gap: float | None = None) -> tuple[list[str], str]:
     """
     Args de entrada do ffmpeg + o filtro que transforma o fundo em 1280x720.
 
@@ -435,8 +436,15 @@ def _background_input_args(background: Path | None) -> tuple[list[str], str]:
     if background and background.exists():
         ext = background.suffix.lower()
         if ext in video_exts:
+            args = ["-stream_loop", "-1"]
+            if video_gap is not None:
+                if video_gap < 0:
+                    args += ["-ss", str(-video_gap)]
+                elif video_gap > 0:
+                    args += ["-itsoffset", str(video_gap)]
+            args += ["-i", str(background)]
             return (
-                ["-stream_loop", "-1", "-i", str(background)],
+                args,
                 f"[0:v]{cover},eq=brightness=-0.18:saturation=0.9,fps={FPS}[bg]",
             )
         if ext in image_exts:
@@ -472,7 +480,7 @@ def render_mp4(song: Song, audio_path: Path, dest_mp4: Path,
     ass_path = ass_path or (out_dir / "_karaoke_subs.ass")
     ass_path.write_text(build_ass(song), encoding="utf-8")
 
-    bg_args, bg_filter = _background_input_args(background)
+    bg_args, bg_filter = _background_input_args(background, song.video_gap)
     filter_complex = f"{bg_filter};[bg]subtitles={ass_path.name}[v]"
 
     cmd = [ffmpeg_exe(), "-y"]

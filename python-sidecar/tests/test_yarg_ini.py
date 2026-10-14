@@ -51,6 +51,11 @@ def test_zero_e_none_nao_emitem():
     assert "genre=" not in txt
 
 
+def test_video_start_time_emitted_when_present():
+    txt = _write(video_start_time=2500)
+    assert "video_start_time=2500" in txt
+
+
 if __name__ == "__main__":
     test_minimo_so_campos_obrigatorios()
     test_opcionais_emitidos_quando_presentes()

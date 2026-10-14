@@ -133,6 +133,7 @@ interface USSong {
   audio_url?: string | null;
   video_url?: string | null;
   cover_url?: string | null;
+  video_gap?: number | null;
   preview_start?: number | null;
   medley_start_beat?: number | null;
   medley_end_beat?: number | null;

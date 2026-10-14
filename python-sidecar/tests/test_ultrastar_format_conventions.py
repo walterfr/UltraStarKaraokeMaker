@@ -317,6 +317,26 @@ def test_detect_chorus_preview_medley():
     assert med_e_d is None
 
 
+def test_videogap_header_when_present():
+    from pipeline.ultrastar_writer import Note, Song
+
+    base = dict(
+        title="Sangue Latino",
+        artist="Rita Lee",
+        mp3_filename="Rita Lee - Sangue Latino.ogg",
+        bpm=246.1,
+        gap_ms=0,
+        video_filename="video.mp4",
+        notes=[Note(start_beat=0, duration_beats=2, pitch=0, text="Ju")],
+    )
+
+    sem = Song(**base).to_txt()
+    assert "#VIDEOGAP:" not in sem
+
+    com = Song(**base, video_gap=-2.5).to_txt()
+    assert "#VIDEO:video.mp4\n#VIDEOGAP:-2.50\n" in com
+
+
 if __name__ == "__main__":
     import inspect
     failed = 0

@@ -80,6 +80,7 @@ class Song:
     audio_url: str | None = None
     video_url: str | None = None
     cover_url: str | None = None
+    video_gap: float | None = None
     preview_start: float | None = None
     medley_start_beat: int | None = None
     medley_end_beat: int | None = None
@@ -144,6 +145,8 @@ class Song:
             lines.append(f"#VIDEO:{self.video_filename}")
         if self.video_url:
             lines.append(f"#VIDEOURL:{self.video_url}")
+        if self.video_gap is not None:
+            lines.append(f"#VIDEOGAP:{self._format_number(self.video_gap)}")
         if self.background_filename:
             lines.append(f"#BACKGROUND:{self.background_filename}")
         if self.vocals_filename:
