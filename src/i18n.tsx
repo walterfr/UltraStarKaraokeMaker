@@ -157,6 +157,8 @@ const STRINGS = {
     mp4ExportHint: "Além do pacote UltraStar, renderiza um vídeo \"(Karaoke).mp4\" com a letra preenchendo sílaba a sílaba, no mesmo tempo do alinhamento. Toca em qualquer TV, celular ou pendrive, sem precisar do jogo. Usa como fundo o vídeo do pacote (se houver), senão a arte de fundo ou a capa. Respeita as opções de áudio já escolhidas (backtrack e transposição). É o passo mais demorado depois da IA.",
     yargExportLabel: "Exportar para o YARG",
     yargExportHint: "Além do pacote UltraStar, gera uma subpasta \"(YARG)\" pronta para o YARG: notes.txt (o mesmo chart, que o YARG lê nativo), song.ini, e os áudios song/vocals (instrumental/voz, no formato escolhido em Formato do áudio). Reaproveita a separação e os metadados que o app já produz. Respeita a transposição escolhida.",
+    midiExportLabel: "Exportar MIDI com letra (.mid)",
+    midiExportHint: "Gera um arquivo Standard MIDI File (.mid) com a melodia e as letras sincronizadas (eventos Lyric). Compatível com DAWs (Reaper, Cubase), MuseScore, Synthesizer V e players de karaokê MIDI.",
     romanizeLabel: "Romanizar",
     romanizeHint: "Reescreve a letra do pacote em alfabeto latino, no sistema padrão do idioma (japonês: Hepburn · chinês: Pinyin · coreano: Revised Romanization · russo/ucraniano: transliteração · hindi: IAST), para quem não lê o script original conseguir cantar. O alinhamento roda sobre o idioma original — só o texto final muda.",
 
@@ -496,6 +498,8 @@ const STRINGS = {
     mp4ExportHint: "Alongside the UltraStar package, renders a \"(Karaoke).mp4\" video with the lyrics filling in syllable by syllable, on the same timing as the alignment. Plays on any TV, phone or USB stick, with no game needed. Uses the package video as the background when there is one, otherwise the background art or the cover. Respects the audio options already chosen (backtrack and transpose). It is the slowest step after the AI.",
     yargExportLabel: "Export for YARG",
     yargExportHint: "Alongside the UltraStar package, generates a \"(YARG)\" subfolder ready for YARG: notes.txt (the same chart, which YARG reads natively), song.ini, and the song/vocals audio files (instrumental/vocal, in the format chosen under Audio format). Reuses the separation and metadata the app already produces. Respects the chosen transpose.",
+    midiExportLabel: "Export MIDI with lyrics (.mid)",
+    midiExportHint: "Generates a Standard MIDI File (.mid) with melody and synchronized lyrics (Lyric events). Compatible with DAWs (Reaper, Cubase), MuseScore, Synthesizer V, and MIDI karaoke players.",
     romanizeLabel: "Romanize",
     romanizeHint: "Rewrites the package lyrics in the Latin alphabet, using the standard romanization system for the language (Japanese: Hepburn · Chinese: Pinyin · Korean: Revised Romanization · Russian/Ukrainian: transliteration · Hindi: IAST), so people who can't read the original script can sing along. Alignment runs on the original language — only the final text changes.",
 

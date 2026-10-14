@@ -203,6 +203,7 @@ interface PersistedSettings {
   keepHarmonies: boolean;
   yargExport: boolean;
   mp4Export: boolean;
+  midiExport: boolean;
   whisperModel: string;
   // Navegador de onde o yt-dlp lê os cookies do YouTube ("" = desligado).
   ytCookiesBrowser: string;
@@ -347,6 +348,7 @@ function App() {
   const [keepHarmonies, setKeepHarmonies] = useState(saved.keepHarmonies ?? false);
   const [yargExport, setYargExport] = useState(saved.yargExport ?? false);
   const [mp4Export, setMp4Export] = useState(saved.mp4Export ?? false);
+  const [midiExport, setMidiExport] = useState(saved.midiExport ?? false);
   const [whisperModel, setWhisperModel] = useState<string>(saved.whisperModel ?? "auto");
   const [ytCookiesBrowser, setYtCookiesBrowser] = useState<string>(saved.ytCookiesBrowser ?? "");
   // Duração da faixa em segundos, quando conhecida (Buscar dados do vídeo, ou
@@ -459,9 +461,9 @@ function App() {
 
   // ------------------------------------------------ persistência leve
   useEffect(() => {
-    const settings: PersistedSettings = { sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, keepHarmonies, yargExport, mp4Export, whisperModel, ytCookiesBrowser, romanize, audioFormat, maxVideoResolution };
+    const settings: PersistedSettings = { sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, keepHarmonies, yargExport, mp4Export, midiExport, whisperModel, ytCookiesBrowser, romanize, audioFormat, maxVideoResolution };
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  }, [sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, keepHarmonies, yargExport, mp4Export, whisperModel, ytCookiesBrowser, romanize, audioFormat, maxVideoResolution]);
+  }, [sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, keepHarmonies, yargExport, mp4Export, midiExport, whisperModel, ytCookiesBrowser, romanize, audioFormat, maxVideoResolution]);
 
   // ------------------------------------------------ SÓ EM DEV: preview de estado
   // Abre a UI num estado simulado sem precisar do backend Tauri, para inspecionar
@@ -968,6 +970,7 @@ function App() {
       transpose: parseInt(transpose, 10) || 0,
       yargExport,
       mp4Export,
+      midiExport,
       whisperModel,
       ytCookiesBrowser,
       romanize,
@@ -1941,6 +1944,16 @@ function App() {
             disabled={isRunning}
           />
           {t("yargExportLabel")}
+          <span className="tip-mark" aria-hidden="true">?</span>
+        </label>
+        <label className="checkbox-line" title={t("midiExportHint")}>
+          <input
+            type="checkbox"
+            checked={midiExport}
+            onChange={(e) => setMidiExport(e.target.checked)}
+            disabled={isRunning}
+          />
+          {t("midiExportLabel")}
           <span className="tip-mark" aria-hidden="true">?</span>
         </label>
         {ROMANIZABLE_LANGS.has(language) && (

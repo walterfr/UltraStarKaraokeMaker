@@ -5,6 +5,7 @@
 //! sidecar.rs (orquestração do processo Python via Tauri) e é
 //! incorporado ao src-tauri/.
 
+pub mod midi_writer;
 pub mod ultrastar_writer;
 
 pub use ultrastar_writer::{Note, NoteOverlap, Song};

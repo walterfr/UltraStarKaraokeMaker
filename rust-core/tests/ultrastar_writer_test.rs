@@ -211,3 +211,56 @@ fn writes_url_tags_when_present() {
     assert!(txt.contains("#COVERURL:https://coverartarchive.org/front.jpg\n"));
     assert!(txt.contains("#VIDEOURL:https://youtu.be/video123\n"));
 }
+
+#[test]
+fn to_midi_generates_valid_smf_with_lyrics() {
+    let song = load_fixture();
+    let midi = song.to_midi();
+
+    // Cabeçalho MThd
+    assert_eq!(&midi[0..4], b"MThd");
+    assert_eq!(u32::from_be_bytes([midi[4], midi[5], midi[6], midi[7]]), 6);
+    // Solo = Formato 0
+    assert_eq!(u16::from_be_bytes([midi[8], midi[9]]), 0);
+    // 1 track
+    assert_eq!(u16::from_be_bytes([midi[10], midi[11]]), 1);
+    // PPQ = 480
+    assert_eq!(u16::from_be_bytes([midi[12], midi[13]]), 480);
+
+    // Track chunk MTrk
+    assert_eq!(&midi[14..18], b"MTrk");
+
+    // Conta NoteOn (0x90) e Lyric (0xFF 0x05)
+    let non_freestyle_count = song.notes.iter().filter(|n| n.note_type != "F").count();
+    let mut note_on_count = 0;
+    let mut lyric_count = 0;
+
+    let mut i = 18;
+    while i < midi.len() {
+        if midi[i] == 0x90 {
+            note_on_count += 1;
+        } else if i + 1 < midi.len() && midi[i] == 0xFF && midi[i + 1] == 0x05 {
+            lyric_count += 1;
+        }
+        i += 1;
+    }
+
+    assert_eq!(note_on_count, non_freestyle_count);
+    assert_eq!(lyric_count, song.notes.len());
+}
+
+#[test]
+fn to_midi_duet_generates_format_1_three_tracks() {
+    let mut song = load_fixture();
+    song.duet = true;
+    song.p1_name = Some("Cantor 1".to_string());
+    song.p2_name = Some("Cantor 2".to_string());
+
+    let midi = song.to_midi();
+    assert_eq!(&midi[0..4], b"MThd");
+    // Dueto = Formato 1
+    assert_eq!(u16::from_be_bytes([midi[8], midi[9]]), 1);
+    // 3 tracks (Conductor + P1 + P2)
+    assert_eq!(u16::from_be_bytes([midi[10], midi[11]]), 3);
+}
+

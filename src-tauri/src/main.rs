@@ -264,6 +264,9 @@ struct PipelineInput {
     /// sem o jogo. Opt-in (é o passo mais lento depois da IA).
     #[serde(default)]
     mp4_export: bool,
+    /// Exportar MIDI com letra (.mid) para DAWs e players de karaokê. Opt-in.
+    #[serde(default)]
+    midi_export: bool,
     /// Modelo de reconhecimento usado no alinhamento: "auto" (escolhe pela
     /// VRAM), "medium" (rápido) ou "large-v3" (mais preciso em música densa).
     #[serde(default = "default_whisper_model")]
@@ -801,6 +804,14 @@ async fn run_pipeline(
     ));
     song.write(&txt_path)
         .map_err(|e| tr_err(lang, "write_txt_final", &e))?;
+
+    if input.midi_export {
+        let midi_path = out_dir.join(format!(
+            "{}.mid",
+            sanitize_path_component(&format!("{} - {}", input.artist, input.title))
+        ));
+        let _ = song.write_midi(&midi_path);
+    }
 
     let audio_path = out_dir.join(&song.mp3_filename);
 
@@ -1515,6 +1526,14 @@ fn save_song(out_dir: String, mut song: Song, lang: String) -> Result<SaveResult
             .replace("{path}", &txt_path.display().to_string())
             .replace("{err}", &e.to_string())
     })?;
+
+    let midi_path = dir.join(format!(
+        "{}.mid",
+        sanitize_path_component(&format!("{} - {}", song.artist, song.title))
+    ));
+    if midi_path.exists() {
+        let _ = song.write_midi(&midi_path);
+    }
 
     Ok(SaveResult {
         txt_path: txt_path.to_string_lossy().to_string(),
