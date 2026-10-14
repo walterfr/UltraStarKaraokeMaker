@@ -80,6 +80,9 @@ class Song:
     audio_url: str | None = None
     video_url: str | None = None
     cover_url: str | None = None
+    preview_start: float | None = None
+    medley_start_beat: int | None = None
+    medley_end_beat: int | None = None
     # Faixas separadas (a cappella / playback), opcionais. A spec v1 (apêndice
     # A.3) permite ao player usá-las no lugar do #MP3 pra oferecer volume
     # separado de voz-guia e instrumental - o karaokê "de verdade": subir a voz
@@ -121,6 +124,11 @@ class Song:
             lines.append(f"#AUDIOURL:{self.audio_url}")
         lines.append(f"#BPM:{self._format_number(self.bpm)}")
         lines.append(f"#GAP:{self.gap_ms}")
+        if self.preview_start is not None:
+            lines.append(f"#PREVIEWSTART:{self._format_number(self.preview_start)}")
+        if self.medley_start_beat is not None and self.medley_end_beat is not None:
+            lines.append(f"#MEDLEYSTARTBEAT:{self.medley_start_beat}")
+            lines.append(f"#MEDLEYENDBEAT:{self.medley_end_beat}")
 
         if self.genre:
             lines.append(f"#GENRE:{self.genre}")

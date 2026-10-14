@@ -264,3 +264,19 @@ fn to_midi_duet_generates_format_1_three_tracks() {
     assert_eq!(u16::from_be_bytes([midi[10], midi[11]]), 3);
 }
 
+#[test]
+fn writes_preview_and_medley_tags_when_present() {
+    let mut song = load_fixture();
+    let txt_without = song.to_txt();
+    assert!(!txt_without.contains("#PREVIEWSTART:"));
+    assert!(!txt_without.contains("#MEDLEYSTARTBEAT:"));
+    assert!(!txt_without.contains("#MEDLEYENDBEAT:"));
+
+    song.preview_start = Some(45.2);
+    song.medley_start_beat = Some(120);
+    song.medley_end_beat = Some(240);
+
+    let txt_with = song.to_txt();
+    assert!(txt_with.contains("#GAP:0\n#PREVIEWSTART:45.20\n#MEDLEYSTARTBEAT:120\n#MEDLEYENDBEAT:240\n"));
+}
+

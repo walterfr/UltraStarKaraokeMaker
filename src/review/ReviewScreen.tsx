@@ -133,6 +133,9 @@ interface USSong {
   audio_url?: string | null;
   video_url?: string | null;
   cover_url?: string | null;
+  preview_start?: number | null;
+  medley_start_beat?: number | null;
+  medley_end_beat?: number | null;
   creator: string;
   notes: USNote[];
   phrase_breaks_after_index: number[];

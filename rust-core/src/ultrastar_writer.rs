@@ -92,6 +92,12 @@ pub struct Song {
     pub video_url: Option<String>,
     #[serde(default)]
     pub cover_url: Option<String>,
+    #[serde(default)]
+    pub preview_start: Option<f64>,
+    #[serde(default)]
+    pub medley_start_beat: Option<i64>,
+    #[serde(default)]
+    pub medley_end_beat: Option<i64>,
     /// Faixas separadas (a cappella / playback), opcionais. A spec v1 (apêndice
     /// A.3) permite ao player usá-las no lugar do #MP3 pra dar volume separado
     /// de voz-guia e instrumental. Vêm do Demucs, que a pipeline já roda.
@@ -213,6 +219,13 @@ impl Song {
         }
         lines.push(format!("#BPM:{}", Self::format_number(self.bpm)));
         lines.push(format!("#GAP:{}", self.gap_ms));
+        if let Some(preview_start) = self.preview_start {
+            lines.push(format!("#PREVIEWSTART:{}", Self::format_number(preview_start)));
+        }
+        if let (Some(medley_start), Some(medley_end)) = (self.medley_start_beat, self.medley_end_beat) {
+            lines.push(format!("#MEDLEYSTARTBEAT:{}", medley_start));
+            lines.push(format!("#MEDLEYENDBEAT:{}", medley_end));
+        }
 
         if let Some(genre) = &self.genre {
             lines.push(format!("#GENRE:{}", genre));

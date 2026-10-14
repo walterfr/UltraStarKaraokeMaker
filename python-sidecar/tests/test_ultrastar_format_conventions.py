@@ -229,6 +229,94 @@ def test_url_headers_when_present():
     assert "#VIDEOURL:https://youtu.be/def" in com
 
 
+def test_preview_and_medley_headers_when_present():
+    from pipeline.ultrastar_writer import Note, Song
+
+    base = dict(
+        title="Sangue Latino",
+        artist="Rita Lee",
+        mp3_filename="Rita Lee - Sangue Latino.ogg",
+        bpm=246.1,
+        gap_ms=0,
+        notes=[Note(start_beat=0, duration_beats=2, pitch=0, text="Ju")],
+    )
+
+    sem = Song(**base).to_txt()
+    assert "#PREVIEWSTART:" not in sem
+    assert "#MEDLEYSTARTBEAT:" not in sem
+    assert "#MEDLEYENDBEAT:" not in sem
+
+    com = Song(
+        **base,
+        preview_start=45.2,
+        medley_start_beat=120,
+        medley_end_beat=240,
+    ).to_txt()
+    assert "#GAP:0\n#PREVIEWSTART:45.20\n#MEDLEYSTARTBEAT:120\n#MEDLEYENDBEAT:240" in com
+
+
+def test_detect_chorus_preview_medley():
+    from pipeline.align import WordTiming
+    from pipeline.beatgrid import BeatGrid
+    from pipeline.build_song import detect_chorus_preview_medley
+    from pipeline.ultrastar_writer import Note
+
+    grid = BeatGrid(bpm=120.0)
+    gap_ms = 0
+
+    # Letra com estrofe (2 linhas) e refrão repetido (2 linhas, cada uma dura 5s, total 10s)
+    # Refrão 1: 10s a 20s
+    # Refrão 2: 30s a 40s
+    wts = [
+        # Verso 1: 0s a 8s
+        WordTiming(word="Era", start=0.0, end=2.0, score=1.0),
+        WordTiming(word="uma", start=2.1, end=4.0, score=1.0, is_line_end=True),
+        WordTiming(word="casa", start=4.1, end=6.0, score=1.0),
+        WordTiming(word="muito", start=6.1, end=8.0, score=1.0, is_line_end=True),
+        # Refrão 1: 10s a 20s (dur=10s, chars=27)
+        WordTiming(word="Este", start=10.0, end=12.0, score=1.0),
+        WordTiming(word="e", start=12.1, end=14.0, score=1.0),
+        WordTiming(word="o", start=14.1, end=15.0, score=1.0, is_line_end=True),
+        WordTiming(word="nosso", start=15.1, end=17.5, score=1.0),
+        WordTiming(word="refrao", start=17.6, end=20.0, score=1.0, is_line_end=True),
+        # Verso 2: 21s a 29s
+        WordTiming(word="Outro", start=21.0, end=24.0, score=1.0, is_line_end=True),
+        WordTiming(word="verso", start=25.0, end=29.0, score=1.0, is_line_end=True),
+        # Refrão 2: 30s a 40s
+        WordTiming(word="Este", start=30.0, end=32.0, score=1.0),
+        WordTiming(word="e", start=32.1, end=34.0, score=1.0),
+        WordTiming(word="o", start=34.1, end=35.0, score=1.0, is_line_end=True),
+        WordTiming(word="nosso", start=35.1, end=37.5, score=1.0),
+        WordTiming(word="refrao", start=37.6, end=40.0, score=1.0, is_line_end=True),
+    ]
+
+    notes = [
+        Note(start_beat=0, duration_beats=16, pitch=0, text="Era"),
+        Note(start_beat=80, duration_beats=16, pitch=2, text="Este "),
+        Note(start_beat=96, duration_beats=16, pitch=2, text="e "),
+        Note(start_beat=112, duration_beats=8, pitch=2, text="o "),
+        Note(start_beat=120, duration_beats=16, pitch=4, text="nosso "),
+        Note(start_beat=140, duration_beats=20, pitch=4, text="refrao "),
+        Note(start_beat=240, duration_beats=16, pitch=2, text="Este "),
+    ]
+
+    preview_start, medley_start, medley_end = detect_chorus_preview_medley(
+        wts, notes, grid, gap_ms, duet=False
+    )
+    assert preview_start is not None
+    assert 9.0 <= preview_start <= 11.0
+    assert medley_start == 80
+    assert medley_end == 160
+
+    # Dueto omite medley
+    prev_d, med_s_d, med_e_d = detect_chorus_preview_medley(
+        wts, notes, grid, gap_ms, duet=True
+    )
+    assert prev_d is not None
+    assert med_s_d is None
+    assert med_e_d is None
+
+
 if __name__ == "__main__":
     import inspect
     failed = 0

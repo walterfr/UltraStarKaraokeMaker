@@ -84,6 +84,15 @@ class BeatGrid:
         beats_per_second = (self.bpm * 4) / 60.0
         return round(adjusted_seconds * beats_per_second)
 
+    def beat_to_seconds(self, beat: int | float, gap_ms: float) -> float:
+        """
+        Converte um 'beat' UltraStar de volta para timestamp em segundos,
+        reincorporando o #GAP. Fórmula oficial:
+        tempo_real_segundos = beat * 60 / (BPM * 4) + GAP/1000
+        """
+        gap_s = gap_ms / 1000.0
+        return (beat * 60.0) / (self.bpm * 4.0) + gap_s
+
 
 # Faixa "alvo" (uma oitava completa) do #BPM gravado. NÃO é o andamento
 # musical - é a unidade da grade de beats, e a faixa alta é o que dá a
