@@ -154,7 +154,7 @@ def _download(d: Path, artist: str, title: str, want: set, base: str,
     # Vídeo: clipe do YouTube por busca "artista título".
     if "video" in want:
         try:
-            got = download_background_video(f"ytsearch1:{artist} {title}", d)
+            got, got_url = download_background_video(f"ytsearch1:{artist} {title}", d)
             if got and Path(got).exists():
                 # download_background_video salva como "bgvideo.ext"; renomeia
                 # para o padrão do pacote e referencia no header.
@@ -163,7 +163,11 @@ def _download(d: Path, artist: str, title: str, want: set, base: str,
                     Path(got).replace(final)
                 result["video"] = final.name
                 _upsert_header(txt, "VIDEO", final.name) if txt else None
+                if got_url and txt:
+                    _upsert_header(txt, "VIDEOURL", got_url)
                 _update_json(d, "video_filename", final.name)
+                if got_url:
+                    _update_json(d, "video_url", got_url)
             else:
                 result["errors"].append("video: nenhum clipe encontrado")
         except Exception as e:  # noqa: BLE001

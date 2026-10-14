@@ -925,6 +925,13 @@ def run_pipeline(
     if source.video_path:
         console.print(t("main.video_downloaded", path=source.video_path))
 
+    audio_url = url if url and (url.startswith("http://") or url.startswith("https://")) else None
+    resolved_video_url = None
+    if with_video and audio_url:
+        resolved_video_url = audio_url
+    elif bg_video_url:
+        resolved_video_url = bg_video_url
+
     # Videoclipe de fundo para fonte LOCAL: o áudio do pacote continua sendo
     # o arquivo do usuário (ex.: rip de CD, qualidade melhor que YouTube);
     # o vídeo é só ilustração de fundo (#VIDEO). Com URL explícita usa ela;
@@ -935,10 +942,11 @@ def run_pipeline(
         query = (bg_video_url or "").strip() or f"ytsearch1:{artist} {title}"
         console.print(t("main.bgvideo_downloading", query=query))
         debug_log(f"ETAPA 1b - baixando videoclipe de fundo: {query}")
-        bg_path = download_background_video(query, work_path / "bgvideo")
+        bg_path, bg_url = download_background_video(query, work_path / "bgvideo")
         if bg_path:
             source.video_path = bg_path
-            debug_log(f"ETAPA 1b - concluída. video={bg_path}")
+            resolved_video_url = bg_url or bg_video_url
+            debug_log(f"ETAPA 1b - concluída. video={bg_path} url={resolved_video_url}")
             console.print(t("main.bgvideo_ok", path=bg_path))
         else:
             debug_log("ETAPA 1b - sem vídeo (falha não-fatal)")
@@ -1105,6 +1113,9 @@ def run_pipeline(
         cover_filename=cover_filename,
         video_filename=video_filename,
         background_filename=background_filename,
+        audio_url=audio_url,
+        video_url=resolved_video_url,
+        cover_url=metadata.cover_url,
         vocals_filename=vocals_filename,
         instrumental_filename=instrumental_filename,
         duet=duet,

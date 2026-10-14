@@ -194,3 +194,20 @@ fn format_number_matches_python_convention() {
     assert_eq!(Song::format_number(492.20), "492.20");
     assert_eq!(Song::format_number(0.0), "0");
 }
+
+#[test]
+fn writes_url_tags_when_present() {
+    let mut song = load_fixture();
+    assert!(!song.to_txt().contains("#AUDIOURL:"));
+    assert!(!song.to_txt().contains("#COVERURL:"));
+    assert!(!song.to_txt().contains("#VIDEOURL:"));
+
+    song.audio_url = Some("https://youtu.be/audio123".to_string());
+    song.cover_url = Some("https://coverartarchive.org/front.jpg".to_string());
+    song.video_url = Some("https://youtu.be/video123".to_string());
+
+    let txt = song.to_txt();
+    assert!(txt.contains("#AUDIOURL:https://youtu.be/audio123\n"));
+    assert!(txt.contains("#COVERURL:https://coverartarchive.org/front.jpg\n"));
+    assert!(txt.contains("#VIDEOURL:https://youtu.be/video123\n"));
+}

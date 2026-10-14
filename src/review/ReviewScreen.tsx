@@ -130,6 +130,9 @@ interface USSong {
   cover_filename: string | null;
   video_filename: string | null;
   background_filename: string | null;
+  audio_url?: string | null;
+  video_url?: string | null;
+  cover_url?: string | null;
   creator: string;
   notes: USNote[];
   phrase_breaks_after_index: number[];

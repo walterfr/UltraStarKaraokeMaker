@@ -86,6 +86,12 @@ pub struct Song {
     pub video_filename: Option<String>,
     #[serde(default)]
     pub background_filename: Option<String>,
+    #[serde(default)]
+    pub audio_url: Option<String>,
+    #[serde(default)]
+    pub video_url: Option<String>,
+    #[serde(default)]
+    pub cover_url: Option<String>,
     /// Faixas separadas (a cappella / playback), opcionais. A spec v1 (apêndice
     /// A.3) permite ao player usá-las no lugar do #MP3 pra dar volume separado
     /// de voz-guia e instrumental. Vêm do Demucs, que a pipeline já roda.
@@ -202,6 +208,9 @@ impl Song {
         // NÃO subir o #VERSION por causa disto: a v2 se declara NÃO PUBLICADA
         // ("may change significantly"), então 1.0.0 continua sendo o certo.
         lines.push(format!("#AUDIO:{}", self.mp3_filename));
+        if let Some(audio_url) = &self.audio_url {
+            lines.push(format!("#AUDIOURL:{}", audio_url));
+        }
         lines.push(format!("#BPM:{}", Self::format_number(self.bpm)));
         lines.push(format!("#GAP:{}", self.gap_ms));
 
@@ -217,8 +226,14 @@ impl Song {
         if let Some(cover) = &self.cover_filename {
             lines.push(format!("#COVER:{}", cover));
         }
+        if let Some(cover_url) = &self.cover_url {
+            lines.push(format!("#COVERURL:{}", cover_url));
+        }
         if let Some(video) = &self.video_filename {
             lines.push(format!("#VIDEO:{}", video));
+        }
+        if let Some(video_url) = &self.video_url {
+            lines.push(format!("#VIDEOURL:{}", video_url));
         }
         if let Some(bg) = &self.background_filename {
             lines.push(format!("#BACKGROUND:{}", bg));

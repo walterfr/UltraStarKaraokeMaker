@@ -79,6 +79,7 @@ class SongMetadata:
     year: int | None = None
     genre: str | None = None
     cover_path: Path | None = None  # caminho local da capa já salva, se houver
+    cover_url: str | None = None  # URL remota da capa (se baixada da web)
     background_path: Path | None = None  # imagem de fundo 16:9 (fanart.tv), se houver
     source: str = "nenhuma"  # fontes usadas, unidas por "+" (ex.:
     # "arquivo+itunes"); "nenhuma" quando nada foi encontrado
@@ -331,15 +332,16 @@ def _mb_fetch_year_genre(release_mbid: str) -> tuple[int | None, str | None]:
     return year, genre
 
 
-def _caa_download_cover(release_mbid: str, out_cover_path: Path) -> Path | None:
+def _caa_download_cover(release_mbid: str, out_cover_path: Path) -> tuple[Path, str] | None:
     """
     Baixa a capa frontal do Cover Art Archive para o release dado.
     O endpoint /front redireciona (307) para a imagem real - requests
-    segue automaticamente. Retorna o caminho salvo, ou None.
+    segue automaticamente. Retorna o caminho salvo e a URL, ou None.
     """
+    url = f"{_CAA_BASE}/release/{release_mbid}/front-500"
     try:
         resp = requests.get(
-            f"{_CAA_BASE}/release/{release_mbid}/front-500",
+            url,
             headers={"User-Agent": _USER_AGENT},
             timeout=_HTTP_TIMEOUT,
             allow_redirects=True,
@@ -348,7 +350,7 @@ def _caa_download_cover(release_mbid: str, out_cover_path: Path) -> Path | None:
             return None
         resp.raise_for_status()
         if _save_cover_image(resp.content, out_cover_path):
-            return out_cover_path
+            return out_cover_path, url
     except Exception as e:
         print(t("metadata.caa_failed", err=e))
     return None
@@ -411,6 +413,7 @@ def _itunes_fill(meta: SongMetadata, artist: str, title: str, out_cover_path: Pa
                 img.raise_for_status()
                 if _save_cover_image(img.content, out_cover_path):
                     meta.cover_path = out_cover_path
+                    meta.cover_url = art_url
                     used = True
             except Exception as e:
                 print(t("metadata.itunes_cover_failed", err=e))
@@ -434,8 +437,8 @@ def _itunes_fill(meta: SongMetadata, artist: str, title: str, out_cover_path: Pa
 # Fonte 4: Deezer API (sem chave; capa cover_xl de 1000px)
 # ---------------------------------------------------------------------------
 
-def _deezer_fetch_cover(artist: str, title: str, out_cover_path: Path) -> Path | None:
-    """Busca a faixa no Deezer e baixa a capa do álbum. Retorna o caminho ou None."""
+def _deezer_fetch_cover(artist: str, title: str, out_cover_path: Path) -> tuple[Path, str] | None:
+    """Busca a faixa no Deezer e baixa a capa do álbum. Retorna (caminho, url) ou None."""
     try:
         resp = requests.get(
             "https://api.deezer.com/search",
@@ -454,7 +457,7 @@ def _deezer_fetch_cover(artist: str, title: str, out_cover_path: Path) -> Path |
         img = requests.get(cover_url, headers={"User-Agent": _USER_AGENT}, timeout=_HTTP_TIMEOUT)
         img.raise_for_status()
         if _save_cover_image(img.content, out_cover_path):
-            return out_cover_path
+            return out_cover_path, cover_url
     except Exception as e:
         print(t("metadata.deezer_failed", err=e))
     return None
@@ -594,6 +597,7 @@ def _lastfm_fill(meta: SongMetadata, artist: str, title: str, out_cover_path: Pa
                 img.raise_for_status()
                 if _save_cover_image(img.content, out_cover_path):
                     meta.cover_path = out_cover_path
+                    meta.cover_url = cover_url
                     used = True
             except Exception as e:
                 print(t("metadata.lastfm_cover_failed", err=e))
@@ -614,7 +618,7 @@ def _lastfm_fill(meta: SongMetadata, artist: str, title: str, out_cover_path: Pa
 # Fonte 6 (opcional): Discogs - exige token pessoal em DISCOGS_TOKEN
 # ---------------------------------------------------------------------------
 
-def _discogs_fetch_cover(artist: str, title: str, out_cover_path: Path) -> Path | None:
+def _discogs_fetch_cover(artist: str, title: str, out_cover_path: Path) -> tuple[Path, str] | None:
     """
     Busca a capa no Discogs. A API de busca exige autenticação, então esta
     fonte só participa da cascata quando a variável de ambiente
@@ -661,7 +665,7 @@ def _discogs_fetch_cover(artist: str, title: str, out_cover_path: Path) -> Path 
                 img = requests.get(cover_url, headers=headers, timeout=_HTTP_TIMEOUT)
                 img.raise_for_status()
                 if _save_cover_image(img.content, out_cover_path):
-                    return out_cover_path
+                    return out_cover_path, cover_url
         if found_any:
             print(t("metadata.discogs_no_image"))
         else:
@@ -749,8 +753,9 @@ def fetch_metadata(
                     meta.genre = mb_genre
                     used_mb = True
             if meta.cover_path is None:
-                if _caa_download_cover(release_mbid, out_cover_path):
-                    meta.cover_path = out_cover_path
+                caa_cover = _caa_download_cover(release_mbid, out_cover_path)
+                if caa_cover:
+                    meta.cover_path, meta.cover_url = caa_cover
                     used_mb = True
             if used_mb:
                 sources_used.append("musicbrainz")
@@ -762,8 +767,9 @@ def fetch_metadata(
 
         # --- Deezer (capa 1000px, sem chave) ---
         if meta.cover_path is None:
-            if _deezer_fetch_cover(artist, title, out_cover_path):
-                meta.cover_path = out_cover_path
+            dz = _deezer_fetch_cover(artist, title, out_cover_path)
+            if dz:
+                meta.cover_path, meta.cover_url = dz
                 sources_used.append("deezer")
 
         # --- Last.fm (capa + gênero via tags; só com LASTFM_API_KEY) ---
@@ -773,8 +779,9 @@ def fetch_metadata(
 
         # --- Discogs (capa; só participa com DISCOGS_TOKEN definido) ---
         if meta.cover_path is None:
-            if _discogs_fetch_cover(artist, title, out_cover_path):
-                meta.cover_path = out_cover_path
+            discogs = _discogs_fetch_cover(artist, title, out_cover_path)
+            if discogs:
+                meta.cover_path, meta.cover_url = discogs
                 sources_used.append("discogs")
 
         # --- fanart.tv (background 16:9; só participa com FANARTTV_API_KEY) ---

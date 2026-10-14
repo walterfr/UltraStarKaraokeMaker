@@ -200,6 +200,35 @@ def test_headers_das_faixas_separadas_sao_opcionais():
     # não a substituem (o player escolhe o que usar)
     assert "#MP3:Rita Lee - Sangue Latino.ogg" in com
 
+
+def test_url_headers_when_present():
+    from pipeline.ultrastar_writer import Note, Song
+
+    base = dict(
+        title="Sangue Latino",
+        artist="Rita Lee",
+        mp3_filename="Rita Lee - Sangue Latino.ogg",
+        bpm=246.1,
+        gap_ms=0,
+        notes=[Note(start_beat=0, duration_beats=2, pitch=0, text="Ju")],
+    )
+
+    sem = Song(**base).to_txt()
+    assert "#AUDIOURL:" not in sem
+    assert "#COVERURL:" not in sem
+    assert "#VIDEOURL:" not in sem
+
+    com = Song(
+        **base,
+        audio_url="https://youtu.be/abc",
+        cover_url="https://coverartarchive.org/cover.jpg",
+        video_url="https://youtu.be/def",
+    ).to_txt()
+    assert "#AUDIOURL:https://youtu.be/abc" in com
+    assert "#COVERURL:https://coverartarchive.org/cover.jpg" in com
+    assert "#VIDEOURL:https://youtu.be/def" in com
+
+
 if __name__ == "__main__":
     import inspect
     failed = 0

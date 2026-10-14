@@ -77,6 +77,9 @@ class Song:
     cover_filename: str | None = None
     video_filename: str | None = None
     background_filename: str | None = None
+    audio_url: str | None = None
+    video_url: str | None = None
+    cover_url: str | None = None
     # Faixas separadas (a cappella / playback), opcionais. A spec v1 (apêndice
     # A.3) permite ao player usá-las no lugar do #MP3 pra oferecer volume
     # separado de voz-guia e instrumental - o karaokê "de verdade": subir a voz
@@ -114,6 +117,8 @@ class Song:
         # Espelha o rust-core/src/ultrastar_writer.rs, que é quem escreve o
         # .txt final no app - os dois têm que sair iguais.
         lines.append(f"#AUDIO:{self.mp3_filename}")
+        if self.audio_url:
+            lines.append(f"#AUDIOURL:{self.audio_url}")
         lines.append(f"#BPM:{self._format_number(self.bpm)}")
         lines.append(f"#GAP:{self.gap_ms}")
 
@@ -125,8 +130,12 @@ class Song:
             lines.append(f"#LANGUAGE:{self.language}")
         if self.cover_filename:
             lines.append(f"#COVER:{self.cover_filename}")
+        if self.cover_url:
+            lines.append(f"#COVERURL:{self.cover_url}")
         if self.video_filename:
             lines.append(f"#VIDEO:{self.video_filename}")
+        if self.video_url:
+            lines.append(f"#VIDEOURL:{self.video_url}")
         if self.background_filename:
             lines.append(f"#BACKGROUND:{self.background_filename}")
         if self.vocals_filename:

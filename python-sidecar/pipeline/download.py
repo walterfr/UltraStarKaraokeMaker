@@ -271,7 +271,7 @@ def download_from_youtube_with_video(url: str, out_dir: Path, max_resolution: in
     return SourceAudio(audio_wav=audio_wav, video_path=video_path)
 
 
-def download_background_video(url_or_query: str, out_dir: Path) -> Path | None:
+def download_background_video(url_or_query: str, out_dir: Path) -> tuple[Path | None, str | None]:
     """
     Baixa SÓ a trilha de VÍDEO do YouTube, para servir de fundo (#VIDEO) de
     um pacote cujo áudio veio de arquivo local (caso típico: coleção ripada
@@ -281,24 +281,21 @@ def download_background_video(url_or_query: str, out_dir: Path) -> Path | None:
     "ytsearch1:artista título" (yt-dlp resolve a busca e baixa o 1º
     resultado - geralmente o clipe oficial, que é o mais relevante).
 
-    Diferenças para download_from_youtube_with_video:
-      - NÃO baixa a trilha de áudio (o áudio do pacote é o arquivo local do
-        usuário; vídeo sem áudio é menor e o UltraStar toca o vídeo mudo de
-        qualquer forma). Se só existir stream combinado, cai para ele.
-      - NÃO-FATAL: qualquer falha (sem resultado, rede, formato) retorna
-        None - o pacote segue normalmente só com a capa (#COVER), que já é
-        o fallback natural do jogo quando não há #VIDEO.
-      - Limita a 1080p: fundo de karaokê não precisa de 4K, e o arquivo
-        fica muito menor.
+    Retorna (caminho_do_video, url_resolvida) ou (None, None).
     """
     out_dir.mkdir(parents=True, exist_ok=True)
+    url_file = out_dir / "bgvideo.url"
+    cached_url = url_file.read_text(encoding="utf-8").strip() if url_file.exists() else None
+    if not cached_url and url_or_query.startswith("http"):
+        cached_url = url_or_query
 
     # Reaproveita download anterior (mesma filosofia das etapas raw/stems:
     # reprocessar uma música não deve baixar tudo de novo).
-    existing = sorted(out_dir.glob("bgvideo.*"), key=lambda p: p.stat().st_mtime, reverse=True)
+    existing = sorted([p for p in out_dir.glob("bgvideo.*") if p.suffix.lower() != ".url"],
+                      key=lambda p: p.stat().st_mtime, reverse=True)
     if existing:
         print(t("download.bgvideo_reuse", path=existing[0]))
-        return existing[0]
+        return existing[0], cached_url
 
     # nome fixo (em pasta própria) - evita a heurística de "arquivo mais
     # recente por extensão" usada na pasta raw, que poderia confundir com
@@ -307,7 +304,7 @@ def download_background_video(url_or_query: str, out_dir: Path) -> Path | None:
 
     cmd = _yt_dlp_base_cmd() + [
         "-f", "bestvideo[ext=mp4][height<=1080]/bestvideo[height<=1080]/best[ext=mp4]/best",
-        # --no-playlist agora está no comando base (_yt_dlp_base_cmd)
+        "--print-to-file", "%(webpage_url)s", str(url_file),
         "-o", output_template,
         url_or_query,
     ]
@@ -318,13 +315,15 @@ def download_background_video(url_or_query: str, out_dir: Path) -> Path | None:
         run_yt_dlp(cmd, t("download.what_bgvideo"))
     except Exception as e:
         print(t("download.bgvideo_failed", err=e))
-        return None
+        return None, None
 
-    candidates = sorted(out_dir.glob("bgvideo.*"), key=lambda p: p.stat().st_mtime, reverse=True)
+    candidates = sorted([p for p in out_dir.glob("bgvideo.*") if p.suffix.lower() != ".url"],
+                        key=lambda p: p.stat().st_mtime, reverse=True)
     if not candidates:
         print(t("download.bgvideo_none"))
-        return None
-    return candidates[0]
+        return None, None
+    resolved_url = url_file.read_text(encoding="utf-8").strip() if url_file.exists() else (url_or_query if url_or_query.startswith("http") else None)
+    return candidates[0], resolved_url
 
 
 def normalize_local_file(file_path: Path, out_dir: Path) -> Path:
