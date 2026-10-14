@@ -1504,6 +1504,146 @@ def align_lyrics_to_audio(
     return word_timings
 
 
+def transcribe_lyrics(
+    vocals_wav: Path,
+    language: str = "pt",
+    device: str = "cuda",
+    whisper_model_size: str = "medium",
+    whisper_device: str | None = None,
+) -> list[str]:
+    """
+    Transcreve o áudio vocal diretamente em linhas de texto usando Whisper.
+    Usado como fallback quando o usuário não fornece nenhuma letra oficial.
+    Retorna a lista de linhas de texto transcritas.
+    """
+    import whisperx
+
+    whisper_device = whisper_device or device
+    compute_type = "float16" if whisper_device == "cuda" else "int8"
+    audio = whisperx.load_audio(str(vocals_wav))
+    whisper_model = _get_whisper_model(whisper_model_size, whisper_device, compute_type, language)
+    transcription = whisper_model.transcribe(audio, language=language, task=WHISPER_TASK)
+
+    lines: list[str] = []
+    for seg in transcription.get("segments", []):
+        text = seg.get("text", "").strip()
+        if text:
+            lines.append(text)
+    return lines
+
+
+def detect_missing_lyrics_gaps(
+    word_timings: list[WordTiming],
+    vocals_wav: Path,
+    language: str = "pt",
+    device: str = "cuda",
+    whisper_model_size: str = "medium",
+    lead_vocals_wav: Path | None = None,
+    min_gap_s: float = 6.0,
+    min_rms: float = 0.012,
+    whisper_device: str | None = None,
+    work_dir: Path | None = None,
+) -> list[tuple[str, str, str]]:
+    """
+    Detecção em 2 estágios de possíveis trechos faltantes na letra:
+      1º estágio (barato): busca intervalos sem palavras com duração >= min_gap_s
+         e confere se há energia vocal mensurável (RMS >= min_rms) no áudio de vocais;
+      2º estágio (confirmação com Whisper): confere no stem de vocal principal (se disponível)
+         e roda Whisper no trecho fatiado. Se reconhecer 2 ou mais palavras, confirma voz e
+         retorna aviso (inicio_fmt, fim_fmt, texto_transcrito).
+
+    NÃO altera nem insere notas automaticamente (não corrompe letras oficiais).
+    """
+    import soundfile as sf
+    import whisperx
+
+    if not word_timings or not vocals_wav.exists():
+        return []
+
+    try:
+        info = sf.info(str(vocals_wav))
+        total_duration = info.duration
+        sr = info.samplerate
+    except Exception:
+        return []
+
+    candidate_gaps: list[tuple[float, float]] = []
+    first_start = word_timings[0].start
+    if first_start >= min_gap_s:
+        candidate_gaps.append((0.0, first_start))
+
+    for i in range(len(word_timings) - 1):
+        gap = word_timings[i + 1].start - word_timings[i].end
+        if gap >= min_gap_s:
+            candidate_gaps.append((word_timings[i].end, word_timings[i + 1].start))
+
+    last_end = word_timings[-1].end
+    if total_duration - last_end >= min_gap_s:
+        candidate_gaps.append((last_end, total_duration))
+
+    if not candidate_gaps:
+        return []
+
+    # Estágio 1: Checagem rápida de RMS no stem de vocais
+    suspicious_slices: list[tuple[float, float, float, float]] = []
+    try:
+        with sf.SoundFile(str(vocals_wav)) as f:
+            for g_start, g_end in candidate_gaps:
+                c_start = max(0.0, g_start + 0.5)
+                c_end = min(total_duration, g_end - 0.5)
+                if c_end - c_start < 2.0:
+                    continue
+                start_frame = int(c_start * sr)
+                num_frames = int((c_end - c_start) * sr)
+                f.seek(start_frame)
+                block = f.read(num_frames)
+                if block.size == 0:
+                    continue
+                rms = float(np.sqrt(np.mean(block ** 2)))
+                if rms >= min_rms:
+                    suspicious_slices.append((g_start, g_end, c_start, c_end))
+    except Exception:
+        return []
+
+    if not suspicious_slices:
+        return []
+
+    # Estágio 2: Confirmação com Whisper nos trechos suspeitos
+    # Usa lead_vocals_wav se fornecido (para evitar falsos positivos de backing/coro)
+    audio_for_whisper = lead_vocals_wav if (lead_vocals_wav and lead_vocals_wav.exists()) else vocals_wav
+
+    whisper_device = whisper_device or device
+    compute_type = "float16" if whisper_device == "cuda" else "int8"
+    whisper_model = _get_whisper_model(whisper_model_size, whisper_device, compute_type, language)
+
+    full_audio_16k = whisperx.load_audio(str(audio_for_whisper))
+
+    warnings: list[tuple[str, str, str]] = []
+    for g_start, g_end, c_start, c_end in suspicious_slices:
+        idx_start = int(c_start * 16000)
+        idx_end = int(c_end * 16000)
+        slice_16k = full_audio_16k[idx_start:idx_end]
+        if len(slice_16k) < 16000 * 1.5:
+            continue
+
+        try:
+            res = whisper_model.transcribe(slice_16k, language=language, task=WHISPER_TASK)
+            snippet_words = []
+            for seg in res.get("segments", []):
+                txt = seg.get("text", "").strip()
+                if txt:
+                    snippet_words.append(txt)
+            snippet_text = " ".join(snippet_words).strip()
+            if len(snippet_text.split()) >= 2:
+                s_min, s_sec = int(g_start // 60), int(g_start % 60)
+                e_min, e_sec = int(g_end // 60), int(g_end % 60)
+                warnings.append((f"{s_min}:{s_sec:02d}", f"{e_min}:{e_sec:02d}", snippet_text))
+        except Exception:
+            continue
+
+    return warnings
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Etapa 4: forced alignment letra<->áudio (teste isolado)")
     parser.add_argument("--vocals", required=True, help="Arquivo .wav do vocal isolado")

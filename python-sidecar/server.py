@@ -147,6 +147,7 @@ def _run_one(job: dict) -> None:
                     synced_lyrics_path=job.get("synced_lyrics_path"),
                     audio_format=job.get("audio_format", "ogg"),
                     max_video_resolution=job.get("max_video_resolution", 0),
+                    transcribe=job.get("transcribe", False),
                     aligner=job.get("aligner", pipeline_main.DEFAULT_ALIGNER),
                     app_version=job.get("app_version"),
                     creator=job.get("creator"),

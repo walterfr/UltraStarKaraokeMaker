@@ -476,3 +476,62 @@ def test_word_recall_e_ancora_mais_fuzzy_sobre_total():
     bs = alignment_stats(timings)["by_source"]
     wrecall = (bs["anchor"] + bs["fuzzy"]) / len(timings)
     assert wrecall == 0.6  # 3 de 5 (2 anchor + 1 fuzzy)
+
+
+def test_detect_missing_lyrics_gaps_mock(monkeypatch, tmp_path):
+    import soundfile as sf
+    from pipeline.align import WordTiming, detect_missing_lyrics_gaps
+
+    # Cria áudio WAV sintético de 20s
+    sr = 16000
+    t = np.linspace(0, 20, sr * 20, endpoint=False)
+    # 0s-5s silêncio, 5s-12s voz forte (440Hz), 12s-20s silêncio
+    audio = np.zeros(sr * 20, dtype=np.float32)
+    audio[5 * sr : 12 * sr] = 0.2 * np.sin(2 * np.pi * 440 * t[5 * sr : 12 * sr])
+
+    wav_path = tmp_path / "vocals.wav"
+    sf.write(str(wav_path), audio, sr)
+
+    # Letra só cobre 15s a 19s (deixando gap suspeito com voz em 0s a 15s)
+    wts = [
+        WordTiming(word="final", start=15.0, end=19.0, score=0.9),
+    ]
+
+    class FakeWhisperModel:
+        def transcribe(self, audio, **kw):
+            return {"segments": [{"text": "trecho esquecido cantado"}]}
+
+    monkeypatch.setattr("pipeline.align._get_whisper_model", lambda *args, **kw: FakeWhisperModel())
+    import whisperx
+    monkeypatch.setattr(whisperx, "load_audio", lambda path: audio)
+
+    warnings = detect_missing_lyrics_gaps(wts, wav_path, language="pt", device="cpu", min_gap_s=5.0)
+    assert len(warnings) == 1
+    start_fmt, end_fmt, text = warnings[0]
+    assert start_fmt == "0:00"
+    assert end_fmt == "0:15"
+    assert "trecho esquecido cantado" in text
+
+
+def test_transcribe_lyrics_mock(monkeypatch, tmp_path):
+    from pipeline.align import transcribe_lyrics
+
+    wav_path = tmp_path / "vocals.wav"
+    wav_path.write_bytes(b"dummy")
+
+    class FakeWhisperModel:
+        def transcribe(self, audio, **kw):
+            return {
+                "segments": [
+                    {"text": "Primeira linha cantada"},
+                    {"text": "  Segunda linha cantada  "},
+                ]
+            }
+
+    monkeypatch.setattr("pipeline.align._get_whisper_model", lambda *args, **kw: FakeWhisperModel())
+    import whisperx
+    monkeypatch.setattr(whisperx, "load_audio", lambda path: np.zeros(16000, dtype=np.float32))
+
+    lines = transcribe_lyrics(wav_path, language="pt", device="cpu")
+    assert lines == ["Primeira linha cantada", "Segunda linha cantada"]
+

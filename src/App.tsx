@@ -937,10 +937,10 @@ function App() {
     setLyricsSearchMsg({ kind: "ok", text: t("manualLrcApplied") });
   }
 
-  function validate(): string | null {
+  function validate(allowEmptyLyrics = false): string | null {
     if (sourceMode === "youtube" && !youtubeUrl.trim()) return t("valNeedYoutube");
     if (sourceMode === "file" && !filePath.trim()) return t("valNeedFile");
-    if (!lyricsText.trim()) return t("valNeedLyrics");
+    if (!lyricsText.trim() && !allowEmptyLyrics) return t("valNeedLyrics");
     if (!title.trim()) return t("valNeedTitle");
     if (!artist.trim()) return t("valNeedArtist");
     if (!outDir.trim()) return t("valNeedOutDir");
@@ -948,11 +948,12 @@ function App() {
   }
 
   // Snapshot dos campos do formulário no objeto que run_pipeline espera.
-  function buildInput(languageOverride?: string): Record<string, unknown> {
+  function buildInput(languageOverride?: string, transcribeOverride?: boolean): Record<string, unknown> {
     return {
       youtubeUrl: sourceMode === "youtube" ? youtubeUrl.trim() : null,
       filePath: sourceMode === "file" ? filePath.trim() : null,
       lyricsText,
+      transcribe: transcribeOverride ?? (!lyricsText.trim()),
       syncedLyrics,
       title: title.trim(),
       artist: artist.trim(),
@@ -994,12 +995,12 @@ function App() {
     setBgVideoUrl("");
   }
 
-  function makeQueueItem(languageOverride?: string): QueueItem {
+  function makeQueueItem(languageOverride?: string, transcribeOverride?: boolean): QueueItem {
     return {
       id: nextIdRef.current++,
       artist: artist.trim(),
       title: title.trim(),
-      input: buildInput(languageOverride),
+      input: buildInput(languageOverride, transcribeOverride),
       status: "pending",
     };
   }
@@ -1024,14 +1025,23 @@ function App() {
   }
 
   async function addToQueue() {
-    const validationError = validate();
+    let allowEmptyLyrics = false;
+    if (!lyricsText.trim()) {
+      const ok = await ask(t("lyricsEmptyTranscribeConfirm"), { title: "USKMaker", kind: "warning" });
+      if (!ok) {
+        setError(t("valNeedLyrics"));
+        return;
+      }
+      allowEmptyLyrics = true;
+    }
+    const validationError = validate(allowEmptyLyrics);
     if (validationError) {
       setError(validationError);
       return;
     }
     setError(null);
     const lang = await resolveLanguage();
-    setQueue((q) => [...q, makeQueueItem(lang)]);
+    setQueue((q) => [...q, makeQueueItem(lang, allowEmptyLyrics)]);
     clearSongFields();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -1179,7 +1189,26 @@ function App() {
 
   async function handleGenerate() {
     if (isRunning) return;
-    const formErr = validate();
+    let allowEmptyLyrics = false;
+    const pending = queue.filter((it) => it.status === "pending");
+    const hasFormContent = Boolean(
+      (sourceMode === "youtube" ? youtubeUrl.trim() : filePath.trim()) ||
+      title.trim() || artist.trim()
+    );
+
+    if (hasFormContent && !lyricsText.trim()) {
+      const ok = await ask(t("lyricsEmptyTranscribeConfirm"), { title: "USKMaker", kind: "warning" });
+      if (!ok) {
+        if (pending.length === 0) {
+          setError(t("valNeedLyrics"));
+          return;
+        }
+      } else {
+        allowEmptyLyrics = true;
+      }
+    }
+
+    const formErr = validate(allowEmptyLyrics);
 
     // AVISO ANTES DE GERAR (2026-09-06): uma letra sincronizada cujos tempos
     // nao cabem no audio e o sintoma de gravacao errada, e o sidecar VAI
@@ -1202,12 +1231,11 @@ function App() {
       );
       if (!ok) return;
     }
-    const pending = queue.filter((it) => it.status === "pending");
 
     // Se o formulário está preenchido, a música atual entra como último item.
     let current: QueueItem | null = null;
     if (!formErr) {
-      current = makeQueueItem(await resolveLanguage());
+      current = makeQueueItem(await resolveLanguage(), allowEmptyLyrics);
     } else if (pending.length === 0) {
       setError(formErr);
       return;

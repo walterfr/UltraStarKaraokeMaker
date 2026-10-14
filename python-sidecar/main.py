@@ -880,6 +880,7 @@ def run_pipeline(
     romanize: bool = False,
     audio_format: str = "ogg",
     max_video_resolution: int = 0,
+    transcribe: bool = False,
     aligner: str = DEFAULT_ALIGNER,
     creator: str | None = None,
     app_version: str | None = None,
@@ -988,6 +989,31 @@ def run_pipeline(
         console.print(t("main.bpm_auto_warn"))
 
     console.rule(t("main.step4"))
+
+    # Auto-transcrição se a letra estiver vazia ou transcribe=True
+    lyrics_file = Path(lyrics_path) if lyrics_path else None
+    has_lyrics = bool(lyrics_file and lyrics_file.exists() and lyrics_file.read_text(encoding="utf-8").strip())
+
+    if transcribe or not has_lyrics:
+        console.print("[yellow]Nenhuma letra fornecida: iniciando auto-transcrição pelo áudio com Whisper...[/yellow]")
+        debug_log("Auto-transcrição ativada: transcrevendo vocais...")
+        from pipeline.align import transcribe_lyrics
+        transcribed_lines = transcribe_lyrics(
+            stems.vocals,
+            language=language,
+            device=device,
+            whisper_model_size=whisper_model,
+        )
+        if not transcribed_lines:
+            raise RuntimeError("Auto-transcrição não detectou palavras no áudio.")
+
+        transcribed_text = "\n".join(transcribed_lines)
+        transcribed_file = out_path / "_lyrics_transcribed.txt"
+        transcribed_file.write_text(transcribed_text, encoding="utf-8")
+        lyrics_path = str(transcribed_file)
+        debug_log(f"Auto-transcrição concluída ({len(transcribed_lines)} linhas gravadas em {transcribed_file})")
+        console.print(f"[green]Auto-transcrição concluída: {len(transcribed_lines)} linhas geradas.[/green]")
+
     word_timings = None
     if aligner == "ctc":
         word_timings, stems = _align_with_ctc(
@@ -1012,6 +1038,25 @@ def run_pipeline(
         if uncovered > 10.0:
             console.print(t("main.lyrics_short", last=last_word_end,
                             duration=audio_duration, uncovered=uncovered))
+
+        # Detecção em 2 estágios de possíveis trechos faltantes na letra oficial
+        if has_lyrics:
+            debug_log("Verificando possíveis trechos faltantes na letra (2-stage gap detection)...")
+            try:
+                from pipeline.align import detect_missing_lyrics_gaps
+                lead_vocal_path = work_path / "lead_vocal" / "vocals_lead.wav"
+                gap_warnings = detect_missing_lyrics_gaps(
+                    word_timings, stems.vocals, language, device=device,
+                    whisper_model_size=whisper_model,
+                    lead_vocals_wav=lead_vocal_path if lead_vocal_path.exists() else None,
+                    work_dir=work_path,
+                )
+                for (start_str, end_str, snippet) in gap_warnings:
+                    msg = f"Possível trecho de letra faltando em {start_str}-{end_str}: \"{snippet}\""
+                    debug_log(msg)
+                    console.print(f"[yellow]{msg}[/yellow]")
+            except Exception as e:
+                debug_log(f"Falha na detecção de gaps (ignorada): {e}")
 
     console.rule(t("main.step5"))
     debug_log("ETAPA 5 - iniciando fetch_metadata")
@@ -1332,6 +1377,8 @@ if __name__ == "__main__":
                         help="Formato de saída de todos os áudios do pacote")
     parser.add_argument("--max-video-resolution", type=int, default=0,
                         help="Teto de altura (px) do vídeo baixado com --with-video. 0 = sem limite")
+    parser.add_argument("--transcribe", action="store_true",
+                        help="Transcrever automaticamente a letra pelo áudio com Whisper quando não fornecida")
     # Idioma das mensagens do log (não confundir com --language, que é o
     # idioma CANTADO da música). Default pt = o log de sempre. Ver pipeline/i18n.py.
     parser.add_argument("--ui-lang", default="pt", choices=list(SUPPORTED_LANGS),
@@ -1374,6 +1421,7 @@ if __name__ == "__main__":
             synced_lyrics_path=args.synced_lyrics,
             audio_format=args.audio_format,
             max_video_resolution=args.max_video_resolution,
+            transcribe=args.transcribe,
             aligner=args.aligner,
             creator=args.creator,
             app_version=args.app_version,

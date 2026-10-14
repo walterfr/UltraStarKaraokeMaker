@@ -267,6 +267,9 @@ struct PipelineInput {
     /// Exportar MIDI com letra (.mid) para DAWs e players de karaokê. Opt-in.
     #[serde(default)]
     midi_export: bool,
+    /// Transcrever automaticamente pelo áudio com Whisper quando a letra estiver vazia.
+    #[serde(default)]
+    transcribe: bool,
     /// Modelo de reconhecimento usado no alinhamento: "auto" (escolhe pela
     /// VRAM), "medium" (rápido) ou "large-v3" (mais preciso em música densa).
     #[serde(default = "default_whisper_model")]
@@ -712,6 +715,7 @@ async fn run_pipeline(
         "keep_harmonies": input.keep_harmonies,
         "mp4_export": input.mp4_export,
         "whisper_model": input.whisper_model,
+        "transcribe": input.transcribe,
         "romanize": input.romanize,
         "synced_lyrics_path": synced_path.as_ref().map(|p| p.to_string_lossy().to_string()),
         "audio_format": input.audio_format,
@@ -1572,7 +1576,7 @@ fn save_song(out_dir: String, mut song: Song, lang: String) -> Result<SaveResult
 /// outro nome e NÃO começa com "_", então é preservado — assim como .ogg,
 /// capa e vídeo. Função pura para poder ser testada isoladamente.
 fn is_aux_package_file(file_name: &str) -> bool {
-    if file_name == "_lyrics_input.txt" {
+    if file_name == "_lyrics_input.txt" || file_name == "_lyrics_transcribed.txt" {
         return true;
     }
     let ext = std::path::Path::new(file_name)
@@ -1744,6 +1748,7 @@ mod clean_extras_tests {
         // Espelha exatamente os nomes de uma pasta real gerada pelo pipeline.
         let apagar = [
             "_lyrics_input.txt",
+            "_lyrics_transcribed.txt",
             "_process_output.log",
             "pipeline_debug.log",
             "song_data.json",
