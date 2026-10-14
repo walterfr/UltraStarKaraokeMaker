@@ -73,8 +73,6 @@ import math
 from dataclasses import dataclass
 
 import numpy as np
-import soundfile as sf
-from swift_f0 import SwiftF0
 
 _MIDI_C4 = 60  # UltraStar: pitch 0 == C4 == MIDI 60
 
@@ -121,6 +119,8 @@ def _read_window(audio_path: str, start_s: float, end_s: float) -> tuple[np.ndar
     arquivo inteiro = 29 s; 300 leituras só do trecho = 0,05 s. Era tempo
     perdido em toda geração, sem mudar nada no resultado.
     """
+    import soundfile as sf
+
     with sf.SoundFile(audio_path) as f:
         sr = f.samplerate
         start_sample = max(0, int(start_s * sr))
@@ -143,6 +143,8 @@ class PitchExtractor:
         fmin: float = 46.875,
         fmax: float = 2093.75,
     ):
+        from swift_f0 import SwiftF0
+
         # Desde a 0.2.0 o detector não recebe nada na construção: a faixa de
         # frequência vai em cada chamada de detect(), e o threshold é nosso.
         self.model = SwiftF0()

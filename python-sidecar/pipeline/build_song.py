@@ -31,7 +31,7 @@ from .beatgrid import BeatGrid
 from .i18n import t
 from .pitch import PitchExtractor, PitchTrack
 from .syllabify import split_word_syllables
-from .ultrastar_writer import Note, Song
+from .ultrastar_writer import Note, Song, detect_chorus_preview_medley
 
 
 def fix_rounding_overlaps(notes: list[Note]) -> list[Note]:
@@ -814,120 +814,6 @@ def build_notes(
     notes = apply_golden_notes(notes, min_duration_beats=golden_min_beats(grid))
 
     return notes, phrase_breaks
-
-
-def detect_chorus_preview_medley(
-    word_timings: list[WordTiming],
-    notes: list[Note],
-    grid: BeatGrid,
-    gap_ms: int,
-    duet: bool = False,
-) -> tuple[float | None, int | None, int | None]:
-    """
-    Detecta automaticamente o refrão mais provável da música analisando repetições
-    de linhas na letra, determinando:
-      - preview_start: timestamp em segundos para prévia de áudio nos menus (#PREVIEWSTART)
-      - medley_start_beat: beat inicial do refrão para o modo Medley (#MEDLEYSTARTBEAT)
-      - medley_end_beat: beat final do refrão para o modo Medley (#MEDLEYENDBEAT)
-
-    Regras da comunidade UltraStar:
-      - Refrão para medley deve ter entre 8 e 60 segundos. Se > 60s, emite apenas preview_start.
-      - Se < 8s, descarta o candidato (muito curto para um refrão real).
-      - Em duetos, UltraStar Deluxe não suporta modo Medley; emite apenas preview_start.
-    """
-    if not word_timings or not notes:
-        return None, None, None
-
-    # Agrupa WordTiming em linhas pelo marcador is_line_end
-    lines: list[list[WordTiming]] = []
-    current_line: list[WordTiming] = []
-    for wt in word_timings:
-        current_line.append(wt)
-        if wt.is_line_end:
-            lines.append(current_line)
-            current_line = []
-    if current_line:
-        lines.append(current_line)
-
-    normalized_lines: list[tuple[int, str, float, float]] = []
-    for i, line_wts in enumerate(lines):
-        raw_text = " ".join(wt.word for wt in line_wts)
-        clean = re.sub(r"[^\w\s]", "", raw_text.lower()).strip()
-        clean = re.sub(r"\s+", " ", clean)
-        if clean:
-            start_t = line_wts[0].start
-            end_t = line_wts[-1].end
-            normalized_lines.append((i, clean, start_t, end_t))
-
-    if len(normalized_lines) < 2:
-        return None, None, None
-
-    n_lines = len(normalized_lines)
-    best_candidate: tuple[float, float, float] | None = None
-    best_score = -1
-
-    # Busca blocos de k linhas repetidas (de 8 até 1)
-    max_k = min(8, n_lines // 2)
-    for k in range(max_k, 0, -1):
-        for i in range(n_lines - k + 1):
-            block_sig = tuple(normalized_lines[x][1] for x in range(i, i + k))
-            total_chars = sum(len(s) for s in block_sig)
-            if total_chars < 12:
-                continue
-
-            occurrences: list[int] = []
-            j = 0
-            while j <= n_lines - k:
-                if tuple(normalized_lines[x][1] for x in range(j, j + k)) == block_sig:
-                    occurrences.append(j)
-                    j += k
-                else:
-                    j += 1
-
-            if len(occurrences) >= 2:
-                first_occ = occurrences[0]
-                start_s = normalized_lines[first_occ][2]
-                end_s = normalized_lines[first_occ + k - 1][3]
-                dur_s = end_s - start_s
-
-                if dur_s < 8.0:
-                    continue
-
-                score = len(occurrences) * total_chars
-                if score > best_score:
-                    best_score = score
-                    best_candidate = (start_s, end_s, dur_s)
-
-    if best_candidate is None:
-        return None, None, None
-
-    start_s, end_s, dur_s = best_candidate
-    preview_start = round(max(0.0, start_s), 2)
-
-    # Se > 60s ou em dueto, emite apenas preview_start
-    if duet or dur_s > 60.0:
-        return preview_start, None, None
-
-    raw_start_beat = grid.seconds_to_beat(start_s, gap_ms)
-    raw_end_beat = grid.seconds_to_beat(end_s, gap_ms)
-
-    # Encontra notas que pertencem ao intervalo do refrão
-    candidate_notes = [
-        n for n in notes
-        if n.start_beat >= raw_start_beat - 4 and n.start_beat <= raw_end_beat + 4
-    ]
-
-    if candidate_notes:
-        medley_start_beat = min(n.start_beat for n in candidate_notes)
-        medley_end_beat = max(n.start_beat + n.duration_beats for n in candidate_notes)
-    else:
-        medley_start_beat = raw_start_beat
-        medley_end_beat = raw_end_beat
-
-    # Alinha preview_start exatamente ao início da nota do refrão
-    preview_start = round(max(0.0, grid.beat_to_seconds(medley_start_beat, gap_ms)), 2)
-
-    return preview_start, medley_start_beat, medley_end_beat
 
 
 def build_song(

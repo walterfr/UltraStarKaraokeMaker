@@ -4,6 +4,20 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto usa [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [0.25.0] - 2026-10-14
+
+### Adicionado
+
+- **Exportação de MIDI com letra sincronizada (`.mid`).** Nova opção para gerar arquivos Standard MIDI File Format 0 (solo) e Format 1 (dueto com faixas separadas por cantor) contendo eventos de meta-texto de letra (`0x05`), permitindo importar as notas e letra cantada diretamente em DAWs, sintetizadores ou ferramentas de notação.
+- **Detecção automática de refrão com `#PREVIEWSTART` e tags Medley (`#MEDLEYSTARTBEAT`, `#MEDLEYENDBEAT`).** O pipeline identifica repetições líricas e marca o trecho do refrão alinhado ao beat das notas para audição prévia nos menus do jogo e suporte ao modo Medley oficial do UltraStar Deluxe (regradas para intervalos entre 8s e 60s, com omissão de medley em duetos).
+- **Cálculo automático de sincronia de vídeo avulso (`#VIDEOGAP`).** Ao carregar vídeos de fundo externos ou adicionais, o app calcula a defasagem temporal exata via correlação cruzada de envelopes de áudio (FFmpeg + librosa), gravando a tag `#VIDEOGAP` no arquivo `.txt`, aplicando compensação no player interno, no exportador de MP4 e no `song.ini` do YARG.
+- **Auto-transcrição quando a letra for vazia e detecção em 2 estágios de trechos faltantes.** Agora é possível submeter uma música sem letra: o Whisper transcreve os vocais isolados e o alinhador prossegue com timestamps e separação silábica normais. Durante o alinhamento com letra existente, um analisador em dois estágios (energia RMS em gaps >= 6s confirmado por inferência Whisper) emite alertas caso detecte vocais cantados que possam ter sido omitidos na letra fornecida.
+- **Tags de URL da comunidade (`#AUDIOURL`, `#VIDEOURL`, `#COVERURL`).** Preserva as fontes de download e metadados no cabeçalho do arquivo `.txt`.
+
+### Corrigido
+
+- **Importação de módulos nos testes leves do CI.** As dependências pesadas de áudio e IA (`librosa`, `soundfile`, `swift-f0`, `pyphen`) foram convertidas para importação tardia (*lazy*), permitindo que toda a suíte de lógica pura do sidecar rode sem dependências externas em runners enxutos de CI.
+
 ## [0.24.4] - 2026-10-12
 
 ### Adicionado

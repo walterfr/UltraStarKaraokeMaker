@@ -258,8 +258,7 @@ def test_preview_and_medley_headers_when_present():
 def test_detect_chorus_preview_medley():
     from pipeline.align import WordTiming
     from pipeline.beatgrid import BeatGrid
-    from pipeline.build_song import detect_chorus_preview_medley
-    from pipeline.ultrastar_writer import Note
+    from pipeline.ultrastar_writer import Note, detect_chorus_preview_medley
 
     grid = BeatGrid(bpm=120.0)
     gap_ms = 0

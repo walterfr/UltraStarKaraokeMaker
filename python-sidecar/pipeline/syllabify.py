@@ -14,9 +14,7 @@ Casos que vão exigir ajuste manual futuro (Fase 4 - tela de revisão):
 
 from __future__ import annotations
 
-import pyphen
-
-_dic = pyphen.Pyphen(lang="pt_BR")
+_dic: pyphen.Pyphen | None = None
 
 # Dicionário por idioma da música (código do Whisper). Antes TODO idioma usava
 # o pt_BR, e em inglês ele parte palavra demais ("lo-ve"): cada sílaba a mais é
@@ -40,8 +38,13 @@ _EN_SPLITS = {"gonna": 3, "wanna": 3, "gotta": 3}
 
 
 def _dictionary(language: str | None) -> pyphen.Pyphen:
+    import pyphen
+
     entry = _LANG_DICTS.get((language or "").lower())
     if entry is None:
+        global _dic
+        if _dic is None:
+            _dic = pyphen.Pyphen(lang="pt_BR")
         return _dic
     key = entry[0]
     if key not in _dic_cache:

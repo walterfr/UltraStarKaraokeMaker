@@ -60,7 +60,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-import librosa
 
 from .i18n import t
 
@@ -177,6 +176,8 @@ def detect_bpm(vocal_or_full_wav: Path, manual_bpm: float | None = None) -> Beat
             print(t("beatgrid.manual_out_of_range", bpm=manual_bpm, lo=_OCTAVE_MIN_BPM,
                     hi=_OCTAVE_MAX_BPM, beat_ms=beat_ms))
         return BeatGrid(bpm=manual_bpm)
+
+    import librosa
 
     y, sr = librosa.load(str(vocal_or_full_wav), sr=None)
     tempo, _ = librosa.beat.beat_track(y=y, sr=sr)

@@ -4,6 +4,20 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.25.0] — 2026-10-14
+
+### Added
+
+- **MIDI export with synchronized lyrics (`.mid`).** New option to export Standard MIDI File Format 0 (solo) and Format 1 (duet with separate tracks per singer) containing lyric meta-events (`0x05`), enabling seamless import of melody and lyrics into DAWs, synthesizers, and notation tools.
+- **Automatic chorus detection with `#PREVIEWSTART` and Medley tags (`#MEDLEYSTARTBEAT`, `#MEDLEYENDBEAT`).** Automatically analyzes repeating lyric sections and aligns chorus boundaries to note beats for menu audio previews and UltraStar Deluxe Medley mode (constrained between 8s and 60s, omitted for duets).
+- **Automatic offset synchronization for separate background videos (`#VIDEOGAP`).** When using standalone background videos, USKMaker calculates the exact temporal shift via cross-correlation of audio envelopes (FFmpeg + librosa), writing `#VIDEOGAP` to `.txt` and applying automatic compensation to the playback preview, MP4 video exporter, and YARG `song.ini`.
+- **Auto-transcribe when lyrics empty & 2-stage missing lyrics gap detection.** Songs can now be submitted without lyrics: Whisper automatically transcribes the isolated vocals, proceeding through standard CTC/Whisper phonetic alignment. When lyrics are provided, a 2-stage audio energy (RMS >= 6s gap) and Whisper inference detector flags vocals that might be missing from the provided text.
+- **Community URL tags (`#AUDIOURL`, `#VIDEOURL`, `#COVERURL`).** Preserves asset sources in UltraStar `.txt` headers.
+
+### Fixed
+
+- **Lightweight CI test execution.** Heavy audio and AI dependencies (`librosa`, `soundfile`, `swift-f0`, `pyphen`) are now imported lazily, allowing the pure-logic sidecar test suite to pass on minimal CI runners.
+
 ## [0.24.4] — 2026-10-12
 
 ### Added
