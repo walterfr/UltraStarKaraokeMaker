@@ -159,6 +159,9 @@ const STRINGS = {
     yargExportHint: "Além do pacote UltraStar, gera uma subpasta \"(YARG)\" pronta para o YARG: notes.txt (o mesmo chart, que o YARG lê nativo), song.ini, e os áudios song/vocals (instrumental/voz, no formato escolhido em Formato do áudio). Reaproveita a separação e os metadados que o app já produz. Respeita a transposição escolhida.",
     midiExportLabel: "Exportar MIDI com letra (.mid)",
     midiExportHint: "Gera um arquivo Standard MIDI File (.mid) com a melodia e as letras sincronizadas (eventos Lyric). Compatível com DAWs (Reaper, Cubase), MuseScore, Synthesizer V e players de karaokê MIDI.",
+    exportMidiButton: "Exportar MIDI (.mid)",
+    exportMidiHint: "Exporta as notas e sílabas atuais para um arquivo .mid na pasta da música (pronto para Reaper, Melodyne e DAWs).",
+    exportMidiDone: "MIDI exportado: {path}",
     romanizeLabel: "Romanizar",
     romanizeHint: "Reescreve a letra do pacote em alfabeto latino, no sistema padrão do idioma (japonês: Hepburn · chinês: Pinyin · coreano: Revised Romanization · russo/ucraniano: transliteração · hindi: IAST), para quem não lê o script original conseguir cantar. O alinhamento roda sobre o idioma original — só o texto final muda.",
 
@@ -501,6 +504,9 @@ const STRINGS = {
     yargExportHint: "Alongside the UltraStar package, generates a \"(YARG)\" subfolder ready for YARG: notes.txt (the same chart, which YARG reads natively), song.ini, and the song/vocals audio files (instrumental/vocal, in the format chosen under Audio format). Reuses the separation and metadata the app already produces. Respects the chosen transpose.",
     midiExportLabel: "Export MIDI with lyrics (.mid)",
     midiExportHint: "Generates a Standard MIDI File (.mid) with melody and synchronized lyrics (Lyric events). Compatible with DAWs (Reaper, Cubase), MuseScore, Synthesizer V, and MIDI karaoke players.",
+    exportMidiButton: "Export MIDI (.mid)",
+    exportMidiHint: "Exports the current notes and syllables to a .mid file in the song folder (ready for Reaper, Melodyne, and DAWs).",
+    exportMidiDone: "MIDI exported: {path}",
     romanizeLabel: "Romanize",
     romanizeHint: "Rewrites the package lyrics in the Latin alphabet, using the standard romanization system for the language (Japanese: Hepburn · Chinese: Pinyin · Korean: Revised Romanization · Russian/Ukrainian: transliteration · Hindi: IAST), so people who can't read the original script can sing along. Alignment runs on the original language — only the final text changes.",
 

@@ -1970,6 +1970,19 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     }
   }
 
+  async function handleExportMidi() {
+    const s = songRef.current;
+    if (!s) return;
+    setStatusMsg(null);
+    setActionError(null);
+    try {
+      const path = await invoke<string>("export_song_midi", { outDir, song: s, lang });
+      setStatusMsg(t("exportMidiDone", { path }));
+    } catch (err) {
+      setActionError(typeof err === "string" ? err : t("revSaveError"));
+    }
+  }
+
   async function handleClose() {
     if (dirty) {
       const leave = await ask(t("revConfirmDiscard"), { title: "USKMaker", kind: "warning" });
@@ -2067,6 +2080,14 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
           </button>
           <button className="submit-button compact" onClick={handleSave} disabled={saving || !dirty}>
             {saving ? t("revSaving") : t("revSave")}
+          </button>
+          <button
+            className="secondary"
+            title={t("exportMidiHint")}
+            onClick={handleExportMidi}
+            disabled={saving}
+          >
+            {t("exportMidiButton")}
           </button>
           <button
             className="secondary"

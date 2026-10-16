@@ -1558,6 +1558,21 @@ fn save_song(out_dir: String, mut song: Song, lang: String) -> Result<SaveResult
     })
 }
 
+#[tauri::command]
+fn export_song_midi(out_dir: String, song: Song, lang: String) -> Result<String, String> {
+    let dir = PathBuf::from(&out_dir);
+    let midi_path = dir.join(format!(
+        "{}.mid",
+        sanitize_path_component(&format!("{} - {}", song.artist, song.title))
+    ));
+    song.write_midi(&midi_path).map_err(|e| {
+        tr(&lang, "write_file")
+            .replace("{path}", &midi_path.display().to_string())
+            .replace("{err}", &e.to_string())
+    })?;
+    Ok(midi_path.to_string_lossy().to_string())
+}
+
 /// Apaga os arquivos auxiliares (não essenciais) da pasta de UMA música já
 /// finalizada: os intermediários `.json` (song_data.json / _job_status.json),
 /// os logs `.log` (pipeline_debug.log / _process_output.log) e a letra
@@ -2028,6 +2043,7 @@ fn main() {
             fetch_package_assets,
             load_song,
             save_song,
+            export_song_midi,
             cancel_pipeline,
             check_environment,
             torch_cuda_available,
