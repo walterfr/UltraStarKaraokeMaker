@@ -4,6 +4,12 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.25.1] — 2026-10-16
+
+### Added
+
+- **"Export MIDI (.mid)" button in the review/editor screen.** You can now export the `.mid` file with the current notes and syllables directly from the top bar of the review screen, even for packages previously generated without the MIDI option enabled.
+
 ## [0.25.0] — 2026-10-14
 
 ### Added
