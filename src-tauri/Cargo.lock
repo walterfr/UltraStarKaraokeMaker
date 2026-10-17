@@ -4747,7 +4747,7 @@ dependencies = [
 
 [[package]]
 name = "uskmaker"
-version = "0.25.1"
+version = "0.25.2"
 dependencies = [
  "serde",
  "serde_json",

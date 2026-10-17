@@ -4,6 +4,12 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.25.2] — 2026-10-17
+
+### Fixed
+
+- **Automatic retry and fallback on LRCLIB search (HTTP 503).** The LRCLIB client now performs up to 4 automatic attempts with progressive backoff on transient errors (`HTTP 503`/`502`/`504`/`429`) and automatically falls back from `/api/get` to `/api/search` before giving up, eliminating the need to click the search button multiple times.
+
 ## [0.25.1] — 2026-10-16
 
 ### Added

@@ -16,17 +16,47 @@ const appWindow = getCurrentWindow();
 // GET JSON no LRCLIB pelo plugin http do Tauri (sem CORS). O plugin da v2 segue
 // a API `fetch` padrão; este helper devolve o mesmo formato {ok,status,data}
 // do `http.fetch` da v1, para a lógica de escolha de registro não mudar.
+// Inclui retentativas automáticas com backoff curto para absorver os HTTP 503/502/504
+// intermitentes comuns na API pública do LRCLIB sem exigir novo clique do usuário.
+const LRCLIB_RETRY_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+const LRCLIB_RETRY_DELAYS_MS = [600, 1400, 2800];
+
 async function lrclibGet<T>(
   path: "get" | "search",
   query: Record<string, string>
 ): Promise<{ ok: boolean; status: number; data: T }> {
-  const resp = await httpFetch(`https://lrclib.net/api/${path}?${new URLSearchParams(query)}`, {
-    method: "GET",
-    // o LRCLIB pede que clientes se identifiquem
-    headers: { "Lrclib-Client": "USKMaker/0.1.0 (https://github.com/walterfr/UltraStarKaraokeMaker)" },
-    signal: AbortSignal.timeout(20_000),
-  });
-  return { ok: resp.ok, status: resp.status, data: resp.ok ? ((await resp.json()) as T) : (undefined as T) };
+  const url = `https://lrclib.net/api/${path}?${new URLSearchParams(query)}`;
+  let lastStatus = 503;
+
+  for (let attempt = 0; attempt <= LRCLIB_RETRY_DELAYS_MS.length; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, LRCLIB_RETRY_DELAYS_MS[attempt - 1]));
+    }
+    try {
+      const resp = await httpFetch(url, {
+        method: "GET",
+        // o LRCLIB pede que clientes se identifiquem
+        headers: {
+          "Lrclib-Client": "USKMaker/0.25.2 (https://github.com/walterfr/UltraStarKaraokeMaker)",
+          "User-Agent": "USKMaker/0.25.2 (https://github.com/walterfr/UltraStarKaraokeMaker)",
+        },
+        signal: AbortSignal.timeout(12_000),
+      });
+      lastStatus = resp.status;
+      if (resp.ok) {
+        return { ok: true, status: resp.status, data: (await resp.json()) as T };
+      }
+      if (!LRCLIB_RETRY_STATUSES.has(resp.status)) {
+        return { ok: false, status: resp.status, data: undefined as T };
+      }
+    } catch (err) {
+      if (attempt === LRCLIB_RETRY_DELAYS_MS.length) {
+        throw err;
+      }
+    }
+  }
+
+  return { ok: false, status: lastStatus, data: undefined as T };
 }
 
 // USKMaker - tela principal.
@@ -766,21 +796,15 @@ function App() {
         artist_name: artist.trim(),
         track_name: title.trim(),
       });
-      if (!resp.ok) {
-        if (resp.status === 404) {
-          setLyricsSearchMsg({ kind: "warn", text: t("lyricsNotFound") });
-        } else {
-          setLyricsSearchMsg({ kind: "err", text: t("lyricsSearchError", { msg: `HTTP ${resp.status}` }) });
-        }
-        return;
-      }
       // ---------------------------------------------------------------
       // ESCOLHA DO REGISTRO
       //
       // O /api/get devolve UM "melhor palpite". A base é colaborativa e a
       // mesma música costuma ter dezenas de registros (edit de rádio, versão
       // de álbum, extendida), então esse palpite pode ser um SEM sincronia -
-      // ou um COM sincronia que é de OUTRA gravação.
+      // ou um COM sincronia que é de OUTRA gravação. E se o /api/get falhar
+      // (404 por variação de grafia ou 503 no endpoint de busca exata), ainda
+      // tentamos o /api/search antes de desistir.
       //
       // BUG DA PRIMEIRA VERSÃO (03/09/2026): a checagem de duração só rodava
       // quando o /api/get não trazia sincronia. Se ele trouxesse, o registro
@@ -793,7 +817,7 @@ function App() {
       // sincronizados; e além de MAX_DURATION_DIFF_S não é a mesma gravação,
       // é outra montagem, cujos tempos atrapalham mais do que ajudam.
       // ---------------------------------------------------------------
-      const primary = resp.data;
+      const primary = resp.ok ? resp.data : undefined;
       const known = trackDuration && trackDuration > 0 ? trackDuration : null;
       const gapOf = (r: LrclibTrack): number | null =>
         known && r.duration ? Math.abs(r.duration - known) : null;
@@ -804,20 +828,23 @@ function App() {
       // O registro escolhido cabe nesta gravacao? Decide a mensagem no fim.
       let timingFits = true;
 
-      const primaryGap = gapOf(primary);
-      const primaryUsable =
-        !!primary.syncedLyrics?.trim() &&
-        (primaryGap === null || primaryGap <= MAX_DURATION_DIFF_S) &&
-        // Campo `duration` batendo NAO basta - ver lrcLastSungSecond.
-        lrcFitsAudio(primary.syncedLyrics!.trim(), known);
+      if (primary) {
+        const primaryGap = gapOf(primary);
+        const primaryUsable =
+          !!primary.syncedLyrics?.trim() &&
+          (primaryGap === null || primaryGap <= MAX_DURATION_DIFF_S) &&
+          // Campo `duration` batendo NAO basta - ver lrcLastSungSecond.
+          lrcFitsAudio(primary.syncedLyrics!.trim(), known);
 
-      if (primaryUsable) {
-        synced = primary.syncedLyrics!.trim();
-        if (primaryGap !== null) durationPickNote = String(Math.round(primaryGap));
+        if (primaryUsable) {
+          synced = primary.syncedLyrics!.trim();
+          if (primaryGap !== null) durationPickNote = String(Math.round(primaryGap));
+        }
       }
 
-      // Procura quando o palpite não serve: sem sincronia, ou sincronizado mas
-      // de uma gravação com outra duração.
+      // Procura quando o palpite não serve: sem sincronia, sincronizado mas
+      // de uma gravação com outra duração, ou quando /api/get falhou.
+      let searchFailedStatus: number | null = !resp.ok && resp.status !== 404 ? resp.status : null;
       if (!synced) {
         try {
           const alt = await lrclibGet<LrclibTrack[]>("search", {
@@ -825,6 +852,7 @@ function App() {
             track_name: title.trim(),
           });
           if (alt.ok && Array.isArray(alt.data)) {
+            searchFailedStatus = null;
             const wantedArtist = artist.trim().toLowerCase();
             const wantedTitle = title.trim().toLowerCase();
 
@@ -872,6 +900,15 @@ function App() {
               synced = candidates[0].syncedLyrics!.trim();
               plain = candidates[0].plainLyrics?.trim() || "";
             }
+
+            if (!plain) {
+              const firstPlain = alt.data.find((r) => r.plainLyrics?.trim());
+              if (firstPlain?.plainLyrics) {
+                plain = firstPlain.plainLyrics.trim();
+              }
+            }
+          } else if (!alt.ok && alt.status !== 404) {
+            searchFailedStatus = alt.status;
           }
         } catch {
           // Busca alternativa é bônus: falhar nela nunca pode derrubar a
@@ -879,11 +916,16 @@ function App() {
         }
       }
 
+      if (!primary && searchFailedStatus !== null && !synced && !plain) {
+        setLyricsSearchMsg({ kind: "err", text: t("lyricsSearchError", { msg: `HTTP ${searchFailedStatus}` }) });
+        return;
+      }
+
       // Texto puro: do registro escolhido, senão do palpite, senão derivado
       // do .lrc. Sempre há letra para o usuário revisar, mesmo sem tempos.
       plain =
         plain ||
-        primary.plainLyrics?.trim() ||
+        primary?.plainLyrics?.trim() ||
         (synced ? lrcToPlain(synced) : "");
 
       if (!plain) {
