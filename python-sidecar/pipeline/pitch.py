@@ -196,7 +196,7 @@ class PitchExtractor:
         if track.timestamps.size == 0:
             return PitchResult(ultrastar_pitch=0, confidence=0.0, raw_hz=0.0)
 
-        in_window = (track.timestamps >= start_s) & (track.timestamps < end_s)
+        in_window = (track.timestamps >= start_s) & (track.timestamps <= end_s)
         mask = in_window & track.voicing
         voiced_hz = track.pitch_hz[mask]
         voiced_conf = track.confidence[mask]

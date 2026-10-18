@@ -587,6 +587,54 @@ def test_ctc_syllable_spans_reject_untrustworthy_input():
     assert ctc_syllable_spans([1.0, 1.99], 2, 1.0, 2.0) is None     # last one too short
     assert ctc_syllable_spans([1.0, 2.5], 2, 1.0, 2.0) is None      # outside the word
     assert ctc_syllable_spans([1.0], 1, 1.0, 2.0) is None           # single syllable
+    assert ctc_syllable_spans([1.0, 3.0], 2, 1.0, 3.5) is None      # non-final syllable > 1.20s
+
+
+def test_melisma_discards_single_frame_blip_after_voicing_gap():
+    ts = np.arange(0.0, 1.0, 0.02)
+    voicing = np.zeros(len(ts), dtype=bool)
+    voicing[:15] = True      # 0.00..0.28s voiced
+    voicing[30] = True       # single frame blip at 0.60s after >80ms gap
+    voicing[40:] = True      # 0.80..0.98s voiced
+    track = _track(ts, pitch_hz=[220.0] * len(ts), voicing=voicing)
+    spans = detect_melisma_notes(track, 0.0, 1.0)
+    assert all(end > start for start, end in spans)
+
+
+def test_rescue_isolated_short_freestyle_inside_sung_phrase():
+    from pipeline.build_song import rescue_isolated_short_freestyle
+
+    notes = [
+        _n(0, 3, 5, "start "),
+        _n(4, 2, 0, "how ", kind="F"),
+        _n(7, 4, 7, "now "),
+    ]
+    out = rescue_isolated_short_freestyle(notes, [2])
+    assert out[1].note_type == ":"
+    assert out[1].pitch == 5
+
+
+def test_merge_short_connected_lines_removes_mid_sentence_break():
+    from pipeline.build_song import merge_short_connected_lines
+
+    # 240 BPM => 1 beat = 0.0625s. Gap of 1 beat (0.0625s) <= 0.20s between two short connected lines:
+    grid = BeatGrid(bpm=240.0)
+    notes = [
+        _n(0, 2, 4, "Are "),
+        _n(2, 2, 4, "you "),
+        _n(4, 2, 5, "gon"),
+        _n(6, 2, 5, "na "),
+        _n(9, 2, 7, "Live "),
+        _n(11, 2, 7, "your "),
+        _n(13, 3, 6, "life "),
+    ]
+    assert merge_short_connected_lines(notes, [3, 6], grid) == [6]
+    # Sentence-ending punctuation ("?") keeps the break:
+    notes_punct = [
+        _n(0, 2, 4, "Why? "),
+        _n(3, 2, 7, "Live "),
+    ]
+    assert merge_short_connected_lines(notes_punct, [0, 1], grid) == [0, 1]
 
 
 def test_build_song_sets_creator():
@@ -604,3 +652,4 @@ def test_build_song_sets_creator():
     )
     assert song.creator == "USKMaker v0.24.1"
     assert "#CREATOR:USKMaker v0.24.1" in song.to_txt()
+

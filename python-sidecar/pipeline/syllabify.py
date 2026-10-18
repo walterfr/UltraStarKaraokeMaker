@@ -32,9 +32,42 @@ _LANG_DICTS = {
 }
 _dic_cache: dict[str, pyphen.Pyphen] = {}
 
-# Contrações faladas que o dicionário não conhece e que se cantam em 2 sílabas
-# (as mais comuns nos charts: "gonna" aparece 506 vezes, sempre "gon-na").
-_EN_SPLITS = {"gonna": 3, "wanna": 3, "gotta": 3}
+# Contrações faladas e palavras comuns de 2 sílabas que o dicionário tipográfico
+# en_US (TeX) não separa por estética de impressão (prefixos de 1 vogal como
+# "a-round", "o-ver", "e-ven", além de "to-night" e "clo-ver"), mas que no canto
+# têm 2 sílabas claras em notas diferentes.
+_EN_SPLITS = {
+    "gonna": 3,
+    "wanna": 3,
+    "gotta": 3,
+    "around": 1,
+    "away": 1,
+    "again": 1,
+    "alone": 1,
+    "alive": 1,
+    "about": 1,
+    "above": 1,
+    "across": 1,
+    "afraid": 1,
+    "ahead": 1,
+    "apart": 1,
+    "asleep": 1,
+    "awake": 1,
+    "along": 1,
+    "among": 1,
+    "aside": 1,
+    "aware": 1,
+    "awhile": 1,
+    "ago": 1,
+    "over": 1,
+    "open": 1,
+    "even": 1,
+    "evil": 1,
+    "enough": 1,
+    "tonight": 2,
+    "today": 2,
+    "clover": 3,
+}
 
 
 def _dictionary(language: str | None) -> pyphen.Pyphen:
@@ -88,9 +121,25 @@ def split_word_syllables(word: str, language: str | None = None) -> list[str]:
         # do que arriscar uma hifenização sem sentido.
         return [leading_punct + core + trailing_punct]
 
-    cut = _EN_SPLITS.get(core.lower()) if (language or "").lower() == "en" else None
+    lang_low = (language or "").lower()
+    cut = _EN_SPLITS.get(core.lower()) if lang_low == "en" else None
     if cut:
         syllables = [core[:cut], core[cut:]]
+    elif (
+        lang_low == "en"
+        and trailing_punct.startswith(("'", "’"))
+        and len(core) >= 4
+        and core.lower().endswith("in")
+    ):
+        # G-dropping coloquial em inglês ("Lookin'", "wonderin'", "Thinkin'"):
+        # sem o "g" final o pyphen en_US não reconhece o sufixo "-ing" e deixa
+        # "Lookin" inteiro ou junta "derin" numa sílaba só. Hifenizar com "g"
+        # provisório recupera a mesma divisão de "Looking" / "wondering".
+        g_char = "G" if core[-1].isupper() else "g"
+        hyphenated = _dictionary(language).inserted(core + g_char)
+        syllables = hyphenated.split("-")
+        syllables[-1] = syllables[-1][:-1]
+        syllables = [s for s in syllables if s]
     else:
         hyphenated = _dictionary(language).inserted(core)  # ex.: "ca-ro-lin-da"
         syllables = hyphenated.split("-")

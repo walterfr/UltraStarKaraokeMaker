@@ -4,6 +4,14 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto usa [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [0.25.3] - 2026-10-17
+
+### Corrigido
+
+- **Alinhamento da ponte com `.lrc` do LRCLIB e poda de letras prematuras no CTC.** Quando o `.lrc` concorda na maioria da música mas uma seção deriva mais de `2,0 s` após pausa instrumental, o alinhamento CTC reexecuta restrito pelas janelas do `.lrc`; além disso, letras iniciais presas na cauda da linha anterior antes de silêncio longo (`> 0,8 s`) são podadas.
+- **Silabação em inglês e redução de `~` fantasmas em vogais longas.** Expandido o dicionário de palavras dissílabas cantadas (`around`, `over`, `clover`, `tonight`, `away`, `again`, `alone`, `alive`, etc.) e gerúndios coloquiais (`-in'`), limitado o tamanho de sílabas não-finais medidas pelo CTC (`1,20 s`) e descartados blips de 1 frame após lacunas de voz no detector de melisma.
+- **Resgate de notas `F` (Freestyle) isoladas e fusão de quebras curtas no meio da frase.** Notas `F` curtas (`<= 3` beats) isoladas entre notas cantadas da mesma frase herdam o tom vizinho (`:`), continuações `~` sem confiança de pitch fundem-se na nota anterior e linhas curtas partidas no meio da frase sem pausa respiratória (`gap <= 0,20 s`) são unidas automaticamente.
+
 ## [0.25.2] - 2026-10-17
 
 ### Corrigido

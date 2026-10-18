@@ -136,6 +136,31 @@ def build_targets(
     return targets, ranges
 
 
+MAX_INTRA_WORD_GAP_S = 0.8
+MAX_PREMATURE_PREFIX_S = 0.4
+
+
+def _trim_premature_word_prefix(
+    spans: list[tuple[int, int, float]], frame_s: float
+) -> list[tuple[int, int, float]]:
+    """
+    Quando o CTC prende a(s) primeira(s) letra(s) de uma palavra na cauda vocal
+    da linha anterior antes de uma pausa longa (> 0,8 s) e alinha o resto da
+    palavra segundos depois (caso real: "wanna" com "wan" em 213,5 s e "na" em
+    216,2 s; "missing" com "miss" em 88,3 s e "ing" em 93,6 s), descarta o
+    prefixo prematuro curto (<= 0,4 s) para a palavra não esticar por segundos
+    de silêncio ou melisma da linha anterior.
+    """
+    if len(spans) < 2 or frame_s <= 0:
+        return spans
+    for k in range(len(spans) - 1):
+        gap_s = (spans[k + 1][0] - spans[k][1]) * frame_s
+        prefix_dur_s = (spans[k][1] - spans[0][0]) * frame_s
+        if gap_s > MAX_INTRA_WORD_GAP_S and prefix_dur_s <= MAX_PREMATURE_PREFIX_S:
+            return spans[k + 1 :]
+    return spans
+
+
 def spans_to_word_times(
     token_spans: list[tuple[int, int, float]],
     ranges: list[tuple[int, int]],
@@ -151,7 +176,7 @@ def spans_to_word_times(
         if a == b:
             out.append(None)
             continue
-        spans = token_spans[a:b]
+        spans = _trim_premature_word_prefix(token_spans[a:b], frame_s)
         dur = sum(e - s for s, e, _ in spans)
         score = sum((e - s) * sc for s, e, sc in spans) / dur if dur else 0.0
         out.append((spans[0][0] * frame_s, spans[-1][1] * frame_s, float(score)))
@@ -164,7 +189,10 @@ def word_token_times(
     frame_s: float,
 ) -> list[list[tuple[float, float]]]:
     """(ini_s, fim_s) de cada letra alinhada, agrupadas por palavra."""
-    return [[(sp[0] * frame_s, sp[1] * frame_s) for sp in token_spans[a:b]] for a, b in ranges]
+    return [
+        [(sp[0] * frame_s, sp[1] * frame_s) for sp in _trim_premature_word_prefix(token_spans[a:b], frame_s)]
+        for a, b in ranges
+    ]
 
 
 def syllable_starts(
@@ -695,6 +723,77 @@ def low_confidence_frac(timings: list) -> float:
     return bad / max(len(timings), 1)
 
 
+def verified_lrc_blocks(
+    times: list[tuple[float, float, float] | None],
+    lyric_lines: list[tuple[str, int]],
+    lrc_lines: list[tuple[float, str]],
+    n_words: int,
+    audio_dur: float,
+    pad: float = 1.5,
+    drift_threshold: float = 2.0,
+) -> list[tuple[int, int, float, float]] | None:
+    """
+    Para um .lrc NÃO aprovado manualmente (ex.: vindo do LRCLIB): confirma se
+    os tempos do .lrc batem com o alinhamento CTC global (a menos de um
+    deslocamento constante de até 15 s) em pelo menos 40% das linhas (e >= 5
+    linhas). Se confirmar E alguma linha tiver derivado mais que
+    `drift_threshold` s (ex.: ponte precedida de pausa instrumental em que o
+    Viterbi global puxou o verso 15 s pra trás, caso real "Jimmy Eat World -
+    A Praise Chorus"), devolve os blocos com `pad` folgado (1,5 s) para
+    restringir as linhas desgarradas à janela certa sem engessar o resto.
+    """
+    from . import align as A
+
+    if not lrc_lines or A.lrc_duration_mismatch(lrc_lines, audio_dur):
+        return None
+    matched = A.match_lrc_to_lines([t for t, _ in lyric_lines], lrc_lines)
+    if len(matched) < A.LRC_OFFSET_MIN_LINES:
+        return None
+
+    diffs: list[float] = []
+    pairs: list[tuple[int, float, float]] = []
+    for li, (_, start_word) in enumerate(lyric_lines):
+        t_lrc = matched.get(li)
+        if t_lrc is None or start_word >= len(times):
+            continue
+        wt = times[start_word]
+        if wt is None:
+            continue
+        diffs.append(wt[0] - t_lrc)
+        pairs.append((start_word, wt[0], t_lrc))
+
+    if len(diffs) < A.LRC_OFFSET_MIN_LINES:
+        return None
+
+    sorted_diffs = sorted(diffs)
+    best_lo = best_hi = j = 0
+    tol = 0.75
+    for i in range(len(sorted_diffs)):
+        while sorted_diffs[i] - sorted_diffs[j] > 2 * tol:
+            j += 1
+        if i - j > best_hi - best_lo:
+            best_lo, best_hi = j, i
+    cluster = sorted_diffs[best_lo : best_hi + 1]
+    if (
+        len(cluster) < A.LRC_OFFSET_MIN_LINES
+        or len(cluster) / len(diffs) < A.LRC_OFFSET_MIN_AGREE_FRAC
+    ):
+        return None
+
+    offset = float(np.median(cluster))
+    if abs(offset) > A.LRC_OFFSET_MAX_SHIFT_S:
+        return None
+    if abs(offset) < A.LRC_OFFSET_MIN_SHIFT_S:
+        offset = 0.0
+
+    has_drift = any(abs(ctc_s - (t_lrc + offset)) > drift_threshold for _, ctc_s, t_lrc in pairs)
+    if not has_drift:
+        return None
+
+    starts = [(lyric_lines[li][1], max(0.0, t + offset)) for li, t in matched.items()]
+    return lrc_blocks(n_words, starts, audio_dur, pad=pad)
+
+
 def align_lyrics_ctc_to_audio(
     vocals_wav: Path,
     lyrics_path: Path,
@@ -708,11 +807,11 @@ def align_lyrics_ctc_to_audio(
     a letra não cabe no vocabulário do modelo (outro alfabeto) - o chamador
     cai no align.align_lyrics_to_audio de sempre.
 
-    Um .lrc só é usado se APROVADO pelo usuário ([uskmapproved:1]): os inícios
-    de linha dele viram limites de bloco (ver lrc_blocks). Um .lrc não
-    aprovado fica de fora: no caminho do Whisper ele servia pra preencher os
-    vãos que o Whisper não ouviu, e aqui não existe vão - toda palavra é
-    medida. (Ele ainda aparece na tela de revisão, que compara linha a linha.)
+    Um .lrc APROVADO pelo usuário ([uskmapproved:1]) define os blocos direto
+    (pad curto de 0,3 s). Um .lrc não aprovado (LRCLIB) passa primeiro pelo
+    alinhamento global e só vira blocos (pad folgado de 1,5 s) se concordar com
+    a gravação e houver linha desgarrada (> 2 s de desvio, ex.: ponte após
+    pausa instrumental).
     """
     import whisperx
 
@@ -731,9 +830,12 @@ def align_lyrics_ctc_to_audio(
     audio_dur = len(audio) / SAMPLE_RATE
 
     blocks = [(0, len(words), 0.0, audio_dur)]
+    lrc_text = None
+    approved_lrc = False
     if synced_lyrics_path is not None and Path(synced_lyrics_path).exists():
         lrc_text = Path(synced_lyrics_path).read_text(encoding="utf-8")
         if A.lrc_is_approved(lrc_text):
+            approved_lrc = True
             lyric_lines = A._lyric_lines_with_start_index(lyrics_path)
             matched = A.match_lrc_to_lines([t for t, _ in lyric_lines], A.parse_lrc(lrc_text))
             starts = [(lyric_lines[li][1], t) for li, t in matched.items()]
@@ -745,6 +847,18 @@ def align_lyrics_ctc_to_audio(
     times, token_times = align_blocks(em, frame_s, blocks, word_tokens, line_ends, star_id,
                                       dictionary["-"], return_tokens=True,
                                       sep_id=dictionary.get(SEP_KEY))
+    if lrc_text and not approved_lrc and not all(t is None for t in times):
+        lyric_lines = A._lyric_lines_with_start_index(lyrics_path)
+        rescued_blocks = verified_lrc_blocks(
+            times, lyric_lines, A.parse_lrc(lrc_text), len(words), audio_dur
+        )
+        if rescued_blocks is not None:
+            print(_t("align.ctc_lrc_blocks", n=len(rescued_blocks)))
+            times, token_times = align_blocks(
+                em, frame_s, rescued_blocks, word_tokens, line_ends, star_id,
+                dictionary["-"], return_tokens=True,
+                sep_id=dictionary.get(SEP_KEY),
+            )
     if all(t is None for t in times):
         return None
     timings = to_word_timings(words, line_ends, singers, fill_missing(times))

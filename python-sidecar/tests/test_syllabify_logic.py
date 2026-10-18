@@ -74,3 +74,17 @@ def test_swedish_uses_swedish_hyphenation():
 
 def test_unknown_language_keeps_pt_br():
     assert split_word_syllables("coração", "xx") == split_word_syllables("coração")
+
+
+def test_english_two_syllable_words_missed_by_tex_hyphenation():
+    assert split_word_syllables("around?", "en") == ["a", "round?"]
+    assert split_word_syllables("Over", "en") == ["O", "ver"]
+    assert split_word_syllables("clover", "en") == ["clo", "ver"]
+    assert split_word_syllables("tonight", "en") == ["to", "night"]
+
+
+def test_english_colloquial_g_drop_in_words_split_cleanly():
+    assert split_word_syllables("Lookin'", "en") == ["Look", "in'"]
+    assert split_word_syllables("wonderin'", "en") == ["won", "der", "in'"]
+    assert split_word_syllables("Thinkin'", "en") == ["Think", "in'"]
+

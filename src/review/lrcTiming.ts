@@ -129,21 +129,34 @@ export function matchInOrder(a: string[], b: string[]): (number | null)[] {
   const dp: number[][] = Array.from({ length: n + 1 }, () =>
     new Array<number>(m + 1).fill(0)
   );
+  const isMergedPair = (i: number, j: number): boolean =>
+    j + 1 < m &&
+    b[j].length > 0 &&
+    b[j + 1].length > 0 &&
+    a[i] === `${b[j]} ${b[j + 1]}`;
+
   for (let i = n - 1; i >= 0; i--) {
     for (let j = m - 1; j >= 0; j--) {
-      dp[i][j] =
-        a[i] === b[j]
-          ? dp[i + 1][j + 1] + 1
-          : Math.max(dp[i + 1][j], dp[i][j + 1]);
+      let best = Math.max(dp[i + 1][j], dp[i][j + 1]);
+      if (a[i] === b[j]) {
+        best = Math.max(best, dp[i + 1][j + 1] + 1);
+      } else if (isMergedPair(i, j)) {
+        best = Math.max(best, dp[i + 1][j + 2] + 1);
+      }
+      dp[i][j] = best;
     }
   }
   let i = 0;
   let j = 0;
   while (i < n && j < m) {
-    if (a[i] === b[j]) {
+    if (a[i] === b[j] && dp[i][j] === dp[i + 1][j + 1] + 1) {
       result[j] = i;
       i++;
       j++;
+    } else if (isMergedPair(i, j) && dp[i][j] === dp[i + 1][j + 2] + 1) {
+      result[j] = i;
+      i++;
+      j += 2;
     } else if (dp[i + 1][j] >= dp[i][j + 1]) {
       i++;
     } else {

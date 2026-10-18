@@ -4,6 +4,14 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.25.3] — 2026-10-17
+
+### Fixed
+
+- **Bridge alignment with LRCLIB `.lrc` and premature CTC prefix trimming.** When an unapproved `.lrc` agrees with global CTC across the song majority but a section drifts by `> 2.0 s` after an instrumental break, CTC re-runs constrained by `.lrc` windows; stray leading letters latched onto the previous line's vocal tail before a `> 0.8 s` gap are also trimmed.
+- **English syllabification and phantom `~` reduction on sustained vowels.** Added common two-syllable sung English words (`around`, `over`, `clover`, `tonight`, `away`, `again`, `alone`, `alive`, etc.) and colloquial `-in'` forms, capped non-final CTC syllable spans (`1.20 s`), and discarded 1-frame noise blips after voicing gaps in melisma detection.
+- **Isolated short `F` (Freestyle) note rescue and mid-sentence short line merging.** Isolated short `F` notes (`<= 3` beats) inside a sung phrase inherit the closest neighbor's pitch (`:`), unvoiced `~` continuations fold into the preceding note, and short lines split mid-sentence with no vocal pause (`gap <= 0.20 s`) are merged automatically.
+
 ## [0.25.2] — 2026-10-17
 
 ### Fixed

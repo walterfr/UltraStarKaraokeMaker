@@ -291,7 +291,11 @@ def extend_end_while_voiced(track: PitchTrack, word_end: float, limit: float) ->
 
 # Duração mínima de uma sílaba vinda do alinhamento por letra do CTC; abaixo
 # disso a divisão medida é tratada como suspeita e cai na de energia/pitch.
+# Teto para sílaba NÃO-final (1,2 s): sílaba inicial esticada por segundos
+# indica que o CTC prendeu a 1ª letra na linha anterior ("wan" de 2,5 s, "miss"
+# de 5,3 s).
 CTC_SYLLABLE_MIN_S = 0.03
+CTC_SYLLABLE_MAX_NONFINAL_S = 1.20
 
 
 def ctc_syllable_spans(
@@ -304,13 +308,16 @@ def ctc_syllable_spans(
     Trechos das sílabas a partir dos inícios MEDIDOS pelo CTC (1ª letra de
     cada sílaba, WordTiming.syllable_starts). A 1ª sílaba começa no início da
     palavra e a última vai até o fim dela. None quando não dá pra confiar
-    (contagem diferente, fora da palavra, sílaba curta demais) - aí vale a
-    divisão por energia/pitch de allocate_syllable_durations.
+    (contagem diferente, fora da palavra, sílaba curta demais ou sílaba
+    não-final esticada demais) - aí vale a divisão por energia/pitch de
+    allocate_syllable_durations.
     """
     if not starts or len(starts) != num_syllables or num_syllables < 2:
         return None
     bounds = [word_start] + list(starts[1:]) + [word_end]
     if any(b - a < CTC_SYLLABLE_MIN_S for a, b in zip(bounds, bounds[1:])):
+        return None
+    if any(b - a > CTC_SYLLABLE_MAX_NONFINAL_S for a, b in zip(bounds[:-2], bounds[1:-1])):
         return None
     return [(bounds[i], bounds[i + 1]) for i in range(num_syllables)]
 
@@ -430,14 +437,22 @@ def detect_melisma_notes(
     # funde runs curtos demais (< min_extension_s) no vizinho anterior -
     # evita gerar um "~" de fração de segundo por ruído da leitura de pitch.
     # NUNCA funde um run que começou por causa de uma LACUNA de voz - isso
-    # desfaria justamente a proteção de fronteira de palavra acima.
+    # desfaria justamente a proteção de fronteira de palavra acima. Porém, um
+    # blip isolado de 1 único quadro (end <= start, duração zero) após lacuna
+    # é espúrio de silêncio/respiração (gerava notas "F ... 1 0 ~" fantasma) e
+    # é descartado.
     merged = [spans[0]]
     for idx in range(1, len(spans)):
         start, end = spans[idx]
         if not run_started_by_gap[idx] and (end - start) < min_extension_s:
             merged[-1] = (merged[-1][0], end)
+        elif run_started_by_gap[idx] and end <= start:
+            continue
         else:
             merged.append((start, end))
+
+    if len(merged) > 1 and merged[0][1] <= merged[0][0]:
+        merged.pop(0)
 
     if len(merged) <= 1:
         return [(syl_start, syl_end)]
@@ -706,6 +721,113 @@ def fold_octave_outliers_to_context(
     return notes
 
 
+_SENTENCE_END_CHARS = (".", "?", "!", ",", ";", ":", ")", "]", '"', "”")
+
+
+def _line_display_text(slice_notes: list[Note]) -> str:
+    raw = "".join(n.text.replace("~", "") for n in slice_notes)
+    return re.sub(r"\s+", " ", raw).strip()
+
+
+def rescue_isolated_short_freestyle(
+    notes: list[Note],
+    phrase_breaks: list[int],
+    max_beats: int = 3,
+) -> list[Note]:
+    """
+    Sílabas curtas (<= `max_beats` beats, ex.: palavras funcionais "I", "my",
+    "a", "to", "it", "up", "how") no meio de uma frase cantada às vezes saem
+    sem quadro vozeado suficiente no SwiftF0 e viram "F" (pitch 0) isoladas.
+    Quando há vizinha pontuável imediata na MESMA frase (mesmo cantor),
+    herda o pitch dela e vira ":" - evita buracos de freestyle avulso na
+    melodia sem tocar em trechos realmente falados/longos.
+    """
+    if len(notes) < 2:
+        return notes
+    breaks = set(phrase_breaks)
+    orig_types = [n.note_type for n in notes]
+    orig_pitches = [n.pitch for n in notes]
+    for i, nt in enumerate(notes):
+        if orig_types[i] != "F" or nt.duration_beats > max_beats:
+            continue
+        prev_idx = i - 1 if i > 0 and (i - 1) not in breaks else None
+        next_idx = i + 1 if i + 1 < len(notes) and i not in breaks else None
+        cands: list[tuple[int, int]] = []
+        if prev_idx is not None and orig_types[prev_idx] != "F" and notes[prev_idx].singer == nt.singer:
+            gap = max(0, nt.start_beat - (notes[prev_idx].start_beat + notes[prev_idx].duration_beats))
+            cands.append((gap, orig_pitches[prev_idx]))
+        if next_idx is not None and orig_types[next_idx] != "F" and notes[next_idx].singer == nt.singer:
+            gap = max(0, notes[next_idx].start_beat - (nt.start_beat + nt.duration_beats))
+            cands.append((gap, orig_pitches[next_idx]))
+        if cands:
+            cands.sort(key=lambda x: x[0])
+            nt.pitch = int(cands[0][1])
+            nt.note_type = ":"
+    return notes
+
+
+def merge_short_connected_lines(
+    notes: list[Note],
+    phrase_breaks: list[int],
+    grid: BeatGrid,
+    max_gap_s: float = 0.20,
+    max_first_chars: int = 22,
+    max_combined_chars: int = 42,
+    max_combined_notes: int = 12,
+) -> list[int]:
+    """
+    Junta quebras de linha no meio da frase ("Are you gonna / Live your life
+    wonderin'", "Our house in the / Middle of the street") comuns em letras
+    do LRCLIB/YouTube formatadas para tela vertical. Só remove a quebra
+    quando a 1ª metade é curta (<= 22 chars), não termina em pontuação de
+    pausa, a soma cabe confortavelmente numa linha do UltraStar (<= 42 chars
+    e <= 12 notas) e o cantor emenda sem pausa respiratória (gap <= 0,20 s).
+    """
+    if not notes or not phrase_breaks or grid.bpm <= 0:
+        return phrase_breaks
+    sorted_breaks = sorted(b for b in set(phrase_breaks) if 0 <= b < len(notes))
+    ranges: list[tuple[int, int]] = []
+    start = 0
+    for b in sorted_breaks:
+        if b >= start:
+            ranges.append((start, b))
+            start = b + 1
+    if start < len(notes):
+        ranges.append((start, len(notes) - 1))
+    if len(ranges) < 2:
+        return phrase_breaks
+
+    beat_s = 60.0 / (grid.bpm * 4.0)
+    merged: list[tuple[int, int]] = [ranges[0]]
+    for b0, b1 in ranges[1:]:
+        a0, a1 = merged[-1]
+        text_a = _line_display_text(notes[a0 : a1 + 1])
+        text_b = _line_display_text(notes[b0 : b1 + 1])
+        combined = f"{text_a} {text_b}".strip()
+        gap_beats = notes[b0].start_beat - (notes[a1].start_beat + notes[a1].duration_beats)
+        gap_s = gap_beats * beat_s
+        if (
+            text_a
+            and text_b
+            and notes[a1].singer == notes[b0].singer
+            and not text_a.endswith(_SENTENCE_END_CHARS)
+            and len(text_a) <= max_first_chars
+            and len(combined) <= max_combined_chars
+            and (b1 - a0 + 1) <= max_combined_notes
+            and gap_s <= max_gap_s
+            and text_a.lower() != text_b.lower()
+        ):
+            merged[-1] = (a0, b1)
+        else:
+            merged.append((b0, b1))
+
+    had_trailing = (len(notes) - 1) in sorted_breaks
+    out = [end_idx for _, end_idx in merged[:-1]]
+    if had_trailing and merged:
+        out.append(merged[-1][1])
+    return out
+
+
 def build_notes(
     word_timings: list[WordTiming],
     vocals_wav_path: Path,
@@ -764,6 +886,15 @@ def build_notes(
                     end_beat = grid.seconds_to_beat(run_end, gap_ms)
                     duration_beats = max(1, end_beat - start_beat)  # nunca duração zero
 
+                    # Continuação de melisma ("~") sem voz/confiança suficiente
+                    # nunca deve virar "F ... 0 ~" isolado: incorpora na nota
+                    # anterior da mesma sílaba.
+                    if run_idx > 0 and pitch_result.confidence < 0.5 and notes:
+                        notes[-1].duration_beats = max(
+                            notes[-1].duration_beats, end_beat - notes[-1].start_beat
+                        )
+                        continue
+
                     # CONVENÇÃO DE ESPAÇAMENTO (revista 12/07/2026): sílabas
                     # de uma mesma palavra têm texto CONCATENADO na tela; um
                     # espaço no início/fim marca a fronteira entre palavras.
@@ -803,6 +934,7 @@ def build_notes(
             phrase_breaks.append(len(notes) - 1)
 
     notes = fix_rounding_overlaps(notes)
+    notes = rescue_isolated_short_freestyle(notes, phrase_breaks)
     notes = snap_octave_outliers(notes)
     notes = fold_octave_outliers_to_context(notes)
     # depois das correções de oitava (elas também deixam vizinhos iguais) e
@@ -811,6 +943,7 @@ def build_notes(
         notes, phrase_breaks,
         max_gap_beats=max(1, round(MELISMA_MIN_EXTENSION_S * grid.bpm * 4 / 60.0)),
     )
+    phrase_breaks = merge_short_connected_lines(notes, phrase_breaks, grid)
     notes = apply_golden_notes(notes, min_duration_beats=golden_min_beats(grid))
 
     return notes, phrase_breaks

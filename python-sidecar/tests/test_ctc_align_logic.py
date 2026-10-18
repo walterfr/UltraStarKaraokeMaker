@@ -266,3 +266,48 @@ def test_syllable_starts_give_up_when_letters_dont_add_up():
     tt = [(1.0, 1.1), (1.2, 1.3), (1.4, 1.5)]
     assert syllable_starts(["ca", "bo"], tt, DICT, "pt") is None     # 4 letters vs 3 spans
     assert syllable_starts(["cabo"], tt, DICT, "pt") is None         # single syllable
+
+
+def test_trim_premature_word_prefix_drops_stray_leading_letter_before_long_gap():
+    from pipeline.ctc_align import spans_to_word_times, word_token_times
+    # "wanna": 'w' latched onto previous vocal tail at 0.10..0.20s, then 4s silence before 'a n n a' at 4.20..4.60s
+    spans = [
+        (5, 10, 0.2),     # 0.10..0.20s ('w')
+        (210, 215, 0.9),  # 4.20..4.30s ('a')
+        (215, 220, 0.9),  # 4.30..4.40s ('n')
+        (220, 225, 0.9),  # 4.40..4.50s ('n')
+        (225, 230, 0.9),  # 4.50..4.60s ('a')
+    ]
+    wt = spans_to_word_times(spans, [(0, 5)], frame_s=0.02)
+    assert wt[0] is not None
+    assert wt[0][0] == pytest.approx(4.20)
+    assert wt[0][1] == pytest.approx(4.60)
+    tt = word_token_times(spans, [(0, 5)], frame_s=0.02)
+    assert tt[0][0][0] == pytest.approx(4.20)
+
+
+def test_verified_lrc_blocks_triggers_when_majority_agrees_but_bridge_drifts():
+    from pipeline.ctc_align import verified_lrc_blocks
+    lrc_lines = [
+        (10.0, "Line one here"),
+        (15.0, "Line two here"),
+        (20.0, "Line three here"),
+        (25.0, "Line four here"),
+        (30.0, "Line five here"),
+        (50.0, "Crimson and clover"),
+    ]
+    lyric_lines = [(txt, i * 3) for i, (_, txt) in enumerate(lrc_lines)]
+    # First 5 lines agree with LRC, 6th line collapsed 15s early to 35.0s instead of 50.0s
+    starts = [10.1, 15.1, 20.0, 25.2, 30.1, 35.0]
+    times = [
+        (t + i * 0.3, t + (i + 1) * 0.3, 0.9)
+        for t in starts
+        for i in range(3)
+    ]
+    blocks = verified_lrc_blocks(times, lyric_lines, lrc_lines, n_words=len(times), audio_dur=65.0)
+    assert blocks is not None
+    assert len(blocks) == 6
+
+
+
+
