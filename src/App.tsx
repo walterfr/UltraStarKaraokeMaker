@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open as openDialog, ask } from "@tauri-apps/plugin-dialog";
+import { open as openDialog, save as saveDialog, ask } from "@tauri-apps/plugin-dialog";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { fetch as httpFetch } from "@tauri-apps/plugin-http";
 import { getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
@@ -242,11 +242,52 @@ interface PersistedSettings {
   maxVideoResolution: number;
 }
 
+const QUEUE_KEY = "uskmaker-queue";
+
 function loadSettings(): Partial<PersistedSettings> {
   try {
     return JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}");
   } catch {
     return {};
+  }
+}
+
+function parseQueueItems(raw: unknown): QueueItem[] {
+  if (!Array.isArray(raw)) return [];
+  const validStatuses = new Set<QueueStatus>(["pending", "running", "done", "error", "cancelled", "skipped"]);
+  const out: QueueItem[] = [];
+  let seq = 1;
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as Record<string, unknown>;
+    if (typeof rec.artist !== "string" || typeof rec.title !== "string") continue;
+    if (!rec.input || typeof rec.input !== "object") continue;
+    const rawStatus =
+      typeof rec.status === "string" && validStatuses.has(rec.status as QueueStatus)
+        ? (rec.status as QueueStatus)
+        : "pending";
+    // Se o app fechou no meio de uma música ("running"), volta para "pending" para retomar depois.
+    const status: QueueStatus = rawStatus === "running" ? "pending" : rawStatus;
+    const id = typeof rec.id === "number" && Number.isFinite(rec.id) ? rec.id : seq++;
+    out.push({
+      id,
+      artist: rec.artist,
+      title: rec.title,
+      input: rec.input as Record<string, unknown>,
+      status,
+      result: rec.result && typeof rec.result === "object" ? (rec.result as PipelineResult) : undefined,
+      error: typeof rec.error === "string" ? rec.error : undefined,
+      cleaned: typeof rec.cleaned === "boolean" ? rec.cleaned : undefined,
+    });
+  }
+  return out;
+}
+
+function loadSavedQueue(): QueueItem[] {
+  try {
+    return parseQueueItems(JSON.parse(localStorage.getItem(QUEUE_KEY) ?? "[]"));
+  } catch {
+    return [];
   }
 }
 
@@ -408,8 +449,10 @@ function App() {
   // Fila de músicas: enfileira várias e processa em série, sem reabrir o app.
   // O frontend é dono da fila (loop chamando run_pipeline por item); o sidecar
   // persistente do Rust mantém os modelos quentes entre uma música e outra.
-  const [queue, setQueue] = useState<QueueItem[]>([]);
-  const nextIdRef = useRef(1);
+  // Persistida em localStorage (QUEUE_KEY) para poder retomar depois de fechar
+  // o app ou desligar o PC (Issue #37).
+  const [queue, setQueue] = useState<QueueItem[]>(() => loadSavedQueue());
+  const nextIdRef = useRef(queue.reduce((m, it) => Math.max(m, it.id), 0) + 1);
 
   const [isRunning, setIsRunning] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -494,6 +537,14 @@ function App() {
     const settings: PersistedSettings = { sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, keepHarmonies, yargExport, mp4Export, midiExport, whisperModel, ytCookiesBrowser, romanize, audioFormat, maxVideoResolution };
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   }, [sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, keepHarmonies, yargExport, mp4Export, midiExport, whisperModel, ytCookiesBrowser, romanize, audioFormat, maxVideoResolution]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+    } catch {
+      /* quota/storage indisponível - silencioso */
+    }
+  }, [queue]);
 
   // ------------------------------------------------ SÓ EM DEV: preview de estado
   // Abre a UI num estado simulado sem precisar do backend Tauri, para inspecionar
@@ -1096,8 +1147,97 @@ function App() {
     setQueue((q) => q.filter((it) => it.id !== id));
   }
 
+  function retryQueueItem(id: number) {
+    patchItem(id, { status: "pending", error: undefined });
+  }
+
+  function retryFailedInQueue() {
+    setQueue((q) =>
+      q.map((it) =>
+        it.status === "error" || it.status === "cancelled" || it.status === "skipped"
+          ? { ...it, status: "pending", error: undefined }
+          : it
+      )
+    );
+  }
+
   function clearDoneFromQueue() {
-    setQueue((q) => q.filter((it) => it.status === "pending" || it.status === "running"));
+    setQueue((q) => q.filter((it) => it.status !== "done"));
+  }
+
+  async function clearAllQueue() {
+    if (isRunning || queue.length === 0) return;
+    const ok = await ask(t("queueClearAllConfirm"), { title: "USKMaker", kind: "warning" });
+    if (ok) setQueue([]);
+  }
+
+  function loadInputIntoForm(rawInput: Record<string, unknown>, songArtist: string, songTitle: string) {
+    const i = rawInput as {
+      youtubeUrl?: string | null; filePath?: string | null; lyricsText?: string;
+      syncedLyrics?: string | null; language?: string; bpm?: number | null;
+      transpose?: number; bgVideoUrl?: string | null;
+    };
+    setSourceMode(i.youtubeUrl ? "youtube" : "file");
+    setYoutubeUrl(i.youtubeUrl ?? "");
+    setFilePath(i.filePath ?? "");
+    setLyricsText(i.lyricsText ?? "");
+    setSyncedLyrics(i.syncedLyrics ?? null);
+    setTitle(songTitle);
+    setArtist(songArtist);
+    if (i.language) setLanguage(i.language);
+    setBpm(i.bpm != null ? String(i.bpm) : "");
+    setTranspose(String(i.transpose ?? 0));
+    setBgVideoUrl(i.bgVideoUrl ?? "");
+    clearLastRun();
+    setLyricsSearchMsg({ kind: "ok", text: t("regenFormReady") });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function editQueueItem(it: QueueItem) {
+    if (isRunning) return;
+    loadInputIntoForm(it.input, it.artist, it.title);
+    removeFromQueue(it.id);
+  }
+
+  async function saveQueueToFile() {
+    if (queue.length === 0) return;
+    try {
+      const target = await saveDialog({
+        defaultPath: "uskmaker-queue.json",
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+      if (!target) return;
+      await invoke("save_queue_file", {
+        path: target,
+        contents: JSON.stringify(queue, null, 2),
+      });
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function loadQueueFromFile() {
+    if (isRunning) return;
+    try {
+      const picked = await openDialog({
+        multiple: false,
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+      if (!picked || typeof picked !== "string") return;
+      const rawText = await invoke<string>("load_queue_file", { path: picked });
+      const parsed = parseQueueItems(JSON.parse(rawText));
+      if (parsed.length === 0) {
+        setError(t("queueLoadError"));
+        return;
+      }
+      setError(null);
+      setQueue((q) => [
+        ...q,
+        ...parsed.map((it) => ({ ...it, id: nextIdRef.current++ })),
+      ]);
+    } catch {
+      setError(t("queueLoadError"));
+    }
   }
 
   // Processa em série todos os itens `pending` da lista fornecida. Cancelar
@@ -1307,25 +1447,7 @@ function App() {
   // ela não re-separa; ver o texto do botão de revisão.)
   function regenerate() {
     if (isRunning || !lastGen) return;
-    const i = lastGen.input as {
-      youtubeUrl?: string | null; filePath?: string | null; lyricsText?: string;
-      syncedLyrics?: string | null; language?: string; bpm?: number | null;
-      transpose?: number; bgVideoUrl?: string | null;
-    };
-    setSourceMode(i.youtubeUrl ? "youtube" : "file");
-    setYoutubeUrl(i.youtubeUrl ?? "");
-    setFilePath(i.filePath ?? "");
-    setLyricsText(i.lyricsText ?? "");
-    setSyncedLyrics(i.syncedLyrics ?? null);
-    setTitle(lastGen.title);
-    setArtist(lastGen.artist);
-    if (i.language) setLanguage(i.language);
-    setBpm(i.bpm != null ? String(i.bpm) : "");
-    setTranspose(String(i.transpose ?? 0));
-    setBgVideoUrl(i.bgVideoUrl ?? "");
-    clearLastRun();
-    setLyricsSearchMsg({ kind: "ok", text: t("regenFormReady") });
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    loadInputIntoForm(lastGen.input, lastGen.artist, lastGen.title);
   }
 
   async function handleCancel() {
@@ -2076,11 +2198,34 @@ function App() {
         <div className="queue-panel">
           <div className="queue-head">
             <strong>{t("queueHeader", { n: queue.length })}</strong>
-            {!isRunning && queue.some((it) => it.status !== "pending") && (
-              <button className="mini-button" onClick={clearDoneFromQueue}>
-                {t("queueClearDone")}
+            <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+              {!isRunning &&
+                queue.some(
+                  (it) => it.status === "error" || it.status === "cancelled" || it.status === "skipped"
+                ) && (
+                  <button className="mini-button" onClick={retryFailedInQueue}>
+                    {t("queueRetryFailed")}
+                  </button>
+                )}
+              {!isRunning && queue.some((it) => it.status === "done") && (
+                <button className="mini-button" onClick={clearDoneFromQueue}>
+                  {t("queueClearDone")}
+                </button>
+              )}
+              <button className="mini-button" onClick={saveQueueToFile}>
+                {t("queueSaveFile")}
               </button>
-            )}
+              {!isRunning && (
+                <>
+                  <button className="mini-button" onClick={loadQueueFromFile}>
+                    {t("queueLoadFile")}
+                  </button>
+                  <button className="mini-button" onClick={clearAllQueue}>
+                    {t("queueClearAll")}
+                  </button>
+                </>
+              )}
+            </div>
           </div>
           <ul className="queue-list">
             {queue.map((it) => (
@@ -2118,7 +2263,21 @@ function App() {
                       </button>
                     </>
                   )}
-                  {it.status === "pending" && !isRunning && (
+                  {(it.status === "error" || it.status === "cancelled" || it.status === "skipped") && !isRunning && (
+                    <button className="link-button" onClick={() => retryQueueItem(it.id)}>
+                      {t("queueRetry")}
+                    </button>
+                  )}
+                  {it.status !== "running" && it.status !== "done" && !isRunning && (
+                    <button
+                      className="link-button"
+                      onClick={() => editQueueItem(it)}
+                      title={t("queueEditHint")}
+                    >
+                      {t("queueEdit")}
+                    </button>
+                  )}
+                  {it.status !== "running" && !isRunning && (
                     <button className="link-button danger" onClick={() => removeFromQueue(it.id)}>
                       {t("queueRemove")}
                     </button>
@@ -2276,6 +2435,11 @@ function App() {
           <button className="clear-button" onClick={addToQueue} title={t("queueAdd")}>
             {t("queueAdd")}
           </button>
+          {queue.length === 0 && (
+            <button className="clear-button" onClick={loadQueueFromFile} title={t("queueLoadFile")}>
+              {t("queueLoadFile")}
+            </button>
+          )}
           <button className="clear-button" onClick={handleClear} title={t("clearConfirm")}>
             {t("clearFields")}
           </button>

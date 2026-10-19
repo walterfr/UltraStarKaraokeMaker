@@ -4,6 +4,12 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto usa [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [0.25.4] - 2026-10-19
+
+### Adicionado
+
+- **Persistência automática da fila, exportação/importação em arquivo (`.json`) e recuperação de falhas (Issue #37).** A fila de músicas agora é salva automaticamente entre sessões (restaurando músicas interrompidas como pendentes ao reabrir o app), conta com botões **"Salvar fila"** e **"Carregar fila"** (`.json`), e permite **"Tentar de novo"** ou **"Editar"** (devolver ao formulário) qualquer item que tenha falhado, sido cancelado ou pulado, além do botão **"Reenfileirar falhas"** em lote.
+
 ## [0.25.3] - 2026-10-17
 
 ### Corrigido

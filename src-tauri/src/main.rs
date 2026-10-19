@@ -2005,6 +2005,16 @@ fn open_folder(path: String, lang: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn save_queue_file(path: String, contents: String) -> Result<(), String> {
+    std::fs::write(&path, contents).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn load_queue_file(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::amd_name_from_lspci;
@@ -2037,6 +2047,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             run_pipeline,
             open_folder,
+            save_queue_file,
+            load_queue_file,
             clean_song_extras,
             read_audio_tags,
             analyze_package,

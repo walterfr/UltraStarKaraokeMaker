@@ -9,6 +9,7 @@
     "core:window:allow-set-position",
     "core:window:allow-set-title",
     "dialog:allow-open",
+    "dialog:allow-save",
     "dialog:allow-ask",
     "clipboard-manager:allow-write-text",
     "notification:default",

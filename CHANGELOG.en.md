@@ -4,6 +4,12 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.25.4] — 2026-10-19
+
+### Added
+
+- **Automatic queue persistence, `.json` file save/load, and failed-item recovery (Issue #37).** The song queue is now automatically saved across sessions (restoring interrupted songs as pending on startup), includes **"Save queue"** and **"Load queue"** (`.json`) buttons, and lets you **"Retry"** or **"Edit"** (load back into the form) any failed, cancelled, or skipped item, plus a batch **"Retry failed"** action.
+
 ## [0.25.3] — 2026-10-17
 
 ### Fixed
