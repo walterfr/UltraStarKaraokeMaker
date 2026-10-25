@@ -575,6 +575,13 @@ MESSAGES: dict[str, dict[str, str]] = {
         "pt": "O YouTube não ofereceu nenhum formato compatível para este vídeo.",
         "en": "YouTube did not offer any compatible format for this video.",
     },
+    "download.cause_cookies_locked": {
+        "pt": ("Não foi possível acessar os cookies do navegador (o Chrome/navegador está aberto "
+               "e bloqueou o arquivo de cookies). Feche o navegador completamente ou mude "
+               "\"Cookies do YouTube\" para \"Desligado\" nas opções."),
+        "en": ("Could not access browser cookies (Chrome/browser is open and locked its cookie file). "
+               "Close the browser completely or set \"YouTube cookies\" to \"Off\" in options."),
+    },
     "download.cause_403": {
         "pt": "O YouTube recusou o download (403). Costuma ser temporário.",
         "en": "YouTube refused the download (403). This is usually temporary.",

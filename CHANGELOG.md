@@ -2,7 +2,14 @@
 
 Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELOG.en.md))*
 
-O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto usa [Versionamento Semântico](https://semver.org/lang/pt-BR/).
+O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
+
+## [0.25.5] - 2026-10-24
+
+### Corrigido
+
+- **Fallback automático sem cookies e diagnóstico de banco bloqueado no YouTube.** Ao tentar baixar com a opção de cookies do navegador ativada (ex.: Chrome), caso o navegador esteja aberto e o Windows bloqueie o arquivo SQLite de cookies (`Could not copy Chrome cookie database`), o pipeline agora retenta automaticamente sem cookies para vídeos públicos e exibe mensagem clara instruindo a fechar o navegador ou desligar a opção.
+- **Adoção do Pride Versioning 0.3.0 (`PROUD.DEFAULT.SHAME`).** Documentação e badges atualizados seguindo a especificação.
 
 ## [0.25.4] - 2026-10-19
 

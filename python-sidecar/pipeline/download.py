@@ -53,7 +53,17 @@ _KNOWN_CAUSES = (
     ("video unavailable", "download.cause_unavailable"),
     ("sign in to confirm you", "download.cause_bot"),
     ("requested format is not available", "download.cause_format"),
+    ("could not copy", "download.cause_cookies_locked"),
+    ("cookie database", "download.cause_cookies_locked"),
+    ("failed to decrypt", "download.cause_cookies_locked"),
     ("403", "download.cause_403"),
+)
+
+_COOKIE_FAIL_MARKERS = (
+    "could not copy",
+    "cookie database",
+    "failed to decrypt",
+    "could not find",
 )
 
 
@@ -113,6 +123,17 @@ def run_yt_dlp(cmd: list[str], what: str | None = None) -> None:
             if transient and attempt < YT_DLP_RETRIES:
                 print(t("download.retrying", err=last_error))
                 continue
+
+            # Se falhou por banco de cookies bloqueado/inacessível e havia --cookies-from-browser:
+            # retenta uma vez SEM cookies, pois a maioria dos vídeos não precisa deles.
+            if "--cookies-from-browser" in cmd and any(m in last_error.lower() for m in _COOKIE_FAIL_MARKERS):
+                idx = cmd.index("--cookies-from-browser")
+                cmd_no_cookies = cmd[:idx] + cmd[idx + 2:]
+                try:
+                    run_subprocess(cmd_no_cookies)
+                    return
+                except subprocess.CalledProcessError:
+                    pass
 
             detalhe = _friendly_download_error(last_error)
             raise RuntimeError(

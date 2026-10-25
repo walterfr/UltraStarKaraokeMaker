@@ -63,3 +63,9 @@ def test_video_info_errors_are_classified():
     assert classify_error("Private video") == "private"
     assert classify_error("Video unavailable") == "unavailable"
     assert classify_error("timed out") == "other"
+
+def test_cookie_database_locked_friendly_error():
+    from pipeline.download import _friendly_download_error
+    assert classify_error('Could not copy Chrome cookie database. See https://github.com/yt-dlp/yt-dlp/issues/7271') == 'cookies'
+    msg = _friendly_download_error('Could not copy Chrome cookie database. See https://github.com/yt-dlp/yt-dlp/issues/7271')
+    assert 'cookies' in msg.lower() or 'navegador' in msg.lower()

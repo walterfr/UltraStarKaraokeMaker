@@ -6,6 +6,7 @@
 [![WinGet](https://img.shields.io/badge/winget-walterfr.USKMaker-blue)](https://github.com/microsoft/winget-pkgs/tree/master/manifests/w/walterfr/USKMaker)
 [![Build Windows](https://github.com/walterfr/UltraStarKaraokeMaker/actions/workflows/build-windows.yml/badge.svg)](https://github.com/walterfr/UltraStarKaraokeMaker/actions/workflows/build-windows.yml)
 [![Build Linux](https://github.com/walterfr/UltraStarKaraokeMaker/actions/workflows/build-linux.yml/badge.svg)](https://github.com/walterfr/UltraStarKaraokeMaker/actions/workflows/build-linux.yml)
+[![PrideVer](https://img.shields.io/badge/versioning-PrideVer%200.3.0-ff69b4)](https://pridever.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **🇬🇧 [English version](README.en.md)**

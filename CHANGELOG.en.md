@@ -2,7 +2,14 @@
 
 All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
+
+## [0.25.5] — 2026-10-24
+
+### Fixed
+
+- **Automatic fallback without cookies and locked-database handling for YouTube downloads.** When downloading with browser cookies enabled (e.g. Chrome), if the browser is running and Windows locks the SQLite cookie database (`Could not copy Chrome cookie database`), the pipeline now automatically retries without cookies for public videos and displays a clear message advising to close the browser or turn off cookies in options.
+- **Adoption of Pride Versioning 0.3.0 (`PROUD.DEFAULT.SHAME`).** Documentation and badges updated according to the spec.
 
 ## [0.25.4] — 2026-10-19
 
