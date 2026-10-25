@@ -30,6 +30,7 @@
       "../python-sidecar/read_tags.py",
       "../python-sidecar/update_ytdlp.py",
       "../python-sidecar/read_video_info.py",
+      "../python-sidecar/fetch_netease_lyrics.py",
       "../python-sidecar/fetch_assets.py",
       "../python-sidecar/verify_setup.py",
       "../python-sidecar/requirements.txt",
@@ -40,7 +41,7 @@
   },
   "productName": "USKMaker",
   "mainBinaryName": "USKMaker",
-  "version": "0.25.5",
+  "version": "0.26.0",
   "identifier": "br.com.walterfr.uskmaker",
   "plugins": {},
   "app": {

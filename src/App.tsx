@@ -979,6 +979,36 @@ function App() {
         primary?.plainLyrics?.trim() ||
         (synced ? lrcToPlain(synced) : "");
 
+      // Se o LRCLIB não retornou letra, tenta NetEase Cloud Music como fallback
+      if (!plain && !synced) {
+        try {
+          const ne = await invoke<{
+            ok: boolean;
+            trackName?: string;
+            artistName?: string;
+            duration?: number;
+            syncedLyrics?: string;
+            plainLyrics?: string;
+          }>("fetch_netease_lyrics", {
+            artist: artist.trim(),
+            title: title.trim(),
+            lang,
+          });
+          if (ne && ne.ok && (ne.syncedLyrics || ne.plainLyrics)) {
+            synced = ne.syncedLyrics?.trim() || null;
+            plain = ne.plainLyrics?.trim() || (synced ? lrcToPlain(synced) : "");
+            if (known && ne.duration) {
+              const gap = Math.abs(ne.duration - known);
+              if (gap <= MAX_DURATION_DIFF_S) {
+                durationPickNote = String(Math.round(gap));
+              }
+            }
+          }
+        } catch {
+          // Falha na NetEase é silenciosa: cai na checagem normal abaixo
+        }
+      }
+
       if (!plain) {
         // inclui o caso instrumental=true (faixa sem letra)
         setLyricsSearchMsg({ kind: "warn", text: t("lyricsNotFound") });

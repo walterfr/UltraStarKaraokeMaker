@@ -1925,6 +1925,33 @@ async fn update_ytdlp(app: tauri::AppHandle, lang: String) -> Result<serde_json:
     }
 }
 
+
+/// Busca letra sincronizada (.lrc) na NetEase Cloud Music como fallback quando o LRCLIB
+/// não encontrar a faixa. Usa script leve `fetch_netease_lyrics.py` (só urllib).
+#[tauri::command]
+async fn fetch_netease_lyrics(
+    app: tauri::AppHandle,
+    artist: String,
+    title: String,
+    lang: String,
+) -> Result<serde_json::Value, String> {
+    let (code_dir, python_exe) = resolve_sidecar(&app, &lang)?;
+    let script = code_dir.join("fetch_netease_lyrics.py");
+
+    let mut cmd = Command::new(&python_exe);
+    cmd.arg(&script).arg(&artist).arg(&title);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    match cmd.output().await {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            Ok(serde_json::from_str(stdout.trim())
+                .unwrap_or_else(|_| serde_json::json!({"ok": false})))
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
 /// Lê as tags básicas (título/artista/álbum/ano/gênero) de um arquivo de
 /// áudio local, para o app pré-preencher o formulário ao selecionar o arquivo.
 /// Roda o leitor leve `read_tags.py` (só mutagen) no python do sidecar e
@@ -2062,6 +2089,7 @@ fn main() {
             regenerate_video,
             fetch_video_info,
             update_ytdlp,
+            fetch_netease_lyrics,
             save_approved_lyrics,
             load_approved_lyrics,
             finished_package_exists,

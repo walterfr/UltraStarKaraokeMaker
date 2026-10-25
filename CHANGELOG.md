@@ -4,6 +4,12 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [0.26.0] - 2026-10-24
+
+### Adicionado
+
+- **Busca de letra sincronizada (.lrc) na NetEase Cloud Music como fallback.** Quando o LRCLIB não possui a letra ou falha, o app agora consulta a NetEase Cloud Music automaticamente, expandindo drasticamente a taxa de sucesso na obtenção de letras sincronizadas sem necessidade de chaves de API e limpando créditos/metadados nativos do cabeçalho.
+
 ## [0.25.5] - 2026-10-24
 
 ### Corrigido
