@@ -4,6 +4,12 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [0.26.1] - 2026-10-31
+
+### Corrigido
+
+- **Fallback para NetEase Cloud Music em caso de erro HTTP / timeout do LRCLIB.** Quando o servidor do LRCLIB retorna erros de gateway (HTTP 502/503/504) ou sofre timeout de rede, a busca não é mais abortada prematuramente com mensagem de erro; o fallback para a NetEase agora é executado normalmente para resgatar a letra sincronizada.
+
 ## [0.26.0] - 2026-10-24
 
 ### Adicionado

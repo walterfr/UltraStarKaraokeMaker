@@ -843,10 +843,15 @@ function App() {
         // normalmente para o LRCLIB.
       }
 
-      const resp = await lrclibGet<LrclibTrack>("get", {
-        artist_name: artist.trim(),
-        track_name: title.trim(),
-      });
+      let resp: { ok: boolean; status: number; data: LrclibTrack | undefined };
+      try {
+        resp = await lrclibGet<LrclibTrack>("get", {
+          artist_name: artist.trim(),
+          track_name: title.trim(),
+        });
+      } catch {
+        resp = { ok: false, status: 503, data: undefined };
+      }
       // ---------------------------------------------------------------
       // ESCOLHA DO REGISTRO
       //
@@ -967,11 +972,6 @@ function App() {
         }
       }
 
-      if (!primary && searchFailedStatus !== null && !synced && !plain) {
-        setLyricsSearchMsg({ kind: "err", text: t("lyricsSearchError", { msg: `HTTP ${searchFailedStatus}` }) });
-        return;
-      }
-
       // Texto puro: do registro escolhido, senão do palpite, senão derivado
       // do .lrc. Sempre há letra para o usuário revisar, mesmo sem tempos.
       plain =
@@ -979,7 +979,8 @@ function App() {
         primary?.plainLyrics?.trim() ||
         (synced ? lrcToPlain(synced) : "");
 
-      // Se o LRCLIB não retornou letra, tenta NetEase Cloud Music como fallback
+      // Se o LRCLIB não retornou letra (404, sem sincronia, erro HTTP 502/503 ou timeout),
+      // tenta NetEase Cloud Music como fallback:
       if (!plain && !synced) {
         try {
           const ne = await invoke<{
@@ -1005,11 +1006,15 @@ function App() {
             }
           }
         } catch {
-          // Falha na NetEase é silenciosa: cai na checagem normal abaixo
+          // Falha na NetEase é silenciosa: cai na checagem de erro abaixo
         }
       }
 
-      if (!plain) {
+      if (!plain && !synced) {
+        if (!primary && searchFailedStatus !== null) {
+          setLyricsSearchMsg({ kind: "err", text: t("lyricsSearchError", { msg: `HTTP ${searchFailedStatus}` }) });
+          return;
+        }
         // inclui o caso instrumental=true (faixa sem letra)
         setLyricsSearchMsg({ kind: "warn", text: t("lyricsNotFound") });
         return;
