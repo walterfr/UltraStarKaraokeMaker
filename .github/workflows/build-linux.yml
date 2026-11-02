@@ -93,10 +93,26 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Extrair notas da vers?o do CHANGELOG.md
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $ver = "${{ github.ref_name }}".TrimStart('v')
+          $pt = Get-Content CHANGELOG.md -Raw
+          $en = Get-Content CHANGELOG.en.md -Raw
+          $pat = "(?ms)^##\s+\[$([regex]::Escape($ver))\].*?(?=^##\s+\[|\Z)"
+          $notes = @()
+          if ($pt -match $pat) { $notes += $Matches[0].Trim() }
+          if ($en -match $pat) { $notes += "---`n`n" + $Matches[0].Trim() }
+          if (-not $notes.Count) { $notes += "Release USKMaker v$ver" }
+          [System.IO.File]::WriteAllText("release-notes.md", ($notes -join "`n`n"), [System.Text.UTF8Encoding]::new($false))
+
       - name: Anexar pacotes ao Release do GitHub
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          name: USKMaker ${{ github.ref_name }}
+          body_path: release-notes.md
           files: |
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/rpm/*.rpm

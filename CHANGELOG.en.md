@@ -4,6 +4,13 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [0.27.0] — 2026-11-01
+
+### Added
+
+- **Side-by-side duration indicators (`🎵 Audio` and `📝 Lyrics`) in the lyrics header.** Displays the actual audio duration alongside the last sung timestamp of synchronized lyrics (`.lrc`), with color-coded status pills (green when compatible, yellow when coverage is `< 50%`, and red when lyrics exceed audio by `> 5s`) and explanatory tooltips to immediately spot mismatched extended or live `.lrc` versions before alignment starts.
+- **Automatic duration extraction for local audio files (`read_tags.py`).** Selecting a local audio/video file (`.mp3`, `.ogg`, `.flac`, `.m4a`, `.wav`, `.mp4`) now reads its duration via `mutagen`, enabling duration-based `.lrc` candidate ranking and pre-generation timing mismatch warnings in local file mode as well.
+
 ## [0.26.1] — 2026-10-31
 
 ### Fixed

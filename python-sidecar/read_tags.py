@@ -9,7 +9,7 @@ Depende só de `mutagen` (leve e rápido) - de propósito NÃO importa o resto d
 pipeline (whisperx/torch/etc.), para responder em fração de segundo.
 
 Uso:   python read_tags.py <caminho-do-arquivo-de-audio>
-Saída: JSON {"title","artist","album","year","genre"} (campos ausentes = null).
+Saída: JSON {"title","artist","album","year","genre","duration"} (campos ausentes = null).
 Nunca sai com traceback: em qualquer erro imprime {} e encerra com código 0
 (ler tags é uma conveniência - falhar aqui não deve incomodar o usuário).
 """
@@ -43,7 +43,7 @@ def _first(tags, *keys):
 def read_tags(path: str) -> dict:
     from mutagen import File as MutagenFile
 
-    out = {"title": None, "artist": None, "album": None, "year": None, "genre": None}
+    out = {"title": None, "artist": None, "album": None, "year": None, "genre": None, "duration": None}
 
     # easy=True normaliza os nomes de tag entre mp3/flac/ogg/m4a. Se não abrir
     # (formato que o modo easy não suporta), cai para o modo cru.
@@ -59,6 +59,13 @@ def read_tags(path: str) -> dict:
             f = None
     if f is None:
         return out
+
+    # Duração do áudio: o app compara com o fim do .lrc (mostrador "Música x
+    # Letra" e aviso antes de gerar). Sem isto o modo arquivo local nunca tinha
+    # duração e a checagem de letra de outra versão não rodava.
+    length = getattr(getattr(f, "info", None), "length", None)
+    if isinstance(length, (int, float)) and length > 0:
+        out["duration"] = round(float(length), 2)
 
     tags = f.tags or {}
     out["title"] = _first(tags, "title", "TITLE", "TIT2", "\xa9nam")

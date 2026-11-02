@@ -4,6 +4,13 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [0.27.0] - 2026-11-01
+
+### Adicionado
+
+- **Mostradores comparativos de duração (`🎵 Música` e `📝 Letra`) no cabeçalho da letra.** Exibe lado a lado a duração real do áudio e o último timestamp cantado da letra sincronizada (`.lrc`), com código de cores (verde quando compatível, amarelo para cobertura `< 50%` e vermelho quando a letra ultrapassa o áudio em `> 5s`) e *tooltips* explicativos, permitindo identificar imediatamente letras de versões estendidas ou ao vivo antes de iniciar o alinhamento.
+- **Leitura automática da duração em arquivos de áudio locais (`read_tags.py`).** Ao selecionar um arquivo local (`.mp3`, `.ogg`, `.flac`, `.m4a`, `.wav`, `.mp4`), o USKMaker agora extrai sua duração via `mutagen`, habilitando a filtragem por duração na busca do LRCLIB/NetEase e o alerta pré-geração de tempo incompatível também fora do modo YouTube.
+
 ## [0.26.1] - 2026-10-31
 
 ### Corrigido

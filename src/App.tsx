@@ -137,6 +137,9 @@ interface AudioTags {
   album: string | null;
   year: number | null;
   genre: string | null;
+  /// Duração do áudio em segundos (mostrador Música x Letra). Ausente em
+  /// sidecar antigo.
+  duration?: number | null;
 }
 
 /// Resposta do LRCLIB (https://lrclib.net/docs) - API aberta, sem chave.
@@ -518,6 +521,33 @@ function App() {
     return { lines, words, warnings };
   }, [lyricsText, t]);
 
+  const durationBadges = useMemo(() => {
+    const audioSec = trackDuration && trackDuration > 0 ? trackDuration : null;
+    const lrcSec = syncedLyrics ? lrcLastSungSecond(syncedLyrics) : null;
+    if (audioSec === null && lrcSec === null) return null;
+    const approved = syncedLyrics ? isApprovedLrc(syncedLyrics) : false;
+    let status: "ok" | "warn" | "err" | null = null;
+    let tooltip = "";
+    if (audioSec !== null && lrcSec !== null) {
+      if (!approved && lrcSec > audioSec + LRC_HARD_MARGIN_S) {
+        status = "err";
+        tooltip = t("durLyricsTooLong", { lrc: fmtMMSS(lrcSec), audio: fmtMMSS(audioSec) });
+      } else if (!approved && lrcSec / audioSec < LRC_MIN_COVERAGE) {
+        status = "warn";
+        tooltip = t("durLyricsTooShort", { lrc: fmtMMSS(lrcSec), audio: fmtMMSS(audioSec) });
+      } else {
+        status = "ok";
+        tooltip = t("durLyricsOk", { lrc: fmtMMSS(lrcSec), audio: fmtMMSS(audioSec) });
+      }
+    }
+    return {
+      audioText: t("durAudio", { time: audioSec !== null ? fmtMMSS(audioSec) : "—" }),
+      lrcText: t("durLyrics", { time: lrcSec !== null ? fmtMMSS(lrcSec) : "—" }),
+      status,
+      tooltip,
+    };
+  }, [trackDuration, syncedLyrics, t]);
+
   // ------------------------------------------------------------- splash
   useEffect(() => {
     const fadeTimer = setTimeout(() => setSplashState("fade"), 1300);
@@ -736,6 +766,9 @@ function App() {
   async function autofillFromTags(path: string) {
     try {
       const tags = await invoke<AudioTags>("read_audio_tags", { path, lang });
+      // Duração é MEDIDA do arquivo, não preferência do usuário: sempre
+      // substitui (inclusive a de um vídeo do YouTube consultado antes).
+      setTrackDuration(tags?.duration && tags.duration > 0 ? tags.duration : null);
       const applied: string[] = [];
       if (!title.trim() && tags?.title?.trim()) {
         setTitle(tags.title.trim());
@@ -1113,6 +1146,7 @@ function App() {
   function clearSongFields() {
     setYoutubeUrl("");
     setFilePath("");
+    setTrackDuration(null);
     setLyricsText("");
     setSyncedLyrics(null);
     setLyricsSearchMsg(null);
@@ -1215,6 +1249,11 @@ function App() {
     setSourceMode(i.youtubeUrl ? "youtube" : "file");
     setYoutubeUrl(i.youtubeUrl ?? "");
     setFilePath(i.filePath ?? "");
+    if (i.filePath) {
+      autofillFromTags(i.filePath);
+    } else {
+      setTrackDuration(null);
+    }
     setLyricsText(i.lyricsText ?? "");
     setSyncedLyrics(i.syncedLyrics ?? null);
     setTitle(songTitle);
@@ -1534,6 +1573,7 @@ function App() {
   function resetForm() {
     setYoutubeUrl("");
     setFilePath("");
+    setTrackDuration(null);
     setLyricsText("");
     setSyncedLyrics(null);
     setLyricsSearchMsg(null);
@@ -1863,7 +1903,7 @@ function App() {
           <input
             type="text"
             value={youtubeUrl}
-            onChange={(e) => { leaveLastRun(); setYoutubeUrl(e.target.value); }}
+            onChange={(e) => { leaveLastRun(); setYoutubeUrl(e.target.value); setTrackDuration(null); }}
             placeholder="https://www.youtube.com/watch?v=..."
             disabled={isRunning}
           />
@@ -1959,6 +1999,20 @@ function App() {
                 lineWord: lyricsInfo.lines === 1 ? t("lineSingular") : t("linePlural"),
                 words: lyricsInfo.words,
               })}
+            </span>
+          )}
+          {durationBadges && (
+            <span className="lyrics-dur-group">
+              <span className="lyrics-dur" title={durationBadges.tooltip || undefined}>
+                🎵 {durationBadges.audioText}
+              </span>
+              <span
+                className={`lyrics-dur${durationBadges.status ? ` ${durationBadges.status}` : ""}`}
+                title={durationBadges.tooltip || undefined}
+              >
+                {durationBadges.status === "err" || durationBadges.status === "warn" ? "⚠ " : "📝 "}
+                {durationBadges.lrcText}
+              </span>
             </span>
           )}
           <span className="lyrics-head-spacer" />

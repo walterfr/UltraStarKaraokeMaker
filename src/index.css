@@ -1051,6 +1051,39 @@ body { overflow: hidden; }
 }
 .lyrics-head label { margin-bottom: 0; cursor: help; }
 .lyrics-head .lyrics-count { float: none; }
+.lyrics-dur-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.lyrics-dur {
+  font-size: 0.72rem;
+  font-family: ui-monospace, monospace;
+  padding: 2px 7px;
+  border-radius: 12px;
+  background: #1b1b24;
+  border: 1px solid #33333f;
+  color: #9a9aa8;
+  white-space: nowrap;
+}
+.lyrics-dur[title] {
+  cursor: help;
+}
+.lyrics-dur.ok {
+  background: #16241a;
+  border-color: #24512f;
+  color: #7dc98f;
+}
+.lyrics-dur.warn {
+  background: #2a2014;
+  border-color: #5c4520;
+  color: #d6b02f;
+}
+.lyrics-dur.err {
+  background: #2a1418;
+  border-color: #5c2028;
+  color: #ff9fa8;
+}
 .lyrics-head-spacer { flex: 1; }
 .tip-mark {
   display: inline-flex;

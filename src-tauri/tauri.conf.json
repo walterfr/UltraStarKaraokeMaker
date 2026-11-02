@@ -41,7 +41,7 @@
   },
   "productName": "USKMaker",
   "mainBinaryName": "USKMaker",
-  "version": "0.26.1",
+  "version": "0.27.0",
   "identifier": "br.com.walterfr.uskmaker",
   "plugins": {},
   "app": {
