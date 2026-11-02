@@ -180,6 +180,13 @@ What changed in each version is in the [CHANGELOG](CHANGELOG.en.md). Installers 
 
 MIT. See the [LICENSE](LICENSE) file.
 
+## Acknowledgements & Community
+
+Special thanks to everyone who contributed code, testing, bug reports, feature suggestions, and financial support to make version **1.0.0** possible!
+
+- **GitHub Contributors & Community**: [@osklu002](https://github.com/osklu002), [@DJ-Joel](https://github.com/DJ-Joel), [@Alejololer](https://github.com/Alejololer), [@angelrdgzrivero](https://github.com/angelrdgzrivero), [@mur1nu](https://github.com/mur1nu), and everyone who submitted issues, feedback, or starred the repository.
+- **Supporters & Donors**: Heartfelt gratitude to everyone supporting the project via GitHub Sponsors, Ko-fi, Buy Me a Coffee, and Pix. Your support keeps development independent and actively maintained.
+
 ## Credits
 
 Built on top of: [WhisperX](https://github.com/m-bain/whisperx), [Demucs](https://github.com/facebookresearch/demucs), [librosa](https://librosa.org/), [SwiftF0](https://github.com/lars76/swift-f0), [yt-dlp](https://github.com/yt-dlp/yt-dlp), [Tauri](https://tauri.app/), [MusicBrainz](https://musicbrainz.org/), [Cover Art Archive](https://coverartarchive.org/), [iTunes Search API](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/), [Deezer API](https://developers.deezer.com/api), [Last.fm](https://www.last.fm/api) and [Discogs](https://www.discogs.com/developers). Flow inspiration: [UltraSinger](https://github.com/rakuri255/UltraSinger).

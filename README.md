@@ -180,6 +180,13 @@ O que mudou em cada versão está no [CHANGELOG](CHANGELOG.md). Os instaladores 
 
 MIT. Veja o arquivo [LICENSE](LICENSE).
 
+## Agradecimentos e Comunidade
+
+Um agradecimento especial a todos que contribuíram diretamente com código, testes, relatórios de bugs, ideias e suporte financeiro para tornar a versão **1.0.0** uma realidade!
+
+- **Contribuidores e Comunidade no GitHub**: [@osklu002](https://github.com/osklu002), [@DJ-Joel](https://github.com/DJ-Joel), [@Alejololer](https://github.com/Alejololer), [@angelrdgzrivero](https://github.com/angelrdgzrivero), [@mur1nu](https://github.com/mur1nu) e todos que abriram issues e deram estrelas ao repositório.
+- **Apoiadores e Doadores**: Gratidão a todos que enviaram apoio via GitHub Sponsors, Ko-fi, Buy Me a Coffee e Pix. O suporte de vocês mantém o projeto ativo, independente e em constante evolução.
+
 ## Créditos
 
 Apoia-se em: [WhisperX](https://github.com/m-bain/whisperx), [Demucs](https://github.com/facebookresearch/demucs), [librosa](https://librosa.org/), [SwiftF0](https://github.com/lars76/swift-f0), [yt-dlp](https://github.com/yt-dlp/yt-dlp), [Tauri](https://tauri.app/), [MusicBrainz](https://musicbrainz.org/), [Cover Art Archive](https://coverartarchive.org/), [iTunes Search API](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/), [Deezer API](https://developers.deezer.com/api), [Last.fm](https://www.last.fm/api) e [Discogs](https://www.discogs.com/developers). Inspiração de fluxo: [UltraSinger](https://github.com/rakuri255/UltraSinger).
