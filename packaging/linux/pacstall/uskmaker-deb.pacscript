@@ -1,0 +1,11 @@
+pkgname="uskmaker-deb"
+gives="uskmaker"
+pkgver="0.29.0"
+pkgdesc="AI-powered UltraStar Deluxe & YARG karaoke package generator"
+url="https://github.com/walterfr/UltraStarKaraokeMaker"
+arch=("amd64")
+license=("MIT")
+maintainer=("Walter <https://github.com/walterfr>")
+repology=("project: uskmaker")
+source=("https://github.com/walterfr/UltraStarKaraokeMaker/releases/download/v${pkgver}/USKMaker_${pkgver}_amd64.deb")
+sha256sums=("3d3c3fcf210822885eabb7b8fdf36099da7967f923e97f5f2a1bcc2b8fad464f")

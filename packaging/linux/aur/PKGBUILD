@@ -1,0 +1,30 @@
+# Maintainer: Walter <https://github.com/walterfr>
+pkgname=uskmaker-bin
+pkgver=0.29.0
+pkgrel=1
+pkgdesc="AI-powered UltraStar Deluxe & YARG karaoke package generator (binary release)"
+arch=('x86_64')
+url="https://github.com/walterfr/UltraStarKaraokeMaker"
+license=('MIT')
+depends=(
+  'webkit2gtk-4.1'
+  'gtk3'
+  'libayatana-appindicator'
+  'openssl'
+  'dbus'
+  'hicolor-icon-theme'
+)
+optdepends=(
+  'ffmpeg: audio/video conversion and vocal processing'
+  'python: local AI sidecar environment'
+  'cuda: NVIDIA GPU acceleration for Demucs and WhisperX'
+)
+provides=('uskmaker')
+conflicts=('uskmaker')
+options=('!strip' '!emptydirs')
+source_x86_64=("${pkgname}-${pkgver}.deb::https://github.com/walterfr/UltraStarKaraokeMaker/releases/download/v${pkgver}/USKMaker_${pkgver}_amd64.deb")
+sha256sums_x86_64=('3d3c3fcf210822885eabb7b8fdf36099da7967f923e97f5f2a1bcc2b8fad464f')
+
+package() {
+  bsdtar -xf data.tar.* -C "${pkgdir}/"
+}

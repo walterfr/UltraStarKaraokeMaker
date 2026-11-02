@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>br.com.walterfr.uskmaker</id>
+  <name>USKMaker</name>
+  <summary>AI-powered UltraStar Deluxe &amp; YARG karaoke package generator</summary>
+  <summary xml:lang="pt_BR">Gerador de pacotes de karaokê UltraStar Deluxe e YARG com IA</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="br.com.walterfr">
+    <name>Walter (@prof.walterfr)</name>
+  </developer>
+  <description>
+    <p>
+      USKMaker creates ready-to-play UltraStar Deluxe, Vocaluxe, and YARG karaoke packages
+      from a YouTube link or local audio/video file using local AI models (Demucs vocal
+      separation, WhisperX / MMS phonetic syllable alignment, RMVPE / CREPE pitch detection,
+      and librosa BPM estimation).
+    </p>
+    <p xml:lang="pt_BR">
+      O USKMaker cria pacotes de karaokê prontos para jogar no UltraStar Deluxe, Vocaluxe e YARG
+      a partir de um link do YouTube ou arquivo de áudio/vídeo local usando modelos de IA locais
+      (separação vocal com Demucs, alinhamento fonético de sílabas com WhisperX / MMS, detecção
+      de notas com RMVPE / CREPE e estimativa de BPM com librosa).
+    </p>
+  </description>
+  <launchable type="desktop-id">USKMaker.desktop</launchable>
+  <url type="homepage">https://github.com/walterfr/UltraStarKaraokeMaker</url>
+  <url type="bugtracker">https://github.com/walterfr/UltraStarKaraokeMaker/issues</url>
+  <url type="donation">https://github.com/sponsors/walterfr</url>
+  <content_rating type="oars-1.1" />
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+    <category>Music</category>
+  </categories>
+  <releases>
+    <release version="0.29.0" date="2026-11-01">
+      <url>https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.29.0</url>
+    </release>
+  </releases>
+</component>

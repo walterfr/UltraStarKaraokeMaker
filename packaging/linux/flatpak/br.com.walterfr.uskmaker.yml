@@ -1,0 +1,36 @@
+app-id: br.com.walterfr.uskmaker
+runtime: org.gnome.Platform
+runtime-version: '46'
+sdk: org.gnome.Sdk
+command: USKMaker
+
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --socket=pulseaudio
+  - --device=all
+  - --filesystem=home
+  - --filesystem=xdg-data/USKMaker:create
+
+modules:
+  - name: uskmaker
+    buildsystem: simple
+    build-commands:
+      - ar x USKMaker.deb
+      - tar -xf data.tar.*
+      - cp -r usr/* /app/
+      - install -Dm644 br.com.walterfr.uskmaker.metainfo.xml /app/share/metainfo/br.com.walterfr.uskmaker.metainfo.xml
+      - desktop-file-edit --set-key=Icon --set-value=br.com.walterfr.uskmaker /app/share/applications/USKMaker.desktop
+      - mv /app/share/applications/USKMaker.desktop /app/share/applications/br.com.walterfr.uskmaker.desktop
+      - install -Dm644 /app/share/icons/hicolor/128x128/apps/USKMaker.png /app/share/icons/hicolor/128x128/apps/br.com.walterfr.uskmaker.png
+    sources:
+      - type: file
+        url: https://github.com/walterfr/UltraStarKaraokeMaker/releases/download/v0.29.0/USKMaker_0.29.0_amd64.deb
+        sha256: 3d3c3fcf210822885eabb7b8fdf36099da7967f923e97f5f2a1bcc2b8fad464f
+        dest-filename: USKMaker.deb
+        only-arches:
+          - x86_64
+      - type: file
+        path: ../br.com.walterfr.uskmaker.metainfo.xml

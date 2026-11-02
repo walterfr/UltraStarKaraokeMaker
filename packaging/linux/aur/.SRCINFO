@@ -1,0 +1,24 @@
+pkgbase = uskmaker-bin
+	pkgdesc = AI-powered UltraStar Deluxe & YARG karaoke package generator (binary release)
+	pkgver = 0.29.0
+	pkgrel = 1
+	url = https://github.com/walterfr/UltraStarKaraokeMaker
+	arch = x86_64
+	license = MIT
+	depends = webkit2gtk-4.1
+	depends = gtk3
+	depends = libayatana-appindicator
+	depends = openssl
+	depends = dbus
+	depends = hicolor-icon-theme
+	optdepends = ffmpeg: audio/video conversion and vocal processing
+	optdepends = python: local AI sidecar environment
+	optdepends = cuda: NVIDIA GPU acceleration for Demucs and WhisperX
+	provides = uskmaker
+	conflicts = uskmaker
+	options = !strip
+	options = !emptydirs
+	source_x86_64 = uskmaker-bin-0.29.0.deb::https://github.com/walterfr/UltraStarKaraokeMaker/releases/download/v0.29.0/USKMaker_0.29.0_amd64.deb
+	sha256sums_x86_64 = 3d3c3fcf210822885eabb7b8fdf36099da7967f923e97f5f2a1bcc2b8fad464f
+
+pkgname = uskmaker-bin

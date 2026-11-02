@@ -1,0 +1,79 @@
+name: Publish to Linux Repositories (AUR & Snap)
+
+# Publica automaticamente o pacote Linux no AUR (uskmaker-bin) e na Snap Store
+# quando os respectivos Secrets estiverem configurados no repositório:
+# - AUR_SSH_PRIVATE_KEY (+ AUR_USERNAME / AUR_EMAIL)
+# - SNAPCRAFT_STORE_CREDENTIALS
+# Enquanto não estiverem configurados (cadastro suspenso/pendente), os jobs
+# pulam silenciosamente sem quebrar a pipeline.
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  publish-aur:
+    name: Publish to AUR (uskmaker-bin)
+    runs-on: ubuntu-latest
+    env:
+      HAS_AUR_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY != '' }}
+    steps:
+      - name: Checkout
+        if: env.HAS_AUR_KEY == 'true'
+        uses: actions/checkout@v4
+
+      - name: Update PKGBUILD version and sha256
+        if: env.HAS_AUR_KEY == 'true'
+        shell: bash
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          DEB_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VER}/USKMaker_${VER}_amd64.deb"
+          SHA256=$(curl -sL "$DEB_URL" | sha256sum | awk '{print $1}')
+          sed -i "s/^pkgver=.*/pkgver=${VER}/" packaging/linux/aur/PKGBUILD
+          sed -i "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('${SHA256}')/" packaging/linux/aur/PKGBUILD
+
+      - name: Deploy to AUR
+        if: env.HAS_AUR_KEY == 'true'
+        uses: KSXGitHub/github-actions-deploy-aur@v4.0.0
+        with:
+          pkgname: uskmaker-bin
+          pkgbuild: ./packaging/linux/aur/PKGBUILD
+          commit_username: ${{ secrets.AUR_USERNAME || 'walterfr' }}
+          commit_email: ${{ secrets.AUR_EMAIL || 'walterfr@users.noreply.github.com' }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "chore: update uskmaker-bin to ${{ github.ref_name }}"
+
+  publish-snap:
+    name: Publish to Snap Store
+    runs-on: ubuntu-latest
+    env:
+      HAS_SNAP_TOKEN: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS != '' }}
+    steps:
+      - name: Checkout
+        if: env.HAS_SNAP_TOKEN == 'true'
+        uses: actions/checkout@v4
+
+      - name: Update snapcraft.yaml version
+        if: env.HAS_SNAP_TOKEN == 'true'
+        shell: bash
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          sed -i "s/^version:.*/version: '${VER}'/" packaging/linux/snap/snapcraft.yaml
+          sed -i "s|releases/download/v[^/]*/USKMaker_[^_]*_amd64.deb|releases/download/v${VER}/USKMaker_${VER}_amd64.deb|" packaging/linux/snap/snapcraft.yaml
+
+      - name: Build Snap
+        if: env.HAS_SNAP_TOKEN == 'true'
+        uses: canonical/action-build@v1
+        id: build
+        with:
+          path: packaging/linux/snap
+
+      - name: Publish to Snap Store
+        if: env.HAS_SNAP_TOKEN == 'true'
+        uses: canonical/action-publish@v1
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          snap: ${{ steps.build.outputs.snap }}
+          release: stable

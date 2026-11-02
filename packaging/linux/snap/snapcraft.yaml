@@ -1,0 +1,44 @@
+name: uskmaker
+base: core22
+version: '0.29.0'
+summary: AI-powered UltraStar Deluxe & YARG karaoke package generator
+description: |
+  USKMaker generates ready-to-play UltraStar Deluxe, Vocaluxe, and YARG karaoke
+  packages from a YouTube link or local audio/video file using local AI models
+  (Demucs vocal separation, WhisperX / MMS syllable alignment, RMVPE / CREPE
+  pitch detection, and automatic BPM estimation).
+
+grade: stable
+confinement: strict
+compression: lzo
+
+architectures:
+  - build-on: amd64
+
+apps:
+  uskmaker:
+    command: usr/bin/USKMaker
+    desktop: usr/share/applications/USKMaker.desktop
+    extensions: [gnome]
+    plugs:
+      - network
+      - network-bind
+      - home
+      - removable-media
+      - opengl
+      - audio-playback
+      - audio-record
+      - desktop
+      - desktop-legacy
+      - wayland
+      - x11
+
+parts:
+  uskmaker:
+    plugin: dump
+    source: https://github.com/walterfr/UltraStarKaraokeMaker/releases/download/v0.29.0/USKMaker_0.29.0_amd64.deb
+    source-type: deb
+    stage-packages:
+      - libayatana-appindicator3-1
+      - libwebkit2gtk-4.1-0
+      - ffmpeg
