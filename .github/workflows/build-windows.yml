@@ -66,6 +66,9 @@ jobs:
       # O tauri.conf.json já roda `npm run build` (beforeBuildCommand), então
       # o front-end é montado dentro deste passo.
       - name: Build do instalador
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         run: npm run tauri build
 
       - name: Publicar o instalador como artefato
@@ -76,27 +79,56 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Extrair notas da vers?o do CHANGELOG.md
+      - name: Extrair notas da versão do CHANGELOG.md e gerar latest.json (OTA)
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
-          $ver = "${{ github.ref_name }}".TrimStart('v')
-          $pt = Get-Content CHANGELOG.md -Raw
-          $en = Get-Content CHANGELOG.en.md -Raw
+          $tag = "${{ github.ref_name }}"
+          $ver = $tag.TrimStart('v')
+          $pt = [System.IO.File]::ReadAllText("CHANGELOG.md", [System.Text.Encoding]::UTF8)
+          $en = [System.IO.File]::ReadAllText("CHANGELOG.en.md", [System.Text.Encoding]::UTF8)
           $pat = "(?ms)^##\s+\[$([regex]::Escape($ver))\].*?(?=^##\s+\[|\Z)"
           $notes = @()
           if ($pt -match $pat) { $notes += $Matches[0].Trim() }
           if ($en -match $pat) { $notes += "---`n`n" + $Matches[0].Trim() }
           if (-not $notes.Count) { $notes += "Release USKMaker v$ver" }
-          [System.IO.File]::WriteAllText("release-notes.md", ($notes -join "`n`n"), [System.Text.UTF8Encoding]::new($false))
+          $notesStr = ($notes -join "`n`n")
+          [System.IO.File]::WriteAllText("release-notes.md", $notesStr, [System.Text.UTF8Encoding]::new($false))
 
-      - name: Anexar instalador ao Release do GitHub
+          $exe = Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1
+          $sigFile = "$($exe.FullName).sig"
+          if ($exe -and (Test-Path $sigFile)) {
+            $sig = [System.IO.File]::ReadAllText($sigFile, [System.Text.Encoding]::UTF8).Trim()
+            $url = "https://github.com/${{ github.repository }}/releases/download/$tag/$($exe.Name)"
+            $platforms = @{}
+            try {
+              $existing = Invoke-RestMethod -Uri "https://github.com/${{ github.repository }}/releases/download/$tag/latest.json" -ErrorAction Stop
+              if ($existing.platforms) {
+                $existing.platforms.PSObject.Properties | ForEach-Object { $platforms[$_.Name] = $_.Value }
+              }
+            } catch {}
+            $entry = @{ signature = $sig; url = $url }
+            $platforms["windows-x86_64"] = $entry
+            $platforms["windows-x86_64-nsis"] = $entry
+            $latest = [ordered]@{
+              version = $ver
+              notes = $notesStr
+              pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+              platforms = $platforms
+            }
+            [System.IO.File]::WriteAllText("latest.json", ($latest | ConvertTo-Json -Depth 6), [System.Text.UTF8Encoding]::new($false))
+          }
+
+      - name: Anexar instalador e manifesto OTA ao Release do GitHub
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           name: USKMaker ${{ github.ref_name }}
           body_path: release-notes.md
-          files: src-tauri/target/release/bundle/nsis/*.exe
+          files: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/*.exe.sig
+            latest.json
 
   # Os testes do sidecar rodam em paralelo, em Linux (são lógica pura - não
   # precisam de GPU, de ffmpeg nem de Windows).

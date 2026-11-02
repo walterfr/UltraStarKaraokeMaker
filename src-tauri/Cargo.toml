@@ -1,6 +1,6 @@
 [package]
 name = "uskmaker"
-version = "0.27.0"
+version = "0.28.0"
 description = "USKMaker - gerador de pacotes de karaokê UltraStar com IA"
 edition = "2021"
 
@@ -20,6 +20,8 @@ tauri-plugin-dialog = "2"
 tauri-plugin-http = "~2.7"  # mesma série do @tauri-apps/plugin-http no npm (o CLI recusa versões desalinhadas)
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-notification = "2"
+tauri-plugin-process = "2"
+tauri-plugin-updater = "2"
 # NFKD para tirar o acento dos nomes de pasta/arquivo (ver fold_to_ascii)
 unicode-normalization = "0.1"
 

@@ -375,6 +375,11 @@ const STRINGS = {
     ltSaveError: "Não consegui salvar a letra aprovada.",
     ltApprovedLoaded: "Já existe uma versão aprovada desta música — os tempos aprovados estão preenchidos abaixo.",
     ltApprovedAudioWarn: "Atenção: os tempos foram conferidos com um áudio de {approved}; este arquivo tem {current}. Pode ser outra gravação — confira antes de salvar.",
+    otaUpdateBtn: "Atualizar (v{version})",
+    otaUpdateTip: "Nova versão do USKMaker disponível (v{version}). Clique para baixar e instalar automaticamente.",
+    otaInstalling: "Atualizando {pct}%...",
+    otaConfirm: "Nova versão v{version} disponível! Deseja baixar, instalar e reiniciar o USKMaker agora?",
+    otaError: "Falha ao atualizar o aplicativo",
   },
   en: {
     subtitle: "Create UltraStar packages (synced lyrics + pitch) from a YouTube link or a local file.",
@@ -730,6 +735,11 @@ const STRINGS = {
     ltSaveError: "Could not save the approved lyrics.",
     ltApprovedLoaded: "An approved version of this song already exists — its times are filled in below.",
     ltApprovedAudioWarn: "Warning: these times were checked against audio {approved} long; this file is {current}. It may be a different recording — check before saving.",
+    otaUpdateBtn: "Update (v{version})",
+    otaUpdateTip: "New USKMaker version available (v{version}). Click to download and install automatically.",
+    otaInstalling: "Updating {pct}%...",
+    otaConfirm: "New version v{version} is available! Download, install, and restart USKMaker now?",
+    otaError: "Failed to update application",
   },
 } as const;
 

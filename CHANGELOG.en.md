@@ -4,6 +4,12 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [0.28.0] — 2026-11-01
+
+### Added
+
+- **Automatic OTA updates via GitHub Releases (`tauri-plugin-updater`).** USKMaker now checks for updates on startup, displays an **`⬆ Update (vX.Y.Z)`** button in the header with release notes preview, verifies the Ed25519/Minisign cryptographic signature (`.sig`), and downloads, installs, and restarts the app automatically on Windows (`.exe` NSIS) and Linux (`.AppImage`).
+
 ## [0.27.0] — 2026-11-01
 
 ### Added

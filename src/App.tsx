@@ -7,6 +7,8 @@ import { fetch as httpFetch } from "@tauri-apps/plugin-http";
 import { getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { getVersion } from "@tauri-apps/api/app";
+import { check as checkOtaUpdate, Update as OtaUpdate } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import ReviewScreen from "./review/ReviewScreen";
 import { useI18n, StrKey } from "./i18n";
 import { isApprovedLrc } from "./review/lrcTiming";
@@ -500,6 +502,43 @@ function App() {
   const [showAbout, setShowAbout] = useState(false);
   const [appVersion, setAppVersion] = useState("");
   const [pixCopied, setPixCopied] = useState(false);
+  const [availableUpdate, setAvailableUpdate] = useState<OtaUpdate | null>(null);
+  const [otaInstalling, setOtaInstalling] = useState(false);
+  const [otaProgress, setOtaProgress] = useState(0);
+
+  async function installOtaUpdate() {
+    if (!availableUpdate || otaInstalling) return;
+    const notesPreview = availableUpdate.body
+      ? `\n\n${availableUpdate.body.slice(0, 600)}${availableUpdate.body.length > 600 ? "…" : ""}`
+      : "";
+    const ok = await ask(
+      `${t("otaConfirm", { version: availableUpdate.version })}${notesPreview}`,
+      { title: "USKMaker" }
+    );
+    if (!ok) return;
+    setOtaInstalling(true);
+    setOtaProgress(0);
+    try {
+      let downloaded = 0;
+      let total = 0;
+      await availableUpdate.downloadAndInstall((event) => {
+        if (event.event === "Started") {
+          total = event.data.contentLength ?? 0;
+        } else if (event.event === "Progress") {
+          downloaded += event.data.chunkLength;
+          if (total > 0) {
+            setOtaProgress(Math.min(99, Math.round((downloaded / total) * 100)));
+          }
+        } else if (event.event === "Finished") {
+          setOtaProgress(100);
+        }
+      });
+      await relaunch();
+    } catch (err) {
+      setError(`${t("otaError")}: ${String(err)}`);
+      setOtaInstalling(false);
+    }
+  }
 
   async function copyPix() {
     try {
@@ -560,6 +599,13 @@ function App() {
 
   useEffect(() => {
     getVersion().then(setAppVersion).catch(() => setAppVersion(""));
+    checkOtaUpdate()
+      .then((u) => {
+        if (u?.available) setAvailableUpdate(u);
+      })
+      .catch(() => {
+        /* sem rede ou sem latest.json ainda - silencioso */
+      });
   }, []);
 
   // ------------------------------------------------ persistência leve
@@ -1797,6 +1843,22 @@ function App() {
           )}
         </div>
         <div className="header-actions">
+          {availableUpdate && (
+            <button
+              className="mini-button ota-button"
+              onClick={installOtaUpdate}
+              disabled={isRunning || settingUp || otaInstalling}
+              title={t("otaUpdateTip", { version: availableUpdate.version })}
+            >
+              {otaInstalling ? (
+                <>
+                  <span className="spinner" /> {t("otaInstalling", { pct: String(otaProgress) })}
+                </>
+              ) : (
+                `⬆ ${t("otaUpdateBtn", { version: availableUpdate.version })}`
+              )}
+            </button>
+          )}
           {env && envProblems.length === 0 && (
             <button
               className="mini-button"

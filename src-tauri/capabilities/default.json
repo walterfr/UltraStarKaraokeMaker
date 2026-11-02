@@ -13,6 +13,8 @@
     "dialog:allow-ask",
     "clipboard-manager:allow-write-text",
     "notification:default",
+    "updater:default",
+    "process:allow-restart",
     {
       "identifier": "http:default",
       "allow": [{ "url": "https://lrclib.net/api/*" }]

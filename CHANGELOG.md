@@ -4,6 +4,12 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [0.28.0] - 2026-11-01
+
+### Adicionado
+
+- **Atualizações automáticas OTA via GitHub Releases (`tauri-plugin-updater`).** O USKMaker agora verifica automaticamente se há uma nova versão ao iniciar, exibe o botão **`⬆ Atualizar (vX.Y.Z)`** no cabeçalho com resumo das novidades, valida a assinatura criptográfica Ed25519/Minisign (`.sig`) e baixa, instala e reinicia o aplicativo automaticamente em Windows (`.exe` NSIS) e Linux (`.AppImage`).
+
 ## [0.27.0] - 2026-11-01
 
 ### Adicionado

@@ -112,6 +112,11 @@ if (-not $SkipTests) {
 
 # 4. Compilação Windows
 if (-not $SkipBuild) {
+    $defaultKeyFile = Join-Path $env:USERPROFILE ".tauri\uskmaker.key"
+    if (-not $env:TAURI_SIGNING_PRIVATE_KEY -and (Test-Path $defaultKeyFile)) {
+        $env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content $defaultKeyFile -Raw).Trim()
+        $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
+    }
     Write-Host "`n[3/6] Compilando instalador do Windows (Tauri NSIS)..." -ForegroundColor Yellow
     npm run tauri build
     if ($LASTEXITCODE -ne 0) { Write-Error "npm run tauri build falhou." }
