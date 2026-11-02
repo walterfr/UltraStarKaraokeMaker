@@ -19,6 +19,6 @@ pkgbase = uskmaker-bin
 	options = !strip
 	options = !emptydirs
 	source_x86_64 = uskmaker-bin-0.29.0.deb::https://github.com/walterfr/UltraStarKaraokeMaker/releases/download/v0.29.0/USKMaker_0.29.0_amd64.deb
-	sha256sums_x86_64 = 3d3c3fcf210822885eabb7b8fdf36099da7967f923e97f5f2a1bcc2b8fad464f
+	sha256sums_x86_64 = b82dfefe7dcff083953735d2d3e26447f99243fc6b891e957d1fa6850d0b94a9
 
 pkgname = uskmaker-bin

@@ -14,6 +14,7 @@
 - **Pendências de Lojas Linux (em `packaging/linux/` e `.github/workflows/publish-linux-repos.yml`)**:
   - **AUR (`uskmaker-bin`) — Pendente (cadastro no AUR temporariamente suspenso)**: Assim que o cadastro reabrir em `https://aur.archlinux.org`, criar conta, registrar chave pública SSH (`ssh-keygen -t ed25519 -f ~/.ssh/aur`) e salvar a chave privada em `AUR_SSH_PRIVATE_KEY` nos Secrets do GitHub (`gh secret set AUR_SSH_PRIVATE_KEY < ~/.ssh/aur`). O workflow `.github/workflows/publish-linux-repos.yml` e o `packaging/linux/aur/PKGBUILD` já estão prontos e publicarão automaticamente.
   - **Snap Store (`uskmaker`) — Pendente (instabilidade no servidor Snapcraft)**: Assim que normalizar em `https://snapcraft.io`, registrar o nome `uskmaker`, exportar credencial (`snapcraft export-login snap.login`) e salvar em `SNAPCRAFT_STORE_CREDENTIALS` nos Secrets do GitHub (`gh secret set SNAPCRAFT_STORE_CREDENTIALS < snap.login`). O manifesto `packaging/linux/snap/snapcraft.yaml` e o workflow já estão prontos.
+  - **Badges/Tags no `README.md` e `README.en.md` (Obrigatório após aprovação)**: À medida que os PRs/cadastros das lojas Linux forem aprovados (`deb-get` [#2083](https://github.com/wimpysworld/deb-get/pull/2083), `Pacstall` [#9562](https://github.com/pacstall/pacstall-programs/pull/9562), `AppImageHub` [#11148](https://github.com/AppImage/appimage.github.io/pull/11148), `AUR` e `Snap`), adicionar as respectivas badges (shields.io) no cabeçalho do `README.md` e `README.en.md` ao lado da badge do `winget`.
 
 ## Convenções de Formato UltraStar
 

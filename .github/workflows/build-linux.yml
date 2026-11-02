@@ -85,6 +85,19 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         run: npm run tauri build
 
+      # O bundler do Tauri v2 converte "USKMaker" (camelCase) em "usk-maker"
+      # no DEBIAN/control. Normalizamos para "uskmaker" para que `apt`, `deb-get`
+      # e `pacstall` enxerguem o pacote como `uskmaker`.
+      - name: Normalizar Package: uskmaker no .deb
+        run: |
+          for deb in src-tauri/target/release/bundle/deb/*.deb; do
+            tmp_dir=$(mktemp -d)
+            dpkg-deb -R "$deb" "$tmp_dir"
+            sed -i 's/^Package: usk-maker$/Package: uskmaker\nReplaces: usk-maker\nConflicts: usk-maker/' "$tmp_dir/DEBIAN/control"
+            dpkg-deb -Zgzip -b "$tmp_dir" "$deb"
+            rm -rf "$tmp_dir"
+          done
+
       - name: Publicar os pacotes como artefato
         uses: actions/upload-artifact@v4
         with:
