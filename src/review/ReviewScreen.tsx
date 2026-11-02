@@ -137,6 +137,9 @@ interface USSong {
   preview_start?: number | null;
   medley_start_beat?: number | null;
   medley_end_beat?: number | null;
+  vocals_filename?: string | null;
+  instrumental_filename?: string | null;
+  tags?: string | null;
   creator: string;
   notes: USNote[];
   phrase_breaks_after_index: number[];
@@ -214,6 +217,90 @@ function pitchName(pitch: number): string {
   const name = NOTE_NAMES[((midi % 12) + 12) % 12];
   const octave = Math.floor(midi / 12) - 1;
   return `${name}${octave}`;
+}
+
+const MAJOR_SCALE_SEMITONES = [0, 2, 4, 5, 7, 9, 11];
+const MINOR_SCALE_SEMITONES = [0, 2, 3, 5, 7, 8, 10];
+const KRUMHANSL_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+const KRUMHANSL_MINOR = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+
+const ALL_MUSICAL_KEYS: string[] = [
+  ...NOTE_NAMES.map((n) => `${n} major`),
+  ...NOTE_NAMES.map((n) => `${n} minor`),
+];
+
+function extractKeyFromTags(tags?: string | null): string | null {
+  if (!tags) return null;
+  const m = tags.match(/key:\s*([A-G]#?\s+(?:major|minor))/i);
+  if (!m) return null;
+  const parts = m[1].trim().split(/\s+/);
+  return `${parts[0].toUpperCase()} ${parts[1].toLowerCase()}`;
+}
+
+function pearson12(a: number[], b: number[]): number {
+  const meanA = a.reduce((s, v) => s + v, 0) / 12;
+  const meanB = b.reduce((s, v) => s + v, 0) / 12;
+  let num = 0;
+  let denA = 0;
+  let denB = 0;
+  for (let i = 0; i < 12; i++) {
+    const da = a[i] - meanA;
+    const db = b[i] - meanB;
+    num += da * db;
+    denA += da * da;
+    denB += db * db;
+  }
+  const den = Math.sqrt(denA * denB);
+  return den > 1e-9 ? num / den : -2;
+}
+
+function detectKeyFromNotes(notes: USNote[]): string {
+  const hist = new Array(12).fill(0);
+  for (const n of notes) {
+    if (n.note_type === "F") continue;
+    const pc = ((n.pitch % 12) + 12) % 12;
+    hist[pc] += Math.max(1, n.duration_beats);
+  }
+  const total = hist.reduce((s, v) => s + v, 0);
+  if (total <= 0) return "C major";
+
+  let bestCorr = -2;
+  let bestKey = "C major";
+  for (let shift = 0; shift < 12; shift++) {
+    const maj = KRUMHANSL_MAJOR.map((_, i) => KRUMHANSL_MAJOR[((i - shift) % 12 + 12) % 12]);
+    const min = KRUMHANSL_MINOR.map((_, i) => KRUMHANSL_MINOR[((i - shift) % 12 + 12) % 12]);
+    const cMaj = pearson12(hist, maj);
+    if (cMaj > bestCorr) {
+      bestCorr = cMaj;
+      bestKey = `${NOTE_NAMES[shift]} major`;
+    }
+    const cMin = pearson12(hist, min);
+    if (cMin > bestCorr) {
+      bestCorr = cMin;
+      bestKey = `${NOTE_NAMES[shift]} minor`;
+    }
+  }
+  return bestKey;
+}
+
+function quantizePitchToKey(pitch: number, keyStr: string, neighborPitch: number | null): number {
+  const parts = keyStr.trim().split(/\s+/);
+  if (parts.length < 2) return pitch;
+  const rootIdx = NOTE_NAMES.indexOf(parts[0].toUpperCase());
+  const mode = parts[1].toLowerCase();
+  if (rootIdx < 0 || (mode !== "major" && mode !== "minor")) return pitch;
+
+  const scale = mode === "major" ? MAJOR_SCALE_SEMITONES : MINOR_SCALE_SEMITONES;
+  const allowed = new Set(scale.map((iv) => (rootIdx + iv) % 12));
+  const pc = ((pitch % 12) + 12) % 12;
+  if (allowed.has(pc)) return pitch;
+
+  const cands = [pitch - 1, pitch + 1].filter((c) => allowed.has(((c % 12) + 12) % 12));
+  if (cands.length === 0) return pitch;
+  if (cands.length === 1 || neighborPitch === null) return cands[0];
+  return Math.abs(cands[0] - neighborPitch) <= Math.abs(cands[1] - neighborPitch)
+    ? cands[0]
+    : cands[1];
 }
 
 // Um "verso" = trecho entre quebras de frase; alimenta o painel lateral de
@@ -308,6 +395,8 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   const [playing, setPlaying] = useState(false);
   const [saving, setSaving] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [repitching, setRepitching] = useState(false);
+  const [vocalScore, setVocalScore] = useState<{ simple: number; accurate: number } | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const minimapRef = useRef<HTMLCanvasElement | null>(null);
@@ -1983,6 +2072,85 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     }
   }
 
+  function handleChangeMusicalKey(newKey: string) {
+    mutate((d) => {
+      if (!d.tags || !/key:\s*[A-G]#?\s+(?:major|minor)/i.test(d.tags)) {
+        d.tags = d.tags ? `${d.tags}, key: ${newKey}` : `key: ${newKey}`;
+      } else {
+        d.tags = d.tags.replace(/key:\s*[A-G]#?\s+(?:major|minor)/i, `key: ${newKey}`);
+      }
+    });
+  }
+
+  function handleSnapToKey(targetKey: string) {
+    const s = songRef.current;
+    if (!s) return;
+    const indices =
+      multiSelectedRef.current.size > 1
+        ? Array.from(multiSelectedRef.current)
+        : s.notes.map((_, idx) => idx);
+    let adjusted = 0;
+    mutate((d) => {
+      const origPitches = d.notes.map((n) => n.pitch);
+      for (const i of indices) {
+        const n = d.notes[i];
+        if (!n || n.note_type === "F") continue;
+        const neighbor =
+          i > 0 && d.notes[i - 1].note_type !== "F"
+            ? origPitches[i - 1]
+            : i + 1 < d.notes.length && d.notes[i + 1].note_type !== "F"
+            ? origPitches[i + 1]
+            : null;
+        const snapped = quantizePitchToKey(origPitches[i], targetKey, neighbor);
+        if (snapped !== n.pitch) {
+          n.pitch = snapped;
+          adjusted++;
+        }
+      }
+      if (!d.tags || !/key:\s*[A-G]#?\s+(?:major|minor)/i.test(d.tags)) {
+        d.tags = d.tags ? `${d.tags}, key: ${targetKey}` : `key: ${targetKey}`;
+      }
+    });
+    setStatusMsg(t("revSnapKeyDone", { n: adjusted, key: targetKey }));
+    draw();
+  }
+
+  async function handleRepitch() {
+    const s = songRef.current;
+    if (!s) return;
+    setRepitching(true);
+    setStatusMsg(t("revRepitchRunning"));
+    setActionError(null);
+    try {
+      const res = await invoke<{
+        notes: USNote[];
+        updated_count: number;
+        before_score: { simple: number; accurate: number };
+        after_score: { simple: number; accurate: number };
+      }>("repitch_song", { outDir, song: s, lang });
+      mutate((d) => {
+        for (let i = 0; i < Math.min(d.notes.length, res.notes.length); i++) {
+          d.notes[i].pitch = res.notes[i].pitch;
+        }
+      });
+      setVocalScore(res.after_score);
+      setStatusMsg(
+        t("revRepitchDone", {
+          n: res.updated_count,
+          before: res.before_score.simple,
+          after: res.after_score.simple,
+          acc: res.after_score.accurate,
+        })
+      );
+      draw();
+    } catch (err) {
+      setStatusMsg(null);
+      setActionError(typeof err === "string" ? err : t("revSaveError"));
+    } finally {
+      setRepitching(false);
+    }
+  }
+
   async function handleClose() {
     if (dirty) {
       const leave = await ask(t("revConfirmDiscard"), { title: "USKMaker", kind: "warning" });
@@ -2021,6 +2189,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   const needsReview = (n: USNote, i: number, notes: USNote[]) =>
     n.source === "interpolated" || isLowConfidenceAnchor(n) || isPitchOutlier(notes, i);
   const flaggedCount = song.notes.filter(needsReview).length;
+  const activeMusicalKey = extractKeyFromTags(song.tags) ?? detectKeyFromNotes(song.notes);
 
   function jumpToNextFlagged() {
     const s = songRef.current;
@@ -2158,6 +2327,38 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
         <button onClick={redo} title="Ctrl+Y">
           {t("revRedo")}
         </button>
+        <span className="toolbar-sep" />
+        <label className="inline-label" title={t("revKeyHint")}>
+          {t("revKeyLabel")}
+          <select
+            value={activeMusicalKey}
+            onChange={(e) => handleChangeMusicalKey(e.target.value)}
+          >
+            {ALL_MUSICAL_KEYS.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          onClick={() => handleSnapToKey(activeMusicalKey)}
+          title={t("revSnapKeyTitle")}
+        >
+          {t("revSnapKey")}
+        </button>
+        <button
+          onClick={() => void handleRepitch()}
+          disabled={repitching || saving}
+          title={t("revRepitchHint")}
+        >
+          {repitching ? t("revRepitchRunning") : t("revRepitchButton")}
+        </button>
+        {vocalScore && (
+          <span className="dur-badge ok" title={t("revRepitchHint")}>
+            {t("revVocalScoreBadge", { simple: vocalScore.simple, acc: vocalScore.accurate })}
+          </span>
+        )}
         {hasSourceInfo && flaggedCount > 0 && (
           <>
             <span className="toolbar-sep" />

@@ -107,6 +107,8 @@ pub struct Song {
     pub vocals_filename: Option<String>,
     #[serde(default)]
     pub instrumental_filename: Option<String>,
+    #[serde(default)]
+    pub tags: Option<String>,
     #[serde(default = "default_creator")]
     pub creator: String,
     #[serde(default)]
@@ -261,6 +263,11 @@ impl Song {
         }
         if let Some(instrumental) = &self.instrumental_filename {
             lines.push(format!("#INSTRUMENTAL:{}", instrumental));
+        }
+        if let Some(tags) = &self.tags {
+            if !tags.is_empty() {
+                lines.push(format!("#TAGS:{}", tags));
+            }
         }
         lines.push(format!("#CREATOR:{}", self.creator));
 

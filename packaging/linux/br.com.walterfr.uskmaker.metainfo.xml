@@ -34,6 +34,9 @@
     <category>Music</category>
   </categories>
   <releases>
+    <release version="1.0.0" date="2026-11-02">
+      <url>https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v1.0.0</url>
+    </release>
     <release version="0.29.0" date="2026-11-01">
       <url>https://github.com/walterfr/UltraStarKaraokeMaker/releases/tag/v0.29.0</url>
     </release>

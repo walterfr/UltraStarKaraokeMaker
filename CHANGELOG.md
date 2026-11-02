@@ -4,6 +4,14 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [1.0.0] - 2026-11-02
+
+### Adicionado
+
+- **Detecção automática de Tom Musical (`Key Detection`), tag `#TAGS` e botão "Ajustar à Escala" (*Snap to Scale*) na Revisão.** O pipeline agora estima a tonalidade da música (`C major`, `A minor`, etc.) na Etapa 3 analisando o croma CQT da faixa instrumental contra os 24 perfis tonais de Krumhansl-Kessler (com suporte automático a transposição `--transpose`) e grava `#TAGS:key: <Tom>` no `.txt` UltraStar. Na tela de Revisão, é possível escolher o tom (ou inferi-lo das notas em pacotes antigos) e clicar em **"Ajustar à Escala"** para quantizar notas fora da escala (±1 semitom) para o grau válido mais próximo.
+- **Botão "🎯 Re-calcular Pitches (IA)" e Score de Aderência Vocal (`0–10.000 pts`) na Revisão.** Permite re-extrair apenas os pitches das notas na voz original (`SwiftF0` + dobra de oitava) preservando os tempos e sílabas atuais — ideal para atualizar charts antigos da comunidade ou reavaliar trechos reajustados manualmente — e calcula o Score Vocal (`0–10.000 pts`, padrão UltraStar: `9.000` notas/golden + `1.000` bônus de frase, modos *Simple* e *Oitava Exata*).
+- **Corte de silêncio interno em sílabas médias (`~`) e gate acústico RMS no `PitchExtractor`.** Quadros com energia acústica em silêncio (`< -50 dBFS` e `< -30 dB` do pico da palavra) agora têm o `voicing` zerado para não esticar notas por cima de pausas respiratórias ou caudas de reverberação, e sílabas entre `0,40 s` e `0,80 s` com lacuna de silêncio interno `>= 0,15 s` são automaticamente divididas em duas notas com continuação `~`.
+
 ## [0.29.0] - 2026-11-01
 
 ### Adicionado

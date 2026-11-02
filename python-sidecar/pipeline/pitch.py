@@ -131,6 +131,47 @@ def _read_window(audio_path: str, start_s: float, end_s: float) -> tuple[np.ndar
         return f.read(end_sample - start_sample), sr
 
 
+# Gate acústico de silêncio por energia RMS: evita que caudas de reverberação
+# ou pausas respiratórias com volume insignificante (< -50 dBFS e > 30 dB
+# abaixo do pico da palavra) mantenham `voicing=True` no SwiftF0 e atravessem
+# silêncios internos em sílabas longas.
+_SILENCE_ABS_RMS = 10.0 ** (-50.0 / 20.0)   # ~0.00316 (-50 dBFS)
+_SILENCE_REL_RATIO = 10.0 ** (-30.0 / 20.0)  # ~0.0316 (-30 dB relativo ao pico)
+
+
+def _frame_audible_mask(
+    segment: np.ndarray,
+    sr: int,
+    rel_timestamps: np.ndarray,
+    window_s: float = 0.025,
+) -> np.ndarray:
+    """
+    Retorna máscara booleana `True` para quadros com energia acústica audível
+    e `False` para quadros em silêncio acústico (< -50 dBFS e < -30 dB do pico
+    da palavra). Se o segmento inteiro for muito baixo (ex.: sinal sintético
+    de teste), não mascara nada (tudo True).
+    """
+    n_frames = rel_timestamps.size
+    if n_frames == 0 or segment.size == 0 or sr <= 0:
+        return np.ones(n_frames, dtype=bool)
+    mono = segment.mean(axis=1) if segment.ndim > 1 else segment
+    half_win = max(1, int(0.5 * window_s * sr))
+    rms = np.zeros(n_frames, dtype=float)
+    n_samples = mono.size
+    for idx, t_s in enumerate(rel_timestamps):
+        center = int(round(float(t_s) * sr))
+        lo = max(0, center - half_win)
+        hi = min(n_samples, center + half_win)
+        if hi > lo:
+            chunk = mono[lo:hi]
+            rms[idx] = float(np.sqrt(np.mean(chunk * chunk)))
+    peak_rms = float(rms.max()) if rms.size else 0.0
+    if peak_rms <= _SILENCE_ABS_RMS:
+        return np.ones(n_frames, dtype=bool)
+    thresh = min(_SILENCE_ABS_RMS, peak_rms * _SILENCE_REL_RATIO)
+    return rms >= thresh
+
+
 class PitchExtractor:
     def __init__(
         self,
@@ -177,13 +218,16 @@ class PitchExtractor:
             self.model.fmax = self.fmax
             result = self.model.detect_from_array(segment, sr)
         confidence = np.asarray(result.confidence)
+        rel_ts = np.asarray(result.timestamps)
+        audible = _frame_audible_mask(segment, sr, rel_ts)
         return PitchTrack(
-            timestamps=np.asarray(result.timestamps) + start_s,  # absoluto
+            timestamps=rel_ts + start_s,  # absoluto
             pitch_hz=np.asarray(result.pitch_hz),
             confidence=confidence,
             # A 0.2.0 não devolve mais `voicing`: o corte é nosso, e é o mesmo
-            # que a 0.1.x fazia internamente com o threshold que passávamos.
-            voicing=confidence >= self.confidence_threshold,
+            # que a 0.1.x fazia internamente com o threshold que passávamos,
+            # combinado com o gate de energia acústica (_frame_audible_mask).
+            voicing=(confidence >= self.confidence_threshold) & audible,
         )
 
     def summarize_track_window(self, track: PitchTrack, start_s: float, end_s: float) -> PitchResult:

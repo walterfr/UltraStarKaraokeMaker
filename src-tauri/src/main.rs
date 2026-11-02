@@ -1116,6 +1116,54 @@ async fn regenerate_video(app: tauri::AppHandle, out_dir: String, lang: String) 
     }
 }
 
+/// Re-extrai os pitches das notas a partir do áudio vocal do pacote (SwiftF0)
+/// e calcula o Score de Aderência Vocal (0-10.000 pts) antes e depois.
+#[tauri::command]
+async fn repitch_song(
+    app: tauri::AppHandle,
+    out_dir: String,
+    song: Song,
+    lang: String,
+) -> Result<serde_json::Value, String> {
+    let (code_dir, python) = resolve_sidecar(&app, &lang)?;
+    let dir = PathBuf::from(&out_dir);
+    let temp_in = dir.join("_repitch_in.json");
+    let json = serde_json::to_string_pretty(&song)
+        .map_err(|e| tr_err(&lang, "json_serialize", &e))?;
+    std::fs::write(&temp_in, json).map_err(|e| {
+        tr(&lang, "write_file")
+            .replace("{path}", &temp_in.display().to_string())
+            .replace("{err}", &e.to_string())
+    })?;
+
+    let mut cmd = Command::new(&python);
+    cmd.arg("-m").arg("pipeline.repitch").arg("--dir").arg(&out_dir);
+    cmd.current_dir(&code_dir);
+    cmd.env("USKMAKER_LANG", &lang);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd.output().await;
+    let _ = std::fs::remove_file(&temp_in);
+
+    match output {
+        Ok(out) if out.status.success() => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let last_json = stdout
+                .lines()
+                .rev()
+                .find(|l| l.trim().starts_with('{'))
+                .unwrap_or(stdout.trim());
+            serde_json::from_str(last_json).map_err(|e| e.to_string())
+        }
+        Ok(out) => {
+            let err = String::from_utf8_lossy(&out.stderr);
+            let last = err.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("");
+            Err(last.to_string())
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 /// Setup in-app do ambiente de IA: roda o script de setup da plataforma
 /// (setup-sidecar.ps1 / setup-sidecar.sh) em modo NÃO interativo e transmite o progresso para a UI via evento
 /// "setup-log". Substitui o passo manual de "clicar com o direito no .ps1"
@@ -1476,6 +1524,15 @@ fn load_song(out_dir: String, lang: String) -> Result<ReviewData, String> {
             if candidate.exists() {
                 vocals_path = Some(candidate.to_string_lossy().to_string());
                 break;
+            }
+        }
+    }
+
+    if vocals_path.is_none() {
+        if let Some(voc_fn) = &song.vocals_filename {
+            let candidate = dir.join(voc_fn);
+            if candidate.exists() {
+                vocals_path = Some(candidate.to_string_lossy().to_string());
             }
         }
     }
@@ -2089,6 +2146,7 @@ fn main() {
             check_environment,
             torch_cuda_available,
             regenerate_video,
+            repitch_song,
             fetch_video_info,
             update_ytdlp,
             fetch_netease_lyrics,

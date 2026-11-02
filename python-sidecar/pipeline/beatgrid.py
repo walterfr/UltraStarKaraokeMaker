@@ -193,6 +193,127 @@ def detect_bpm(vocal_or_full_wav: Path, manual_bpm: float | None = None) -> Beat
     return BeatGrid(bpm=bpm)
 
 
+NOTE_NAMES: tuple[str, ...] = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
+MAJOR_SCALE_SEMITONES: tuple[int, ...] = (0, 2, 4, 5, 7, 9, 11)
+MINOR_SCALE_SEMITONES: tuple[int, ...] = (0, 2, 3, 5, 7, 8, 10)
+
+# Perfis tonais de Krumhansl-Kessler (maiores e menores) - discriminam melhor a
+# tônica de uma escala do que uma máscara binária [1,0,1,...] (que confunde tons
+# relativos como C major e A minor, pois têm exatamente as mesmas 7 notas).
+_KRUMHANSL_MAJOR = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
+_KRUMHANSL_MINOR = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
+
+
+def detect_key_from_chroma(chroma_avg: np.ndarray, transpose: int = 0) -> str | None:
+    """
+    Estima o tom musical ('C major', 'A minor', ...) a partir de um vetor médio
+    de 12 classes de altura (C..B), correlacionando contra os 24 perfis de
+    Krumhansl-Kessler. Se `transpose` != 0, aplica o deslocamento de semitons
+    na tônica resultante.
+    """
+    vec = np.asarray(chroma_avg, dtype=float).reshape(-1)
+    if vec.size != 12 or not np.all(np.isfinite(vec)) or float(np.std(vec)) < 1e-9:
+        return None
+
+    best_corr = -2.0
+    best_root = 0
+    best_mode = "major"
+
+    for shift in range(12):
+        maj_prof = np.roll(_KRUMHANSL_MAJOR, shift)
+        min_prof = np.roll(_KRUMHANSL_MINOR, shift)
+        maj_c = float(np.corrcoef(vec, maj_prof)[0, 1])
+        min_c = float(np.corrcoef(vec, min_prof)[0, 1])
+        if maj_c > best_corr:
+            best_corr = maj_c
+            best_root = shift
+            best_mode = "major"
+        if min_c > best_corr:
+            best_corr = min_c
+            best_root = shift
+            best_mode = "minor"
+
+    final_root = (best_root + int(transpose)) % 12
+    return f"{NOTE_NAMES[final_root]} {best_mode}"
+
+
+def detect_musical_key(
+    audio_path: Path | str,
+    transpose: int = 0,
+    duration_s: float = 90.0,
+) -> str | None:
+    """
+    Detecta o tom musical de um arquivo de áudio (idealmente o mix ou
+    instrumental) analisando até os primeiros `duration_s` segundos.
+    Falhas retornam None sem interromper o pipeline.
+    """
+    try:
+        import librosa
+
+        y, sr = librosa.load(str(audio_path), sr=22050, mono=True, duration=duration_s)
+        if y.size == 0:
+            return None
+        chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
+        if chroma.size == 0:
+            return None
+        chroma_avg = np.mean(chroma, axis=1)
+        return detect_key_from_chroma(chroma_avg, transpose=transpose)
+    except Exception:
+        return None
+
+
+def parse_key_string(key_str: str | None) -> tuple[int, str] | None:
+    """
+    Extrai (root_idx, mode) de strings como 'C major', 'F# minor' ou
+    'key: A minor'. Retorna None se não reconhecer.
+    """
+    if not key_str:
+        return None
+    raw = key_str.strip()
+    if raw.lower().startswith("key:"):
+        raw = raw[4:].strip()
+    parts = raw.split()
+    if len(parts) < 2:
+        return None
+    note_part = parts[0].upper()
+    mode_part = parts[1].lower()
+    if note_part not in NOTE_NAMES or mode_part not in ("major", "minor"):
+        return None
+    return NOTE_NAMES.index(note_part), mode_part
+
+
+def quantize_pitch_to_key(
+    pitch: int,
+    key_str: str,
+    neighbor_pitch: int | None = None,
+) -> int:
+    """
+    Ajusta um pitch UltraStar (relativo a C4=0) para o grau válido mais próximo
+    da escala dada por `key_str` ('C major', 'A minor', ...). Em qualquer
+    escala diatônica maior ou menor natural, toda nota fora da escala está a
+    exatamente 1 semitom de distância de dois graus válidos (pitch - 1 e
+    pitch + 1); desempata pelo mais próximo de `neighbor_pitch` (ou pelo lado
+    da tônica).
+    """
+    parsed = parse_key_string(key_str)
+    if parsed is None:
+        return pitch
+    root_idx, mode = parsed
+    scale = MAJOR_SCALE_SEMITONES if mode == "major" else MINOR_SCALE_SEMITONES
+    allowed_pcs = {(root_idx + iv) % 12 for iv in scale}
+
+    pc = pitch % 12
+    if pc in allowed_pcs:
+        return pitch
+
+    candidates = [c for c in (pitch - 1, pitch + 1) if (c % 12) in allowed_pcs]
+    if not candidates:
+        return pitch
+    if len(candidates) == 1 or neighbor_pitch is None:
+        return candidates[0]
+    return min(candidates, key=lambda c: abs(c - neighbor_pitch))
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Etapa 3: detecção de BPM (Fase 0 - teste isolado)")
     parser.add_argument("--input", required=True, help="Arquivo de áudio (idealmente o instrumental)")

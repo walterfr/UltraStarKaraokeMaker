@@ -4,6 +4,14 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [1.0.0] — 2026-11-02
+
+### Added
+
+- **Automatic Musical Key Detection, `#TAGS` header, and "Snap to Scale" in the Review Screen.** Step 3 now estimates the song's musical key (`C major`, `A minor`, etc.) by correlating the instrumental CQT chroma vector against all 24 Krumhansl-Kessler tonal profiles (automatically accounting for `--transpose`) and writes `#TAGS:key: <Key>` to the UltraStar `.txt`. In the Review Screen, users can view/change the key (auto-inferred from notes on legacy packages) and click **"Snap to Scale"** to quantize out-of-scale notes (±1 semitone) to the nearest valid scale degree.
+- **"🎯 Re-pitch (AI)" button and Vocal Adherence Score (`0–10,000 pts`) in the Review Screen.** Re-extracts note pitches from the vocal audio (`SwiftF0` + octave folding) while keeping current syllable timings intact — ideal for upgrading legacy community charts or refreshing manually retimed phrases — and computes the UltraStar Vocal Score (`0–10,000 pts`: `9,000` notes/golden + `1,000` line bonus, both *Simple* and *Exact Octave*).
+- **Internal silence splitting (`~`) on medium syllables and RMS acoustic silence gating in `PitchExtractor`.** Frames in acoustic silence (`< -50 dBFS` and `< -30 dB` below word peak) are gated out of `voicing` so reverb tails or breath pauses do not bridge across silent gaps, and syllables between `0.40 s` and `0.80 s` containing an internal silence gap `>= 0.15 s` are split into two notes with `~`.
+
 ## [0.29.0] — 2026-11-01
 
 ### Added

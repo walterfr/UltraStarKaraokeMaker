@@ -230,6 +230,15 @@ MELISMA_MIN_EXTENSION_S = 0.25
 MELISMA_PITCH_TOLERANCE_ST = 2.0
 MELISMA_MIN_SYLLABLE_S = 0.80
 
+# Corte de silêncio interno em sílabas médias (0,40 s .. 0,80 s): abaixo de
+# MELISMA_MIN_SYLLABLE_S (0,80 s) ignoramos variações de pitch (para não criar
+# excesso de "~"), mas se houver uma pausa/silêncio real no meio da sílaba
+# (>= 0,15 s sem voz, com partes cantadas >= 0,08 s de cada lado), partimos a
+# nota em duas com "~" para não esticar uma barra contínua por cima do silêncio.
+SILENCE_SPLIT_MIN_SYLLABLE_S = 0.40
+SILENCE_SPLIT_MIN_GAP_S = 0.15
+SILENCE_SPLIT_MIN_PART_S = 0.08
+
 
 # FIM DA PALAVRA SEGUINDO A VOZ (30/09/2026) - o alinhamento CTC marca o fim da
 # palavra no último quadro em que ele "vê" a letra, e numa vogal sustentada o
@@ -395,8 +404,14 @@ def detect_melisma_notes(
     lacuna de voz é sinal de possível fronteira de sílaba/palavra; "~"
     nunca deve atravessar uma.
     """
-    if syl_end - syl_start < min_syllable_duration_for_melisma:
-        return [(syl_start, syl_end)]
+    syl_dur = syl_end - syl_start
+    allow_pitch_split = syl_dur >= min_syllable_duration_for_melisma
+    if not allow_pitch_split:
+        if (
+            min_syllable_duration_for_melisma != MELISMA_MIN_SYLLABLE_S
+            or syl_dur < SILENCE_SPLIT_MIN_SYLLABLE_S
+        ):
+            return [(syl_start, syl_end)]
 
     in_syl = (track.timestamps >= syl_start) & (track.timestamps < syl_end) & track.voicing
     timestamps = track.timestamps[in_syl]
@@ -411,6 +426,11 @@ def detect_melisma_notes(
     all_hops = np.diff(np.sort(track.timestamps))
     nominal_hop = float(np.median(all_hops)) if all_hops.size else 0.02
     max_voiced_gap_s = max_voiced_gap_frames * nominal_hop
+    gap_thresh_s = (
+        max_voiced_gap_s
+        if allow_pitch_split
+        else max(max_voiced_gap_s, SILENCE_SPLIT_MIN_GAP_S)
+    )
 
     semitones = 12 * np.log2(pitch_hz / 440.0)
 
@@ -422,8 +442,12 @@ def detect_melisma_notes(
     run_started_by_gap: list[bool] = [False]
     run_mean = float(semitones[0])
     for i in range(1, len(semitones)):
-        pitch_ok = abs(semitones[i] - run_mean) <= pitch_tolerance_semitones
-        gap_ok = (timestamps[i] - timestamps[i - 1]) <= max_voiced_gap_s
+        pitch_ok = (
+            True
+            if not allow_pitch_split
+            else (abs(semitones[i] - run_mean) <= pitch_tolerance_semitones)
+        )
+        gap_ok = (timestamps[i] - timestamps[i - 1]) <= gap_thresh_s
         if pitch_ok and gap_ok:
             runs[-1].append(i)
             run_mean = float(np.mean(semitones[runs[-1]]))
@@ -433,6 +457,12 @@ def detect_melisma_notes(
             run_mean = float(semitones[i])
 
     spans = [(float(timestamps[r[0]]), float(timestamps[r[-1]])) for r in runs]
+
+    if not allow_pitch_split:
+        spans = [sp for sp in spans if (sp[1] - sp[0]) >= SILENCE_SPLIT_MIN_PART_S]
+        if len(spans) <= 1:
+            return [(syl_start, syl_end)]
+        return [(syl_start, spans[0][1])] + spans[1:-1] + [(spans[-1][0], syl_end)]
 
     # funde runs curtos demais (< min_extension_s) no vizinho anterior -
     # evita gerar um "~" de fração de segundo por ruído da leitura de pitch.
@@ -969,6 +999,7 @@ def build_song(
     video_gap: float | None = None,
     vocals_filename: str | None = None,
     instrumental_filename: str | None = None,
+    tags: str | None = None,
     duet: bool = False,
     p1_name: str | None = None,
     p2_name: str | None = None,
@@ -1028,6 +1059,7 @@ def build_song(
         medley_end_beat=medley_end_beat,
         vocals_filename=vocals_filename,
         instrumental_filename=instrumental_filename,
+        tags=tags,
         creator=creator,
         notes=notes,
         phrase_breaks_after_index=phrase_breaks,

@@ -96,6 +96,7 @@ class Song:
     # pra aprender, zerar pra cantar sozinho.
     vocals_filename: str | None = None
     instrumental_filename: str | None = None
+    tags: str | None = None
     creator: str = "USKMaker"
     notes: list[Note] = field(default_factory=list)
     # índices em `notes` onde deve haver quebra de frase (fim de linha da letra)
@@ -159,6 +160,8 @@ class Song:
             lines.append(f"#VOCALS:{self.vocals_filename}")
         if self.instrumental_filename:
             lines.append(f"#INSTRUMENTAL:{self.instrumental_filename}")
+        if self.tags:
+            lines.append(f"#TAGS:{self.tags}")
         lines.append(f"#CREATOR:{self.creator}")
 
         phrase_break_set = set(self.phrase_breaks_after_index)

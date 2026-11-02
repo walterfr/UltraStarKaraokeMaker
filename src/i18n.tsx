@@ -338,6 +338,16 @@ const STRINGS = {
     revToFormDone: "Música devolvida ao formulário. Clique em \u201cBuscar letra\u201d e depois em gerar.",
     revToFormDoneNoUrl: "Nome preenchido. O link de origem não estava no log - cole-o antes de gerar.",
     revNoText: "(sem texto)",
+    revKeyLabel: "🎵 Tom:",
+    revKeyHint: "Tom musical da música (#TAGS). Usado para ajustar notas fora da escala",
+    revSnapKey: "Ajustar à Escala",
+    revSnapKeyTitle: "Ajusta notas fora da escala selecionada (±1 semitom) para o grau válido mais próximo",
+    revSnapKeyDone: "{n} nota(s) ajustada(s) para a escala de {key}.",
+    revRepitchButton: "🎯 Re-calcular Pitches",
+    revRepitchRunning: "Calculando pitches...",
+    revRepitchHint: "Re-extrai os pitches na voz (SwiftF0) mantendo os tempos atuais e calcula o Score Vocal (0–10.000 pts)",
+    revRepitchDone: "Pitches recalculados: {n} nota(s) ajustada(s). Score Vocal: {before} → {after} / 10.000 pts (Oitava exata: {acc}).",
+    revVocalScoreBadge: "🎯 Score Vocal: {simple} / 10.000 (exato: {acc})",
 
     // ---- tabela de tempos da letra (conferência do .lrc) ----
     ltButton: "Tempos da letra",
@@ -698,6 +708,16 @@ const STRINGS = {
     revToFormDone: "Song sent back to the form. Press \u201cSearch lyrics\u201d, then generate.",
     revToFormDoneNoUrl: "Name filled in. The source link was not in the log - paste it before generating.",
     revNoText: "(no text)",
+    revKeyLabel: "🎵 Key:",
+    revKeyHint: "Musical key of the song (#TAGS). Used to snap out-of-scale notes",
+    revSnapKey: "Snap to Scale",
+    revSnapKeyTitle: "Snaps out-of-scale notes (±1 semitone) to the nearest valid scale degree",
+    revSnapKeyDone: "{n} note(s) snapped to {key} scale.",
+    revRepitchButton: "🎯 Re-pitch (AI)",
+    revRepitchRunning: "Re-pitching...",
+    revRepitchHint: "Re-extracts vocal pitches (SwiftF0) keeping current timings and calculates Vocal Score (0–10,000 pts)",
+    revRepitchDone: "Re-pitched {n} note(s). Vocal Score: {before} → {after} / 10,000 pts (Exact octave: {acc}).",
+    revVocalScoreBadge: "🎯 Vocal Score: {simple} / 10,000 (exact: {acc})",
 
     // ---- lyric timing table (.lrc checking) ----
     ltButton: "Lyric timing",

@@ -293,3 +293,13 @@ fn writes_videogap_tag_when_present() {
     assert!(txt_with.contains("#VIDEO:clip.mp4\n#VIDEOGAP:-2.50\n"));
 }
 
+#[test]
+fn writes_tags_header_when_present() {
+    let mut song = load_fixture();
+    assert!(!song.to_txt().contains("#TAGS:"));
+
+    song.tags = Some("key: C major".to_string());
+    let txt = song.to_txt();
+    assert!(txt.contains("#TAGS:key: C major\n#CREATOR:"));
+}
+

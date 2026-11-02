@@ -50,7 +50,7 @@ from pipeline.align import (
     alignment_stats,
     count_singer_tagged_lines,
 )
-from pipeline.beatgrid import detect_bpm
+from pipeline.beatgrid import detect_bpm, detect_musical_key
 from pipeline.build_song import build_song
 from pipeline.download import download_background_video, get_source_audio
 from pipeline.filenames import sanitize_filename
@@ -983,8 +983,11 @@ def run_pipeline(
     console.rule(t("main.step3"))
     debug_log("ETAPA 3 - iniciando detect_bpm")
     grid = detect_bpm(stems.instrumental, manual_bpm)
-    debug_log(f"ETAPA 3 - concluída. bpm={grid.bpm}")
+    music_key = detect_musical_key(stems.instrumental, transpose=transpose)
+    debug_log(f"ETAPA 3 - concluída. bpm={grid.bpm} key={music_key}")
     console.print(t("main.bpm_ok", bpm=grid.bpm))
+    if music_key:
+        console.print(f"[cyan]Tom musical detectado (#TAGS): {music_key}[/cyan]")
     if not manual_bpm:
         console.print(t("main.bpm_auto_warn"))
 
@@ -1184,6 +1187,7 @@ def run_pipeline(
         video_gap=video_gap,
         vocals_filename=vocals_filename,
         instrumental_filename=instrumental_filename,
+        tags=f"key: {music_key}" if music_key else None,
         duet=duet,
         p1_name=p1_name,
         p2_name=p2_name,
