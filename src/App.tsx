@@ -151,6 +151,7 @@ interface LrclibTrack {
   instrumental?: boolean;
   trackName?: string;
   artistName?: string;
+  albumName?: string;
   duration?: number;
 }
 
@@ -431,6 +432,7 @@ function App() {
   // as tags de um arquivo local). É o que desempata a escolha de letra no
   // LRCLIB - ver a nota longa em searchLyrics().
   const [trackDuration, setTrackDuration] = useState<number | null>(null);
+  const [trackAlbum, setTrackAlbum] = useState<string>("");
   const [fetchingInfo, setFetchingInfo] = useState(false);
   const [romanize, setRomanize] = useState(saved.romanize ?? false);
   const [audioFormat, setAudioFormat] = useState<"ogg" | "mp3">(saved.audioFormat ?? "ogg");
@@ -815,6 +817,7 @@ function App() {
       // Duração é MEDIDA do arquivo, não preferência do usuário: sempre
       // substitui (inclusive a de um vídeo do YouTube consultado antes).
       setTrackDuration(tags?.duration && tags.duration > 0 ? tags.duration : null);
+      setTrackAlbum(tags?.album?.trim() ?? "");
       const applied: string[] = [];
       if (!title.trim() && tags?.title?.trim()) {
         setTitle(tags.title.trim());
@@ -922,12 +925,33 @@ function App() {
         // normalmente para o LRCLIB.
       }
 
+      const wantedAlbum = trackAlbum.trim().toLowerCase();
+      const albumMatches = (r: LrclibTrack): boolean => {
+        if (!wantedAlbum) return true;
+        const ra = (r.albumName ?? "").trim().toLowerCase();
+        return !!ra && (ra === wantedAlbum || ra.includes(wantedAlbum) || wantedAlbum.includes(ra));
+      };
+
       let resp: { ok: boolean; status: number; data: LrclibTrack | undefined };
       try {
-        resp = await lrclibGet<LrclibTrack>("get", {
-          artist_name: artist.trim(),
-          track_name: title.trim(),
-        });
+        if (wantedAlbum) {
+          resp = await lrclibGet<LrclibTrack>("get", {
+            artist_name: artist.trim(),
+            track_name: title.trim(),
+            album_name: trackAlbum.trim(),
+          });
+          if (!resp.ok && resp.status === 404) {
+            resp = await lrclibGet<LrclibTrack>("get", {
+              artist_name: artist.trim(),
+              track_name: title.trim(),
+            });
+          }
+        } else {
+          resp = await lrclibGet<LrclibTrack>("get", {
+            artist_name: artist.trim(),
+            track_name: title.trim(),
+          });
+        }
       } catch {
         resp = { ok: false, status: 503, data: undefined };
       }
@@ -967,6 +991,7 @@ function App() {
         const primaryGap = gapOf(primary);
         const primaryUsable =
           !!primary.syncedLyrics?.trim() &&
+          albumMatches(primary) &&
           (primaryGap === null || primaryGap <= MAX_DURATION_DIFF_S) &&
           // Campo `duration` batendo NAO basta - ver lrcLastSungSecond.
           lrcFitsAudio(primary.syncedLyrics!.trim(), known);
@@ -998,6 +1023,10 @@ function App() {
                 (r.trackName ?? "").toLowerCase() === wantedTitle
             );
             if (exact.length) candidates = exact;
+            if (wantedAlbum) {
+              const byAlbum = candidates.filter(albumMatches);
+              if (byAlbum.length) candidates = byAlbum;
+            }
 
             if (known && candidates.length) {
               // PRIMEIRO os que realmente CABEM no audio, medidos pelos
@@ -1193,6 +1222,7 @@ function App() {
     setYoutubeUrl("");
     setFilePath("");
     setTrackDuration(null);
+    setTrackAlbum("");
     setLyricsText("");
     setSyncedLyrics(null);
     setLyricsSearchMsg(null);
@@ -1299,6 +1329,7 @@ function App() {
       autofillFromTags(i.filePath);
     } else {
       setTrackDuration(null);
+      setTrackAlbum("");
     }
     setLyricsText(i.lyricsText ?? "");
     setSyncedLyrics(i.syncedLyrics ?? null);
@@ -1620,6 +1651,7 @@ function App() {
     setYoutubeUrl("");
     setFilePath("");
     setTrackDuration(null);
+    setTrackAlbum("");
     setLyricsText("");
     setSyncedLyrics(null);
     setLyricsSearchMsg(null);
@@ -1965,7 +1997,7 @@ function App() {
           <input
             type="text"
             value={youtubeUrl}
-            onChange={(e) => { leaveLastRun(); setYoutubeUrl(e.target.value); setTrackDuration(null); }}
+            onChange={(e) => { leaveLastRun(); setYoutubeUrl(e.target.value); setTrackDuration(null); setTrackAlbum(""); }}
             placeholder="https://www.youtube.com/watch?v=..."
             disabled={isRunning}
           />
@@ -2133,7 +2165,7 @@ function App() {
       <>
       <div className="card">
       <h3 className="card-title">{t("sectionPackage")}</h3>
-      <div className="row">
+      <div className="package-grid">
         <div className="field-group">
           <label>{t("languageLabel")}</label>
           <select value={language} onChange={(e) => setLanguage(e.target.value)} disabled={isRunning}>
@@ -2182,31 +2214,19 @@ function App() {
         <div className="field-group">
           <label title={t("whisperModelHint")}>
             {t("whisperModelLabel")}
-            <select
-              value={whisperModel}
-              onChange={(e) => setWhisperModel(e.target.value)}
-              disabled={isRunning}
-            >
-              <option value="auto">{t("whisperAuto")}</option>
-              <option value="medium">{t("whisperFast")}</option>
-              <option value="large-v3">{t("whisperBest")}</option>
-            </select>
+            <span className="tip-mark" aria-hidden="true">?</span>
           </label>
-          <label title={t("ytCookiesHint")}>
-            {t("ytCookiesLabel")}
-            <select
-              value={ytCookiesBrowser}
-              onChange={(e) => setYtCookiesBrowser(e.target.value)}
-              disabled={isRunning}
-            >
-              <option value="">{t("ytCookiesOff")}</option>
-              <option value="firefox">Firefox</option>
-              <option value="chrome">Chrome</option>
-              <option value="chromium">Chromium</option>
-              <option value="brave">Brave</option>
-              <option value="edge">Edge</option>
-            </select>
-          </label>
+          <select
+            value={whisperModel}
+            onChange={(e) => setWhisperModel(e.target.value)}
+            disabled={isRunning}
+          >
+            <option value="auto">{t("whisperAuto")}</option>
+            <option value="medium">{t("whisperFast")}</option>
+            <option value="large-v3">{t("whisperBest")}</option>
+          </select>
+        </div>
+        <div className="field-group">
           <label title={t("audioFormatHint")}>
             {t("audioFormatLabel")}
             <span className="tip-mark" aria-hidden="true">?</span>
@@ -2218,6 +2238,24 @@ function App() {
           >
             <option value="ogg">OGG (Vorbis)</option>
             <option value="mp3">MP3</option>
+          </select>
+        </div>
+        <div className="field-group">
+          <label title={t("ytCookiesHint")}>
+            {t("ytCookiesLabel")}
+            <span className="tip-mark" aria-hidden="true">?</span>
+          </label>
+          <select
+            value={ytCookiesBrowser}
+            onChange={(e) => setYtCookiesBrowser(e.target.value)}
+            disabled={isRunning}
+          >
+            <option value="">{t("ytCookiesOff")}</option>
+            <option value="firefox">Firefox</option>
+            <option value="chrome">Chrome</option>
+            <option value="chromium">Chromium</option>
+            <option value="brave">Brave</option>
+            <option value="edge">Edge</option>
           </select>
         </div>
       </div>
@@ -2239,6 +2277,7 @@ function App() {
           (title no label inteiro = alvo grande) — nada de parágrafo permanente. */}
       <div className="card options-card">
         <h3 className="card-title">{t("sectionOptions")}</h3>
+        <div className="options-grid">
         <label className="checkbox-line" title={t("duetHint")}>
           <input
             type="checkbox"
@@ -2341,6 +2380,7 @@ function App() {
           {t("cleanExtrasLabel")}
           <span className="tip-mark" aria-hidden="true">?</span>
         </label>
+        </div>
       </div>
       </>
       )}

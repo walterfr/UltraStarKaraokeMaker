@@ -4,6 +4,13 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [0.29.0] — 2026-11-01
+
+### Added
+
+- **Album tag (`album_name`) matching in LRCLIB search for local files.** When a local audio file includes an album tag, lyrics lookup queries the exact album first (with automatic fallback) and prioritizes candidates from the matching album during `/api/search` ranking.
+- **Fully responsive CSS Grid layout for `PACKAGE` and `OPTIONS` cards.** Controls in the `PACKAGE` card (`.package-grid`) and checkboxes in the `OPTIONS` card (`.options-grid`) now flow into multi-column grids that adapt dynamically to window width.
+
 ## [0.28.0] — 2026-11-01
 
 ### Added

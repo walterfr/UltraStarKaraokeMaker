@@ -1158,6 +1158,24 @@ body { overflow: hidden; }
 .card .row { margin-bottom: 0.8rem; }
 .options-card { display: flex; flex-direction: column; gap: 2px; }
 .options-card .checkbox-line { margin-top: 0.35rem; }
+.package-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.65rem 0.85rem;
+  margin-bottom: 0.8rem;
+}
+.package-grid > .field-group {
+  margin-bottom: 0;
+  min-width: 0;
+}
+.options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.45rem 1rem;
+}
+.options-grid .checkbox-line {
+  margin-top: 0;
+}
 
 /* --- barra de ação fixa no rodapé --- */
 .actionbar {

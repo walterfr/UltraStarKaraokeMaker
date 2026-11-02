@@ -4,6 +4,13 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [0.29.0] - 2026-11-01
+
+### Adicionado
+
+- **Filtro por Álbum (`album_name`) na busca do LRCLIB para arquivos locais.** Ao selecionar um arquivo de áudio local com tag de álbum preenchida, a busca consulta primeiramente o registro do álbum exato (com fallback automático caso não exista) e prioriza candidatos do mesmo álbum no desempate do `/api/search`.
+- **Layout em grid 100% responsivo nos cartões `PACOTE` e `OPÇÕES`.** Os seletores do cartão `PACOTE` (`.package-grid`) e as caixas de seleção do cartão `OPÇÕES` (`.options-grid`) agora se organizam automaticamente em múltiplas colunas lado a lado que se adaptam dinamicamente à largura da janela.
+
 ## [0.28.0] - 2026-11-01
 
 ### Adicionado
