@@ -88,7 +88,7 @@ jobs:
       # O bundler do Tauri v2 converte "USKMaker" (camelCase) em "usk-maker"
       # no DEBIAN/control. Normalizamos para "uskmaker" para que `apt`, `deb-get`
       # e `pacstall` enxerguem o pacote como `uskmaker`.
-      - name: Normalizar Package: uskmaker no .deb
+      - name: "Normalizar Package: uskmaker no .deb"
         run: |
           for deb in src-tauri/target/release/bundle/deb/*.deb; do
             tmp_dir=$(mktemp -d)
