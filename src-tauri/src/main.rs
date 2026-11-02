@@ -1473,6 +1473,67 @@ fn analyze_package(dir: String) -> PackageAnalysis {
     none()
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibrarySongItem {
+    pub dir: String,
+    pub title: String,
+    pub artist: String,
+    pub has_cover: bool,
+    pub has_bg: bool,
+    pub has_video: bool,
+    pub source: String,
+}
+
+#[tauri::command]
+fn scan_library(root_dir: String) -> Vec<LibrarySongItem> {
+    let root = PathBuf::from(&root_dir);
+    let mut songs = Vec::new();
+    let mut queue = vec![(root, 0usize)];
+
+    while let Some((curr, depth)) = queue.pop() {
+        if depth > 3 {
+            continue;
+        }
+        let a = analyze_package(curr.to_string_lossy().to_string());
+        if a.found {
+            songs.push(LibrarySongItem {
+                dir: curr.to_string_lossy().to_string(),
+                title: a.title,
+                artist: a.artist,
+                has_cover: a.has_cover,
+                has_bg: a.has_bg,
+                has_video: a.has_video,
+                source: a.source,
+            });
+            continue;
+        }
+        if let Ok(entries) = std::fs::read_dir(&curr) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_dir() {
+                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    if !name.starts_with('.')
+                        && !name.starts_with('_')
+                        && name != "target"
+                        && name != "node_modules"
+                    {
+                        queue.push((p, depth + 1));
+                    }
+                }
+            }
+        }
+    }
+
+    songs.sort_by(|a, b| {
+        a.artist
+            .to_lowercase()
+            .cmp(&b.artist.to_lowercase())
+            .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
+    });
+    songs
+}
+
 /// Melhor esforço para lembrar de ONDE veio um pacote já gerado.
 ///
 /// O link não é gravado em lugar nenhum de propósito - mas o yt-dlp imprime
@@ -1500,30 +1561,98 @@ fn read_source_url(dir: &Path) -> Option<String> {
 fn load_song(out_dir: String, lang: String) -> Result<ReviewData, String> {
     let dir = PathBuf::from(&out_dir);
     let json_path = dir.join("song_data.json");
-    if !json_path.exists() {
-        return Err(tr(&lang, "no_song_json").replace("{path}", &dir.display().to_string()));
-    }
-    let song = Song::from_json_file(&json_path).map_err(|e| {
-        tr(&lang, "read_file")
-            .replace("{path}", &json_path.display().to_string())
-            .replace("{err}", &e.to_string())
-    })?;
+    let song = if json_path.exists() {
+        Song::from_json_file(&json_path).map_err(|e| {
+            tr(&lang, "read_file")
+                .replace("{path}", &json_path.display().to_string())
+                .replace("{err}", &e.to_string())
+        })?
+    } else {
+        // Tenta encontrar qualquer arquivo .txt UltraStar no diretório para importar
+        let mut found_txt = None;
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_file()
+                    && p.extension()
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.eq_ignore_ascii_case("txt"))
+                        .unwrap_or(false)
+                {
+                    let fname = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                    if !fname.starts_with('_') {
+                        found_txt = Some(p);
+                        break;
+                    }
+                }
+            }
+        }
+        if let Some(txt_file) = found_txt {
+            let parsed = Song::from_txt_file(&txt_file).map_err(|e| e)?;
+            if let Ok(json_str) = serde_json::to_string_pretty(&parsed) {
+                let _ = std::fs::write(&json_path, json_str);
+            }
+            parsed
+        } else {
+            return Err(tr(&lang, "no_song_json").replace("{path}", &dir.display().to_string()));
+        }
+    };
 
     let audio = dir.join(&song.mp3_filename);
-    let audio_path = audio
+    let mut audio_path = audio
         .exists()
         .then(|| audio.to_string_lossy().to_string());
 
-    // O stem vocal fica em _work/stems/htdemucs/<nome da música>/vocals.wav
-    // quando o usuário NÃO marcou "remover intermediários".
+    if audio_path.is_none() {
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_file() {
+                    if let Some(ext) = p.extension().and_then(|s| s.to_str()) {
+                        let ext_lower = ext.to_ascii_lowercase();
+                        if ["mp3", "ogg", "m4a", "wav", "flac"].contains(&ext_lower.as_str()) {
+                            let fname = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                            if !fname.starts_with('_') {
+                                audio_path = Some(p.to_string_lossy().to_string());
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // O stem vocal fica em _work/stems/**/vocals.wav (independente do separador:
+    // htdemucs, roformer, etc.) quando o usuário NÃO marcou "remover intermediários".
     let mut vocals_path = None;
-    let stems_dir = dir.join("_work").join("stems").join("htdemucs");
-    if let Ok(entries) = std::fs::read_dir(&stems_dir) {
-        for entry in entries.flatten() {
-            let candidate = entry.path().join("vocals.wav");
-            if candidate.exists() {
-                vocals_path = Some(candidate.to_string_lossy().to_string());
-                break;
+    let stems_root = dir.join("_work").join("stems");
+    if stems_root.exists() {
+        let direct = stems_root.join("vocals.wav");
+        if direct.exists() {
+            vocals_path = Some(direct.to_string_lossy().to_string());
+        } else if let Ok(models) = std::fs::read_dir(&stems_root) {
+            for model_entry in models.flatten() {
+                let p = model_entry.path();
+                if p.is_dir() {
+                    let direct_sub = p.join("vocals.wav");
+                    if direct_sub.exists() {
+                        vocals_path = Some(direct_sub.to_string_lossy().to_string());
+                        break;
+                    }
+                    if let Ok(subs) = std::fs::read_dir(&p) {
+                        for sub_entry in subs.flatten() {
+                            let candidate = sub_entry.path().join("vocals.wav");
+                            if candidate.exists() {
+                                vocals_path = Some(candidate.to_string_lossy().to_string());
+                                break;
+                            }
+                        }
+                    }
+                }
+                if vocals_path.is_some() {
+                    break;
+                }
             }
         }
     }
@@ -1922,6 +2051,23 @@ mod analyze_tests {
         assert_eq!(a.source, "none");
         let _ = std::fs::remove_dir_all(&base);
     }
+
+    #[test]
+    fn scan_library_varre_subpastas_e_retorna_musicas() {
+        use super::scan_library;
+        let root = std::env::temp_dir().join(format!("usk_lib_scan_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let song_dir = root.join("Rock").join("Queen - Bohemian Rhapsody");
+        std::fs::create_dir_all(&song_dir).unwrap();
+        let txt = "#TITLE:Bohemian Rhapsody\n#ARTIST:Queen\n#MP3:song.mp3\n#BPM:280\n: 0 4 5 Is\nE\n";
+        std::fs::write(song_dir.join("Queen - Bohemian Rhapsody.txt"), txt).unwrap();
+
+        let list = scan_library(root.to_string_lossy().to_string());
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].title, "Bohemian Rhapsody");
+        assert_eq!(list[0].artist, "Queen");
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }
 
 /// Metadados de um vídeo do YouTube SEM baixar nada: artista, título e -
@@ -2138,6 +2284,7 @@ fn main() {
             clean_song_extras,
             read_audio_tags,
             analyze_package,
+            scan_library,
             fetch_package_assets,
             load_song,
             save_song,

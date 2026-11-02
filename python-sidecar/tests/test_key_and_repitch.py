@@ -93,6 +93,9 @@ def test_medium_syllable_splits_on_internal_silence_but_not_pitch_drift():
     assert len(runs) == 2
     assert runs[0][1] <= 0.20 and runs[1][0] >= 0.36
 
+    # 3) Com allow_silence_split=False, NÃO divide mesmo havendo gap de silêncio
+    assert detect_melisma_notes(track_gap, 0.0, 0.60, allow_silence_split=False) == [(0.0, 0.60)]
+
 
 def test_frame_audible_mask_gates_deep_silence_hole():
     sr = 16000
@@ -149,3 +152,21 @@ def test_vocal_score_and_repitch():
     score = calculate_vocal_adherence_score(octave_off_notes, [0, 1], [4, 5])
     assert score.simple == 10000
     assert score.accurate == 0
+
+
+def test_apply_golden_notes_supports_rap_golden():
+    from pipeline.build_song import apply_golden_notes
+
+    notes = [
+        Note(start_beat=0, duration_beats=4, pitch=0, text="yo ", note_type="R"),
+        Note(start_beat=4, duration_beats=2, pitch=0, text="rap ", note_type="R"),
+        Note(start_beat=6, duration_beats=6, pitch=4, text="sing ", note_type=":"),
+    ]
+    # golden_fraction=0.67 para pegar 2 notas
+    golden = apply_golden_notes(notes, golden_fraction=0.67, min_duration_beats=2)
+    # A nota mais longa (dur=6, note_type=":") vira "*"
+    # A segunda mais longa (dur=4, note_type="R") vira "G" (rap golden)
+    types = [n.note_type for n in golden]
+    assert "G" in types or "*" in types
+    r_note = [n for n in golden if n.text == "yo "][0]
+    assert r_note.note_type == "G"

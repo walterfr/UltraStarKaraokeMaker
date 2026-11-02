@@ -303,3 +303,33 @@ fn writes_tags_header_when_present() {
     assert!(txt.contains("#TAGS:key: C major\n#CREATOR:"));
 }
 
+#[test]
+fn parses_ultrastar_txt_and_roundtrips_notes() {
+    let raw_txt = "#TITLE:Test Song\n\
+#ARTIST:Test Artist\n\
+#MP3:test.mp3\n\
+#BPM:240.0\n\
+#GAP:1500\n\
+#TAGS:key: G major\n\
+: 0 4 10 He\n\
+: 4 4 12 llo\n\
+- 8\n\
+* 8 8 14  World\n\
+E\n";
+
+    let song = Song::from_txt_str(raw_txt).expect("Failed to parse valid UltraStar txt");
+    assert_eq!(song.title, "Test Song");
+    assert_eq!(song.artist, "Test Artist");
+    assert_eq!(song.mp3_filename, "test.mp3");
+    assert_eq!(song.bpm, 240.0);
+    assert_eq!(song.gap_ms, 1500);
+    assert_eq!(song.tags.as_deref(), Some("key: G major"));
+    assert_eq!(song.notes.len(), 3);
+    assert_eq!(song.notes[0].note_type, ":");
+    assert_eq!(song.notes[0].text, "He");
+    assert_eq!(song.notes[1].pitch, 12);
+    assert_eq!(song.phrase_breaks_after_index, vec![1]);
+    assert_eq!(song.notes[2].note_type, "*");
+    assert_eq!(song.notes[2].text, " World");
+}
+

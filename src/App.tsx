@@ -98,6 +98,16 @@ interface PackageAnalysis {
   txtPath: string | null;
 }
 
+interface LibrarySongItem {
+  dir: string;
+  title: string;
+  artist: string;
+  hasCover: boolean;
+  hasBg: boolean;
+  hasVideo: boolean;
+  source: string;
+}
+
 interface EnvCheck {
   sidecarOk: boolean;
   sidecarMsg: string;
@@ -483,6 +493,8 @@ function App() {
   const [cudaOk, setCudaOk] = useState<boolean | null>(null);
   const [reviewDir, setReviewDir] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<(PackageAnalysis & { dir: string }) | null>(null);
+  const [librarySongs, setLibrarySongs] = useState<LibrarySongItem[] | null>(null);
+  const [libraryFilter, setLibraryFilter] = useState("");
   // Snapshot da última música gerada (input + rótulo) para "Gerar de novo"
   // sem redigitar. O input é o mesmo objeto que foi para o run_pipeline.
   const [lastGen, setLastGen] = useState<{ input: Record<string, unknown>; artist: string; title: string } | null>(null);
@@ -1684,7 +1696,15 @@ function App() {
     setAssetMsg(null);
     const a = await invoke<PackageAnalysis>("analyze_package", { dir: selected });
     if (!a.found) {
-      // nem song_data.json nem .txt: não é pacote UltraStar
+      try {
+        const songs = await invoke<LibrarySongItem[]>("scan_library", { rootDir: selected });
+        if (songs.length > 0) {
+          setLibrarySongs(songs);
+          return;
+        }
+      } catch {
+        // ignora e cai no erro
+      }
       setError(t("reviewNoPackage"));
       return;
     }
@@ -1852,6 +1872,139 @@ function App() {
             <button className="secondary" onClick={() => setShowAbout(false)}>
               {t("aboutClose")}
             </button>
+          </div>
+        </div>
+      )}
+
+      {librarySongs && (
+        <div className="about-overlay" onClick={() => setLibrarySongs(null)}>
+          <div
+            className="about-box"
+            style={{
+              maxWidth: "680px",
+              width: "90%",
+              maxHeight: "80vh",
+              display: "flex",
+              flexDirection: "column",
+              textAlign: "left",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "8px",
+              }}
+            >
+              <h3 style={{ margin: 0, fontSize: "1.2em" }}>🎵 {t("libTitle")}</h3>
+              <button
+                className="secondary"
+                style={{ padding: "2px 8px" }}
+                onClick={() => setLibrarySongs(null)}
+              >
+                ✕
+              </button>
+            </div>
+            <p style={{ margin: "0 0 10px 0", fontSize: "0.9em", color: "#aaa" }}>
+              {t("libFound", { n: librarySongs.length })}
+            </p>
+            <input
+              type="text"
+              placeholder={t("libSearch")}
+              value={libraryFilter}
+              onChange={(e) => setLibraryFilter(e.target.value)}
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                marginBottom: "12px",
+                padding: "8px 10px",
+                borderRadius: "4px",
+                border: "1px solid #444",
+                background: "#1a1a1a",
+                color: "#fff",
+              }}
+              autoFocus
+            />
+            <div
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                border: "1px solid #333",
+                borderRadius: "4px",
+                padding: "4px",
+                minHeight: "150px",
+              }}
+            >
+              {librarySongs
+                .filter(
+                  (s) =>
+                    !libraryFilter ||
+                    s.artist.toLowerCase().includes(libraryFilter.toLowerCase()) ||
+                    s.title.toLowerCase().includes(libraryFilter.toLowerCase())
+                )
+                .map((s, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "8px 10px",
+                      borderBottom: "1px solid #282828",
+                      gap: "12px",
+                    }}
+                  >
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div
+                        style={{
+                          fontWeight: 600,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
+                        {s.artist} — {s.title}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "0.78em",
+                          color: "#888",
+                          marginTop: "3px",
+                          display: "flex",
+                          gap: "10px",
+                        }}
+                      >
+                        <span style={{ color: s.hasCover ? "#4caf50" : "#666" }}>
+                          ● {t("libHasCover")}
+                        </span>
+                        <span style={{ color: s.hasBg ? "#4caf50" : "#666" }}>
+                          ● {t("libHasBg")}
+                        </span>
+                        <span style={{ color: s.hasVideo ? "#4caf50" : "#666" }}>
+                          ● {t("libHasVideo")}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      className="primary mini-button"
+                      style={{ flexShrink: 0 }}
+                      onClick={() => {
+                        setReviewDir(s.dir);
+                        setLibrarySongs(null);
+                      }}
+                    >
+                      {t("libOpenReview")}
+                    </button>
+                  </div>
+                ))}
+            </div>
+            <div style={{ marginTop: "12px", textAlign: "right" }}>
+              <button className="secondary" onClick={() => setLibrarySongs(null)}>
+                {t("libClose")}
+              </button>
+            </div>
           </div>
         </div>
       )}

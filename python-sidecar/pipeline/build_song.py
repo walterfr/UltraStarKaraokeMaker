@@ -384,6 +384,7 @@ def detect_melisma_notes(
     pitch_tolerance_semitones: float = MELISMA_PITCH_TOLERANCE_ST,
     min_syllable_duration_for_melisma: float = MELISMA_MIN_SYLLABLE_S,
     max_voiced_gap_frames: float = 2.5,
+    allow_silence_split: bool = True,
 ) -> list[tuple[float, float]]:
     """
     Decide se uma sílaba vira UMA nota ou uma nota + continuações "~"
@@ -407,10 +408,7 @@ def detect_melisma_notes(
     syl_dur = syl_end - syl_start
     allow_pitch_split = syl_dur >= min_syllable_duration_for_melisma
     if not allow_pitch_split:
-        if (
-            min_syllable_duration_for_melisma != MELISMA_MIN_SYLLABLE_S
-            or syl_dur < SILENCE_SPLIT_MIN_SYLLABLE_S
-        ):
+        if not allow_silence_split or syl_dur < SILENCE_SPLIT_MIN_SYLLABLE_S:
             return [(syl_start, syl_end)]
 
     in_syl = (track.timestamps >= syl_start) & (track.timestamps < syl_end) & track.voicing
@@ -566,7 +564,7 @@ def apply_golden_notes(
     - Orçamento com arredondamento meio-pra-cima (evita o banker's rounding do
       round() zerar músicas curtas).
     """
-    scoreable = [i for i, n in enumerate(notes) if n.note_type == ":"]
+    scoreable = [i for i, n in enumerate(notes) if n.note_type in (":", "R")]
     if not scoreable:
         return notes
     budget = int(golden_fraction * len(scoreable) + 0.5)
@@ -587,7 +585,7 @@ def apply_golden_notes(
         chosen.add(i)
 
     for i in chosen:
-        notes[i].note_type = "*"
+        notes[i].note_type = "G" if notes[i].note_type == "R" else "*"
     return notes
 
 
@@ -865,6 +863,7 @@ def build_notes(
     gap_ms: int,
     pitch_extractor: PitchExtractor,
     language: str | None = None,
+    detect_rap: bool = False,
 ) -> tuple[list[Note], list[int]]:
     """
     Retorna (notes, phrase_breaks_after_index).
@@ -933,16 +932,22 @@ def build_notes(
                     # real do UltraStar pra pitch variando numa nota longa.
                     text = syl if run_idx == 0 else "~"
 
+                    if pitch_result.confidence >= 0.5:
+                        note_kind = ":"
+                    elif detect_rap and (wt.score is None or wt.score >= 0.5) and duration_beats <= 8:
+                        note_kind = "R"
+                    else:
+                        note_kind = "F"
+
                     notes.append(
                         Note(
                             start_beat=start_beat,
                             duration_beats=duration_beats,
                             pitch=pitch_result.ultrastar_pitch,
                             text=text,
-                            note_type=":" if pitch_result.confidence >= 0.5 else "F",
+                            note_type=note_kind,
                             # nota de baixa confiança de pitch vira "F" (freestyle,
-                            # não pontua) em vez de arriscar uma nota errada -
-                            # decisão conservadora para revisar manualmente depois.
+                            # não pontua) ou "R" (rap) quando detect_rap=True.
                             source=wt.source,
                             # proveniência do timing (herdada da palavra inteira) -
                             # a tela de revisão usa para destacar notas estimadas.
@@ -1005,6 +1010,7 @@ def build_song(
     p2_name: str | None = None,
     transpose: int = 0,
     creator: str = "USKMaker",
+    detect_rap: bool = False,
 ) -> Song:
     pitch_extractor = PitchExtractor()
 
@@ -1018,8 +1024,15 @@ def build_song(
     first_start = min((wt.start for wt in word_timings), default=0.0)
     effective_gap_ms = round_gap_ms(max(0, round(first_start * 1000)) + gap_ms)
 
-    notes, phrase_breaks = build_notes(word_timings, vocals_wav_path, grid, effective_gap_ms, pitch_extractor,
-                                       language=language)
+    notes, phrase_breaks = build_notes(
+        word_timings,
+        vocals_wav_path,
+        grid,
+        effective_gap_ms,
+        pitch_extractor,
+        language=language,
+        detect_rap=detect_rap,
+    )
 
     # Tom fixo: transpõe a melodia inteira N semitons, uniforme, DEPOIS de toda
     # a estimativa/dobra de pitch. Casa com o áudio deslocado pelo mesmo N em

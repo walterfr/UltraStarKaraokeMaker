@@ -4,6 +4,19 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [2.0.0] — 2026-11-02
+
+### Added
+
+- **UltraStar Song Library Manager:** when selecting a root folder containing multiple songs ("Open existing"), USKMaker recursively scans the collection (up to 3 levels deep), presenting a sleek library modal with total song count, instant search/filter by artist or title, media asset badges (`Cover`, `BG`, `Video`), and one-click opening into the Review Screen.
+- **Native Import of Legacy & Third-Party UltraStar `.txt` Charts in Rust:** full parser implemented in `rust-core` (`Song::from_txt_str` / `Song::from_txt_file`). The app now directly opens community `.txt` charts (even without `song_data.json`), enabling instant playback and 1-click "🎯 Re-pitch (AI)" to upgrade older charts to modern pitch accuracy.
+- **Fast Piano Roll Keyboard Shortcuts for Pitch Editing:** keys `C`, `D`, `E`, `F`, `G`, `A`, `B` instantly snap selected notes to that pitch class in the current octave with immediate audio preview. `Shift + Letter` applies sharps (`#`), and `Shift + ↑ / ↓` transposes a full octave (+12 / -12 semitones).
+- **Auto-Fix Overlaps in the Review Screen:** "Auto-fix overlaps" button in the review validation box that cleanly truncates overlapping notes to the exact starting beat of the subsequent note.
+- **Support for Rap Notes (`R`) and Golden Rap (`G`):** end-to-end support across Rust, Python, and TypeScript for spoken/rhythmic notes (`R`) and golden rap notes (`G`), with `--detect-rap` option for high-articulation speech without fixed melodic F0.
+- **Mel-Band RoFormer Separation Backend:** native `--separator roformer` support via `audio-separator`, plus dynamic stem path discovery (`_work/stems/**/vocals.wav`) across Rust and Python sidecar.
+- **Alignment Collapse Guard (< 15 PPM):** automatic warning during Step 4 for long tracks (> 60s) with unusually low word density, preventing unnoticed alignment degradation.
+- **Empirical Validation of v1.0.0 & Clean Silence Split API:** explicit `allow_silence_split: bool = True` parameter in `detect_melisma_notes`, validated on a 59-song cache with zero anomalies (+0.70% melisma notes, zero meter breaks).
+
 ## [1.0.0] — 2026-11-02
 
 ### Added

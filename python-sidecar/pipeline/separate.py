@@ -47,12 +47,50 @@ class Stems:
     instrumental: Path  # "no_vocals" - útil para oferecer versão instrumental
 
 
+def _separate_with_roformer(
+    input_wav: Path,
+    out_dir: Path,
+    model: str = LEAD_VOCAL_MODEL,
+) -> Stems:
+    from audio_separator.separator import Separator
+
+    target_dir = out_dir / "roformer" / input_wav.stem
+    target_dir.mkdir(parents=True, exist_ok=True)
+    separator = Separator(output_dir=str(target_dir), output_format="WAV")
+    separator.load_model(model_filename=model)
+    output_files = separator.separate(
+        str(input_wav),
+        custom_output_names={"Vocals": "vocals", "Instrumental": "no_vocals"},
+    )
+    vocals = target_dir / "vocals.wav"
+    instrumental = target_dir / "no_vocals.wav"
+    if not vocals.exists() or not instrumental.exists():
+        for f in output_files:
+            fp = target_dir / f
+            fl = f.lower()
+            if "vocals" in fl and not vocals.exists():
+                fp.rename(vocals)
+            elif ("instrumental" in fl or "no_vocals" in fl) and not instrumental.exists():
+                fp.rename(instrumental)
+    if not vocals.exists() or not instrumental.exists():
+        raise RuntimeError(t("separate.no_stems", path=target_dir))
+    return Stems(vocals=vocals, instrumental=instrumental)
+
+
 def separate_vocals(
     input_wav: Path,
     out_dir: Path,
     model: str = "htdemucs",
     device: str = "cuda",
+    backend: str = "demucs",
 ) -> Stems:
+    if backend == "roformer":
+        return _separate_with_roformer(
+            input_wav,
+            out_dir,
+            model=model if model != "htdemucs" else LEAD_VOCAL_MODEL,
+        )
+
     out_dir.mkdir(parents=True, exist_ok=True)
 
     cmd = [

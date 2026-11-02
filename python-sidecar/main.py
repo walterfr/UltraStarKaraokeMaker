@@ -1042,6 +1042,16 @@ def run_pipeline(
             console.print(t("main.lyrics_short", last=last_word_end,
                             duration=audio_duration, uncovered=uncovered))
 
+        # Alerta de densidade lírica / colapso (< 15 ppm em faixas > 60s)
+        if audio_duration >= 60.0:
+            ppm = len(word_timings) / (audio_duration / 60.0)
+            if ppm < 15.0:
+                debug_log(f"Alerta de baixo PPM: {ppm:.1f} palavras/minuto em {audio_duration:.1f}s")
+                console.print(
+                    f"[yellow]Aviso: Densidade lírica incomumente baixa ({ppm:.1f} palavras/min). "
+                    "Verifique na tela de revisão se o alinhamento não colapsou.[/yellow]"
+                )
+
         # Detecção em 2 estágios de possíveis trechos faltantes na letra oficial
         if has_lyrics:
             debug_log("Verificando possíveis trechos faltantes na letra (2-stage gap detection)...")

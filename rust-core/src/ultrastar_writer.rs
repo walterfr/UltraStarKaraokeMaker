@@ -342,4 +342,202 @@ impl Song {
     pub fn from_json_str(content: &str) -> serde_json::Result<Song> {
         serde_json::from_str(content)
     }
+
+    /// Lê um chart no formato UltraStar (.txt) e constrói a struct `Song`.
+    /// Suporta cabeçalhos (#TITLE, #ARTIST, #BPM, #GAP, etc.), notas (:, *, F, R, G),
+    /// quebras de linha/frase (-) e marcadores P1/P2 (dueto).
+    pub fn from_txt_str(content: &str) -> Result<Song, String> {
+        let mut title = String::new();
+        let mut artist = String::new();
+        let mut mp3_filename = String::new();
+        let mut bpm = 0.0;
+        let mut gap_ms: i64 = 0;
+        let mut version = default_version();
+        let mut genre: Option<String> = None;
+        let mut year: Option<i64> = None;
+        let mut language: Option<String> = None;
+        let mut cover_filename: Option<String> = None;
+        let mut video_filename: Option<String> = None;
+        let mut background_filename: Option<String> = None;
+        let mut audio_url: Option<String> = None;
+        let mut video_url: Option<String> = None;
+        let mut cover_url: Option<String> = None;
+        let mut video_gap: Option<f64> = None;
+        let mut preview_start: Option<f64> = None;
+        let mut medley_start_beat: Option<i64> = None;
+        let mut medley_end_beat: Option<i64> = None;
+        let mut vocals_filename: Option<String> = None;
+        let mut instrumental_filename: Option<String> = None;
+        let mut tags: Option<String> = None;
+        let mut creator = default_creator();
+        let mut p1_name: Option<String> = None;
+        let mut p2_name: Option<String> = None;
+        let mut duet = false;
+        let mut current_singer: i64 = 0;
+
+        let mut notes: Vec<Note> = Vec::new();
+        let mut phrase_breaks_after_index: Vec<usize> = Vec::new();
+
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            if line.starts_with('#') {
+                if let Some((tag, val)) = line[1..].split_once(':') {
+                    let tag = tag.trim().to_uppercase();
+                    let val = val.trim();
+                    match tag.as_str() {
+                        "TITLE" => title = val.to_string(),
+                        "ARTIST" => artist = val.to_string(),
+                        "MP3" => mp3_filename = val.to_string(),
+                        "BPM" => {
+                            let norm = val.replace(',', ".");
+                            bpm = norm.parse::<f64>().unwrap_or(0.0);
+                        }
+                        "GAP" => {
+                            let norm = val.replace(',', ".");
+                            gap_ms = norm.parse::<f64>().map(|v| v.round() as i64).unwrap_or(0);
+                        }
+                        "VERSION" => version = val.to_string(),
+                        "GENRE" => genre = Some(val.to_string()),
+                        "YEAR" => year = val.parse::<i64>().ok(),
+                        "LANGUAGE" => language = Some(val.to_string()),
+                        "COVER" => cover_filename = Some(val.to_string()),
+                        "VIDEO" => video_filename = Some(val.to_string()),
+                        "BACKGROUND" => background_filename = Some(val.to_string()),
+                        "AUDIOURL" => audio_url = Some(val.to_string()),
+                        "VIDEOURL" => video_url = Some(val.to_string()),
+                        "COVERURL" => cover_url = Some(val.to_string()),
+                        "VIDEOGAP" => {
+                            video_gap = val.replace(',', ".").parse::<f64>().ok();
+                        }
+                        "PREVIEWSOUND" | "START" => {
+                            preview_start = val.replace(',', ".").parse::<f64>().ok();
+                        }
+                        "MEDLEYSTARTBEAT" => medley_start_beat = val.parse::<i64>().ok(),
+                        "MEDLEYENDBEAT" => medley_end_beat = val.parse::<i64>().ok(),
+                        "VOCALS" => vocals_filename = Some(val.to_string()),
+                        "INSTRUMENTAL" => instrumental_filename = Some(val.to_string()),
+                        "TAGS" => tags = Some(val.to_string()),
+                        "CREATOR" => creator = val.to_string(),
+                        "P1" => {
+                            duet = true;
+                            p1_name = Some(val.to_string());
+                        }
+                        "P2" => {
+                            duet = true;
+                            p2_name = Some(val.to_string());
+                        }
+                        _ => {}
+                    }
+                }
+                continue;
+            }
+
+            if trimmed == "P1" {
+                duet = true;
+                current_singer = 1;
+                continue;
+            }
+            if trimmed == "P2" {
+                duet = true;
+                current_singer = 2;
+                continue;
+            }
+            if trimmed == "E" {
+                break;
+            }
+            if trimmed.starts_with('-') {
+                if !notes.is_empty() {
+                    let last_idx = notes.len() - 1;
+                    if !phrase_breaks_after_index.contains(&last_idx) {
+                        phrase_breaks_after_index.push(last_idx);
+                    }
+                }
+                continue;
+            }
+
+            let first_char = match line.chars().next() {
+                Some(c) => c,
+                None => continue,
+            };
+
+            if [':', '*', 'F', 'R', 'G'].contains(&first_char) {
+                let note_type = first_char.to_string();
+                let rest = line[first_char.len_utf8()..].trim_start();
+                let mut parts = rest.splitn(4, |c: char| c.is_ascii_whitespace());
+                let start_str = match parts.next() {
+                    Some(s) if !s.is_empty() => s,
+                    _ => continue,
+                };
+                let dur_str = match parts.next() {
+                    Some(s) if !s.is_empty() => s,
+                    _ => continue,
+                };
+                let pitch_str = match parts.next() {
+                    Some(s) if !s.is_empty() => s,
+                    _ => continue,
+                };
+                let text_str = parts.next().unwrap_or("");
+
+                let start_beat = start_str.parse::<i64>().unwrap_or(0);
+                let duration_beats = dur_str.parse::<i64>().unwrap_or(1);
+                let pitch = pitch_str.parse::<i64>().unwrap_or(0);
+
+                notes.push(Note {
+                    start_beat,
+                    duration_beats,
+                    pitch,
+                    text: text_str.to_string(),
+                    note_type,
+                    source: None,
+                    score: None,
+                    singer: current_singer,
+                });
+            }
+        }
+
+        if title.is_empty() && artist.is_empty() && notes.is_empty() {
+            return Err("Arquivo UltraStar não contém cabeçalhos nem notas válidas".to_string());
+        }
+
+        Ok(Song {
+            title,
+            artist,
+            mp3_filename,
+            bpm,
+            gap_ms,
+            version,
+            genre,
+            year,
+            language,
+            cover_filename,
+            video_filename,
+            background_filename,
+            audio_url,
+            video_url,
+            cover_url,
+            video_gap,
+            preview_start,
+            medley_start_beat,
+            medley_end_beat,
+            vocals_filename,
+            instrumental_filename,
+            tags,
+            creator,
+            notes,
+            phrase_breaks_after_index,
+            duet,
+            p1_name,
+            p2_name,
+        })
+    }
+
+    pub fn from_txt_file<P: AsRef<Path>>(path: P) -> Result<Song, String> {
+        let content = fs::read_to_string(path.as_ref())
+            .map_err(|e| format!("Falha ao ler {}: {}", path.as_ref().display(), e))?;
+        Self::from_txt_str(&content)
+    }
 }

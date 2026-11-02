@@ -209,14 +209,13 @@ def repitch_notes_from_audio(
 def resolve_package_vocal_audio(out_dir: Path, song_dict: dict) -> Path | None:
     """
     Procura a melhor fonte vocal disponível na pasta do pacote:
-      1. _work/stems/htdemucs/*/vocals.wav
+      1. _work/stems/**/vocals.wav (independente do separador: htdemucs, roformer, etc.)
       2. vocals_filename no pacote (ex.: 'Artista - Música [VOC].ogg')
       3. mp3_filename no pacote (fallback quando os intermediários foram limpos)
     """
-    stems_dir = out_dir / "_work" / "stems" / "htdemucs"
-    if stems_dir.is_dir():
-        for child in stems_dir.iterdir():
-            cand = child / "vocals.wav"
+    stems_root = out_dir / "_work" / "stems"
+    if stems_root.is_dir():
+        for cand in stems_root.rglob("vocals.wav"):
             if cand.is_file():
                 return cand
     voc_fn = song_dict.get("vocals_filename")

@@ -4,6 +4,19 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [2.0.0] - 2026-11-02
+
+### Adicionado
+
+- **Gerenciador de Biblioteca de Músicas UltraStar:** ao selecionar uma pasta raiz contendo múltiplas músicas ("Abrir existente"), o USKMaker varre recursivamente a coleção (até 3 níveis), exibindo uma interface elegante com contagem total, busca/filtro instantâneo por artista ou título, badges de integridade de mídia (`Capa`, `Fundo`, `Vídeo`) e botão para abrir qualquer faixa diretamente na tela de Revisão.
+- **Importação nativa de `.txt` UltraStar legados e de terceiros em Rust:** parser completo implementado em `rust-core` (`Song::from_txt_str` / `Song::from_txt_file`). O aplicativo agora abre diretamente pastas com arquivos `.txt` antigos da comunidade (mesmo sem `song_data.json`), permitindo tocar o áudio e rodar o "🎯 Re-calcular Pitches (IA)" com 1 clique para salvar pacotes atualizados e afinados.
+- **Atalhos de teclado rápidos para edição de pitch no Piano Roll:** teclas `C`, `D`, `E`, `F`, `G`, `A`, `B` aplicam a respectiva nota musical na oitava atual com reprodução de áudio imediata para conferência auditiva. `Shift + Letra` aplica o sustenido (`#`), e `Shift + ↑ / ↓` transpõe a oitava inteira (+12 / -12 semitons).
+- **Resolução Automática de Sobreposições no Frontend:** botão "Corrigir sobreposições automaticamente" na caixa de avisos da tela de Revisão que trunca a duração de notas sobrepostas exatamente no beat inicial da nota seguinte.
+- **Suporte a Notas de Rap (`R`) e Golden Rap (`G`):** suporte completo nas pipelines de Rust, Python e TypeScript para marcação de notas faladas rítmicas (`R`) e douradas (`G`), com opção `--detect-rap` para frases articuladas sem F0 tonal sustentado.
+- **Backend de Separação com Mel-Band RoFormer:** suporte nativo a `--separator roformer` via `audio-separator`, além de abstração dinâmica do caminho de stems (`_work/stems/**/vocals.wav`) no Rust e no Python, desacoplando o pipeline de modelos fixos.
+- **Alerta de Colapso de Alinhamento (< 15 PPM):** aviso automático durante a Etapa 4 para faixas longas (> 60s) com densidade de palavras anormalmente baixa, prevenindo corrupção silenciosa de alinhamento.
+- **Refatoração e Validação Empírica da v1.0.0:** parâmetro explícito `allow_silence_split: bool = True` adicionado em `detect_melisma_notes`, validado contra cache de 59 músicas sem anomalias (+0,70% de melismas, zero quebra de métrica).
+
 ## [1.0.0] - 2026-11-02
 
 ### Adicionado

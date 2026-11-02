@@ -1869,21 +1869,41 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
         }
       } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
         e.preventDefault();
-        const delta = e.key === "ArrowUp" ? 1 : -1;
+        const step = e.shiftKey ? 12 : 1;
+        const delta = (e.key === "ArrowUp" ? 1 : -1) * step;
         const group = multiSelectedRef.current;
-        if (group.size >1)
-        {
+        if (group.size > 1) {
           const idxs = Array.from(group);
           mutate((d) => {
-            for(const idx of idxs) {
+            for (const idx of idxs) {
               d.notes[idx].pitch += delta;
             }
-          })
+          });
         } else {
           mutate((d) => {
             d.notes[sel].pitch += delta;
           });
         }
+      } else if (
+        !e.ctrlKey &&
+        !e.altKey &&
+        !e.metaKey &&
+        ["c", "d", "e", "f", "g", "a", "b"].includes(e.key.toLowerCase())
+      ) {
+        e.preventDefault();
+        const baseMap: Record<string, number> = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
+        const baseNote = baseMap[e.key.toLowerCase()];
+        const semitone = (baseNote + (e.shiftKey ? 1 : 0)) % 12;
+        const group = multiSelectedRef.current;
+        const targetIdxs = group.size > 1 ? Array.from(group) : [sel];
+        mutate((d) => {
+          for (const idx of targetIdxs) {
+            const currentPitch = d.notes[idx].pitch;
+            const octave = Math.floor(currentPitch / 12) * 12;
+            d.notes[idx].pitch = octave + semitone;
+          }
+        });
+        playNote(sel);
       } else if (e.key === "Enter") {
         e.preventDefault();
         playNote(sel);
@@ -1935,6 +1955,22 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
 
   function deleteNote(idx: number) {
     deleteNotes([idx]);
+  }
+
+  function autoFixOverlaps() {
+    mutate((d) => {
+      d.notes.sort((a, b) => a.start_beat - b.start_beat);
+      for (let i = 0; i < d.notes.length - 1; i++) {
+        const cur = d.notes[i];
+        const next = d.notes[i + 1];
+        const curEnd = cur.start_beat + cur.duration_beats;
+        if (curEnd > next.start_beat) {
+          cur.duration_beats = Math.max(1, next.start_beat - cur.start_beat);
+        }
+      }
+    });
+    setWarnings([]);
+    setStatusMsg(t("revOverlapsFixed"));
   }
 
   function addNote() {
@@ -2588,9 +2624,18 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
         </div>
       )}
       {warnings.length > 0 && (
-        <div className="error-box">
-          <strong>{t("revWarnings")}</strong>
-          <ul>
+        <div className="error-box" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <strong>{t("revWarnings")}</strong>
+            <button
+              className="secondary"
+              style={{ padding: "3px 10px", fontSize: "0.85em", cursor: "pointer" }}
+              onClick={autoFixOverlaps}
+            >
+              {t("revFixOverlapsAuto")}
+            </button>
+          </div>
+          <ul style={{ margin: 0, paddingLeft: "20px" }}>
             {warnings.map((wr, i) => (
               <li key={i}>{wr}</li>
             ))}
