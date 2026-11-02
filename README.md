@@ -6,13 +6,24 @@
 [![WinGet](https://img.shields.io/badge/winget-walterfr.USKMaker-blue)](https://github.com/microsoft/winget-pkgs/tree/master/manifests/w/walterfr/USKMaker)
 [![AppImage](https://img.shields.io/badge/AppImage-x86__64%20(OTA)-2c9784?logo=linux&logoColor=white)](https://github.com/walterfr/UltraStarKaraokeMaker/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/walterfr/UltraStarKaraokeMaker/total?color=success&label=downloads)](https://github.com/walterfr/UltraStarKaraokeMaker/releases)
-[![Exports](https://img.shields.io/badge/exports-UltraStar%20%7C%20YARG%20%7C%20MIDI%20%7C%20MP4-8a2be2)](https://github.com/walterfr/UltraStarKaraokeMaker/releases)
-[![AI](https://img.shields.io/badge/AI-100%25%20Local%20(CUDA%20%7C%20ROCm)-76b900)](https://github.com/walterfr/UltraStarKaraokeMaker)
+[![Stars](https://img.shields.io/github/stars/walterfr/UltraStarKaraokeMaker?style=flat&logo=github)](https://github.com/walterfr/UltraStarKaraokeMaker/stargazers)
+[![Last Commit](https://img.shields.io/github/last-commit/walterfr/UltraStarKaraokeMaker?logo=git&logoColor=white)](https://github.com/walterfr/UltraStarKaraokeMaker/commits/main)
 [![Build Windows](https://github.com/walterfr/UltraStarKaraokeMaker/actions/workflows/build-windows.yml/badge.svg)](https://github.com/walterfr/UltraStarKaraokeMaker/actions/workflows/build-windows.yml)
 [![Build Linux](https://github.com/walterfr/UltraStarKaraokeMaker/actions/workflows/build-linux.yml/badge.svg)](https://github.com/walterfr/UltraStarKaraokeMaker/actions/workflows/build-linux.yml)
+
+[![Exports](https://img.shields.io/badge/exports-UltraStar%20%7C%20YARG%20%7C%20MIDI%20%7C%20MP4-8a2be2)](https://github.com/walterfr/UltraStarKaraokeMaker/releases)
+[![AI](https://img.shields.io/badge/AI-100%25%20Local%20(CUDA%20%7C%20ROCm)-76b900)](https://github.com/walterfr/UltraStarKaraokeMaker)
+![Tauri](https://img.shields.io/badge/Tauri-v2-24C8D8?logo=tauri&logoColor=white)
+![Rust](https://img.shields.io/badge/Rust-core-DEA584?logo=rust&logoColor=black)
+![React](https://img.shields.io/badge/React_19-TypeScript-61DAFB?logo=react&logoColor=black)
+![PyTorch](https://img.shields.io/badge/PyTorch-Demucs_%7C_WhisperX-EE4C2C?logo=pytorch&logoColor=white)
+![FFmpeg](https://img.shields.io/badge/FFmpeg-audio_%2F_video-007808?logo=ffmpeg&logoColor=white)
+[![Co-created with AI](https://img.shields.io/badge/Created_by-Human_%2B_AI-6e56cf?logo=sparkles&logoColor=white)](https://madebyhuman.iamjarl.com)
 [![PrideVer](https://img.shields.io/badge/versioning-PrideVer%200.3.0-ff69b4)](https://pridever.org/)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/walterfr/UltraStarKaraokeMaker/pulls)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Sponsor](https://img.shields.io/badge/sponsor-%E2%99%A5-ea4aaa?logo=githubsponsors)](https://github.com/sponsors/walterfr)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-apoiar-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/walterfr)
 
 **🇬🇧 [English version](README.en.md)**
 
