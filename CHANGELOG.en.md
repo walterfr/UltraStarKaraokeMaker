@@ -4,6 +4,13 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [2.0.2] — 2026-11-03
+
+### Fixed
+
+- **WinGet Release Synchronization:** updated package manifest aligned with Microsoft official repository (`microsoft/winget-pkgs`), preventing 404 errors during CLI installations.
+- **Pacstall Package Support:** added official badge and installation instructions via `pacstall -I uskmaker-deb` following approval into the Pacstall programs repository.
+
 ## [2.0.0] — 2026-11-02
 
 ### Added

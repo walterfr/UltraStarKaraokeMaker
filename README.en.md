@@ -4,6 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/walterfr/UltraStarKaraokeMaker?color=blue)](https://github.com/walterfr/UltraStarKaraokeMaker/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-brightgreen)](https://github.com/walterfr/UltraStarKaraokeMaker/releases)
 [![WinGet](https://img.shields.io/badge/winget-walterfr.USKMaker-blue)](https://github.com/microsoft/winget-pkgs/tree/master/manifests/w/walterfr/USKMaker)
+[![Pacstall](https://img.shields.io/badge/pacstall-uskmaker--deb-blue?logo=gnu-bash&logoColor=white)](https://pacstall.dev)
 [![AppImage](https://img.shields.io/badge/AppImage-x86__64%20(OTA)-2c9784?logo=linux&logoColor=white)](https://github.com/walterfr/UltraStarKaraokeMaker/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/walterfr/UltraStarKaraokeMaker/total?color=success&label=downloads)](https://github.com/walterfr/UltraStarKaraokeMaker/releases)
 [![Stars](https://img.shields.io/github/stars/walterfr/UltraStarKaraokeMaker?style=flat&logo=github)](https://github.com/walterfr/UltraStarKaraokeMaker/stargazers)
@@ -82,6 +83,7 @@ Requirements: Windows 10/11 and (optional but highly recommended) an NVIDIA GPU 
 
 1. Download the package for your distribution from the [Releases](https://github.com/walterfr/UltraStarKaraokeMaker/releases) page:
    - **Debian / Ubuntu / Mint:** `sudo apt install ./USKMaker_x.y.z_amd64.deb`
+   - **Pacstall (Ubuntu / Debian):** `pacstall -I uskmaker-deb`
    - **Fedora / openSUSE:** `sudo dnf install ./USKMaker-x.y.z-1.x86_64.rpm`
    - **Any distribution:** the `.AppImage` — `chmod +x USKMaker_x.y.z_amd64.AppImage` and run it.
 2. Install a C compiler and ffmpeg if you don't have them (the `.deb`/`.rpm` already pull in ffmpeg). The compiler builds one of the AI libraries during setup.
