@@ -4,7 +4,7 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
-## [Não lançado]
+## [2.1.0] - 2026-11-07
 
 ### Adicionado
 
@@ -13,6 +13,7 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 ### Corrigido
 
 - **Sing-along:** o traçado deixa de ligar duas notas com uma reta falsa quando você fica em silêncio; voltar a música (clicar mais atrás) zera o rastro em vez de desenhar uma linha para o "futuro"; só entram leituras na faixa de voz cantada (70–1200 Hz); o botão ligado agora muda de cor (a classe existia mas não tinha estilo); e o botão some em WebViews sem suporte a microfone (ex.: Linux/webkit2gtk), em vez de falhar ao clicar.
+- **Build, Dependências e Validação em Escala do CTC (`n=55`):** atualização do Vite `4.5 -> 8` e `@vitejs/plugin-react` `4 -> 6` (zerando todas as vulnerabilidades de `npm audit`), leitura de `TAURI_ENV_PLATFORM` / `TAURI_ENV_DEBUG` no `vite.config.ts`, proteção de `getCurrentWindow()` no preview do navegador e validação empírica do alinhador padrão CTC (`MMS_FA`) nas 55 músicas do seed-set (colapsos catastróficos reduzidos de 7 para 3; erro médio de início `2315 -> 576 ms`, `-75%`).
 
 ## [2.0.2] - 2026-11-03
 
