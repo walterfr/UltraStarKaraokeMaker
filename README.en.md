@@ -16,7 +16,7 @@
 [![AI](https://img.shields.io/badge/AI-100%25%20Local%20(CUDA%20%7C%20ROCm)-76b900)](https://github.com/walterfr/UltraStarKaraokeMaker)
 ![Tauri](https://img.shields.io/badge/Tauri-v2-24C8D8?logo=tauri&logoColor=white)
 ![Rust](https://img.shields.io/badge/Rust-core-DEA584?logo=rust&logoColor=black)
-![React](https://img.shields.io/badge/React_19-TypeScript-61DAFB?logo=react&logoColor=black)
+![React](https://img.shields.io/badge/React_18-TypeScript-61DAFB?logo=react&logoColor=black)
 ![PyTorch](https://img.shields.io/badge/PyTorch-Demucs_%7C_WhisperX-EE4C2C?logo=pytorch&logoColor=white)
 ![FFmpeg](https://img.shields.io/badge/FFmpeg-audio_%2F_video-007808?logo=ffmpeg&logoColor=white)
 [![Co-created with AI](https://img.shields.io/badge/Created_by-Human_%2B_AI-6e56cf?logo=sparkles&logoColor=white)](https://madebyhuman.iamjarl.com)
@@ -49,7 +49,7 @@ The pipeline has six steps:
 
 - **Interface**: Tauri v2 + React 18 + TypeScript + Vite — bilingual (PT-BR/EN, detects the system language and can be switched anytime from the header)
 - **Format-writing core**: Rust (`rust-core`, crate `uskmaker_core`)
-- **AI pipeline**: Python (sidecar), with WhisperX, Demucs, librosa, SwiftF0, pyphen
+- **AI pipeline**: Python (sidecar), with MMS_FA (torchaudio), WhisperX, Demucs, Mel-Band RoFormer, librosa, SwiftF0 and pyphen
 - **Architecture**: the frontend calls Rust (Tauri), which invokes the Python sidecar; Python exports an intermediate JSON (`song_data.json`) and Rust is the one that writes the final `.txt` from it.
 
 ## Requirements

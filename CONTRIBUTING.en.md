@@ -28,11 +28,11 @@ Repository layout:
 
 | Folder | What |
 |---|---|
-| `python-sidecar/` | AI pipeline (WhisperX, Demucs, SwiftF0, librosa) |
+| `python-sidecar/` | AI pipeline (MMS_FA, WhisperX, Demucs, SwiftF0, librosa) |
 | `src-tauri/` | Rust/Tauri backend (orchestrates the sidecar, UI commands) |
 | `rust-core/` | `uskmaker-core` crate — shared logic (UltraStar `.txt` writer) |
 | `src/` | React/TypeScript frontend |
-| `eval/` | Evaluation harness against a gold library (`library_replay.py`) |
+| `python-sidecar/eval/` | Evaluation harness against a gold library (`library_replay.py`) |
 | `scripts/` | `setup-sidecar.ps1` — sets up the end user's AI environment |
 
 ## Running tests

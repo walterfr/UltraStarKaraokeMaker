@@ -28,11 +28,11 @@ Estrutura do repositório:
 
 | Pasta | O quê |
 |---|---|
-| `python-sidecar/` | Pipeline de IA (WhisperX, Demucs, SwiftF0, librosa) |
+| `python-sidecar/` | Pipeline de IA (MMS_FA, WhisperX, Demucs, SwiftF0, librosa) |
 | `src-tauri/` | Backend Rust/Tauri (orquestra o sidecar, comandos da UI) |
 | `rust-core/` | Crate `uskmaker-core` — lógica compartilhada (escritor do `.txt` UltraStar) |
 | `src/` | Frontend React/TypeScript |
-| `eval/` | Harness de avaliação contra biblioteca gold (`library_replay.py`) |
+| `python-sidecar/eval/` | Harness de avaliação contra biblioteca gold (`library_replay.py`) |
 | `scripts/` | `setup-sidecar.ps1` — configura o ambiente de IA do usuário final |
 
 ## Rodando os testes
