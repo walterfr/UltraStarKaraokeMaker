@@ -541,11 +541,73 @@ def _timings_to_dicts(timings) -> list[dict]:
 
 
 def _cached_alignment(stem: Path, cache: Path, gwords: list[dict],
-                      language: str, device: str) -> dict:
+                      language: str, device: str, aligner: str = "ctc") -> dict:
     """align.align_lyrics_to_audio on the cached stem, mirroring main.py's
     Etapa 4b rescue: if >10% of words end up interpolated, isolate the lead
     vocal and re-align, keeping whichever result has fewer interpolated words
     (the pipeline's internal quality signal - no ground truth needed)."""
+    if aligner == "ctc":
+        aj_ctc = cache / "align_ctc.json"
+        if aj_ctc.exists():
+            with open(aj_ctc, encoding="utf-8") as f:
+                return json.load(f)
+
+        from pipeline.ctc_align import align_lyrics_ctc_to_audio, low_confidence_frac
+
+        lyrics_path = cache / "lyrics.txt"
+        lyrics_path.write_text(gold_lyrics_text(gwords), encoding="utf-8")
+
+        log(f"  align (ctc/MMS_FA, lang={language})...")
+        try:
+            timings = align_lyrics_ctc_to_audio(stem, lyrics_path, language, device)
+        except Exception as e:  # noqa: BLE001
+            log(f"  ctc failed ({e!r}), falling back to whisper...")
+            timings = None
+
+        if timings is None:
+            log("  ctc unsupported/failed -> fallback whisper...")
+            fb = _cached_alignment(stem, cache, gwords, language, device, aligner="whisper")
+            res = {**fb, "aligner_used": "whisper_fallback_unsupported"}
+            with open(aj_ctc, "w", encoding="utf-8") as f:
+                json.dump(res, f, ensure_ascii=False)
+            return res
+
+        low = low_confidence_frac(timings)
+        if low > 0.35:
+            log(f"  ctc low_conf={100 * low:.1f}% > 35% -> fallback whisper...")
+            fb = _cached_alignment(stem, cache, gwords, language, device, aligner="whisper")
+            res = {**fb, "aligner_used": "whisper_fallback_low_conf", "ctc_low_frac": round(low, 3)}
+            with open(aj_ctc, "w", encoding="utf-8") as f:
+                json.dump(res, f, ensure_ascii=False)
+            return res
+
+        rescue = {"tried": False, "won": False, "base_interp_frac": round(low, 3)}
+        if low > 0.20:
+            rescue["tried"] = True
+            log(f"  rescue (ctc): {100 * low:.0f}% low-conf, isolating lead vocal...")
+            try:
+                from pipeline.separate import isolate_lead_vocal
+                lead = cache / "lead_vocals.wav"
+                if not lead.exists():
+                    lead = isolate_lead_vocal(stem, cache)
+                retry = align_lyrics_ctc_to_audio(lead, lyrics_path, language, device)
+                retry_low = low_confidence_frac(retry) if retry else 1.0
+                rescue["lead_interp_frac"] = round(retry_low, 3)
+                if retry and retry_low < low:
+                    rescue["won"] = True
+                    timings, low = retry, retry_low
+            except Exception as e:  # noqa: BLE001
+                rescue["error"] = repr(e)
+                log(f"  rescue (ctc) failed (non-fatal): {e!r}")
+
+        result = {"words": _timings_to_dicts(timings),
+                  "interp_frac": round(low, 3),
+                  "rescue": rescue,
+                  "aligner_used": "ctc"}
+        with open(aj_ctc, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False)
+        return result
+
     aj = cache / "align.json"
     if aj.exists():
         with open(aj, encoding="utf-8") as f:
@@ -607,7 +669,7 @@ def _cached_pitch(stem: Path, cache: Path):
     return track.timestamps, track.pitch_hz, track.voicing
 
 
-def _run_song(song: dict, run_dir: str, slug: str, device: str) -> dict:
+def _run_song(song: dict, run_dir: str, slug: str, device: str, aligner: str = "ctc") -> dict:
     chart = usdx_parse.read_file(song["gold"])
     gwords = gold_words(chart)
     if len(gwords) < 30:
@@ -628,7 +690,7 @@ def _run_song(song: dict, run_dir: str, slug: str, device: str) -> dict:
     cache.mkdir(parents=True, exist_ok=True)
 
     vocals, instrumental = _cached_stems(song["mp3"], cache, device)
-    align_res = _cached_alignment(vocals, cache, gwords, language, device)
+    align_res = _cached_alignment(vocals, cache, gwords, language, device, aligner=aligner)
     times, hz, voicing = _cached_pitch(vocals, cache)
 
     try:
@@ -657,7 +719,7 @@ def _run_song(song: dict, run_dir: str, slug: str, device: str) -> dict:
     }
 
 
-def run_song(song: dict, run_dir: str, device: str) -> None:
+def run_song(song: dict, run_dir: str, device: str, aligner: str = "ctc") -> None:
     slug = slugify(song["name"])
     rj = os.path.join(run_dir, "results", f"{slug}.json")
     ej = os.path.join(run_dir, "results", f"{slug}.error.json")
@@ -666,7 +728,7 @@ def run_song(song: dict, run_dir: str, device: str) -> None:
         return
     log(f"[run ] {song['name']}")
     try:
-        res = _run_song(song, run_dir, slug, device)
+        res = _run_song(song, run_dir, slug, device, aligner=aligner)
         with open(rj, "w", encoding="utf-8") as f:
             json.dump(res, f, ensure_ascii=False, indent=1, default=float)
     except UnmeasurableSong as e:
@@ -779,7 +841,7 @@ def seed_set_sample(seed_set_path: str, manifest: list[dict]) -> list[dict]:
     by_name = {s["name"]: s for s in manifest}
     sample = []
     for entry in seed_set["songs"]:
-        s = by_name.get(entry["folder"])
+        s = by_name.get(entry["folder"]) or {m["name"].lower(): m for m in manifest}.get(entry["folder"].lower())
         if s:
             sample.append(s)
         else:
@@ -913,6 +975,8 @@ def main() -> int:
                     help="path to a curated seed-set JSON (eval/seed_set.json); "
                          "overrides --n/--seed sampling")
     ap.add_argument("--device", default="cuda")
+    ap.add_argument("--aligner", choices=("ctc", "whisper"), default="ctc",
+                    help="alinhador da Etapa 4 (padrão: ctc, igual ao main.py)")
     ap.add_argument("--aggregate-only", action="store_true")
     # Um lote de UM idioma só. Amostragem estratificada dá poucas músicas dos
     # buckets pequenos (pt é 108/1427 => ~5 num n=60), e cinco músicas não
@@ -959,7 +1023,7 @@ def main() -> int:
     if not args.aggregate_only:
         for i, song in enumerate(sample, 1):
             log(f"[{i}/{len(sample)}]")
-            run_song(song, run_dir, args.device)
+            run_song(song, run_dir, args.device, aligner=args.aligner)
 
     aggregate(sample, run_dir)
     return 0

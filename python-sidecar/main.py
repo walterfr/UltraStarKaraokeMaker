@@ -94,6 +94,12 @@ ALIGNMENT_FAILED_PCT = 50.0
 # O "ctc" cai sozinho no "whisper" quando a letra não cabe no vocabulário dele.
 # MEDIDO (30/09/2026, mesmas 8 músicas e stems, 5 en + 3 sv): palavras a <= 1 s
 # do chart feito à mão 0,867 -> 0,966; erro mediano de início 95 -> 49 ms.
+# CONFIRMADO EM ESCALA (07/11/2026, n=55 do seed_jul59, mesmos stems de julho):
+# colapsos catastróficos (w_1s < 0,50) caem de 7 para 3 (salva 4 Non Blondes
+# 0,191->0,790, Beatles I'll Follow The Sun 0,194->1,000, Weezer Keep Fishin'
+# 0,210->0,907 e RHCP By The Way 0,477->0,779); início mediano 84,0 -> 79,2 ms
+# (média 2315 -> 576 ms, -75%); média de w_1s 0,812 -> 0,838 (mediana 0,900 ->
+# 0,881; em pt n=4: w_1s 0,991 e início 16 ms); fallback Whisper em só 4/55.
 DEFAULT_ALIGNER = "ctc"
 ALIGNERS = ("ctc", "whisper")
 

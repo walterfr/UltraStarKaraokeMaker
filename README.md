@@ -182,6 +182,8 @@ O que mudou em cada versão está no [CHANGELOG](CHANGELOG.md). Os instaladores 
 
 MIT. Veja o arquivo [LICENSE](LICENSE).
 
+> **Nota sobre modelos de terceiros:** o código-fonte do USKMaker é licenciado sob a licença MIT. O modelo acústico padrão de alinhamento forçado (`torchaudio.pipelines.MMS_FA`, da Meta AI), baixado localmente em tempo de execução, possui pesos licenciados sob **[CC-BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)** (uso não comercial). Para uso comercial, utilize o alinhador alternativo via `--aligner whisper`.
+
 ## Agradecimentos e Comunidade
 
 Um agradecimento especial a todos que contribuíram diretamente com código, testes, relatórios de bugs, ideias e suporte financeiro para tornar a versão **1.0.0** uma realidade!

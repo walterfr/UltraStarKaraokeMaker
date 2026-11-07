@@ -13,7 +13,7 @@ import ReviewScreen from "./review/ReviewScreen";
 import { useI18n, StrKey } from "./i18n";
 import { isApprovedLrc } from "./review/lrcTiming";
 import { suggestLanguage } from "./langDetect";
-const appWindow = getCurrentWindow();
+const appWindow = "__TAURI_INTERNALS__" in window ? getCurrentWindow() : null;
 
 // GET JSON no LRCLIB pelo plugin http do Tauri (sem CORS). O plugin da v2 segue
 // a API `fetch` padrão; este helper devolve o mesmo formato {ok,status,data}
@@ -674,6 +674,7 @@ function App() {
   useEffect(() => {
     (async () => {
       try {
+        if (!appWindow) return;
         const w = JSON.parse(localStorage.getItem(WINDOW_KEY) ?? "null");
         if (w && w.width > 400 && w.height > 300) {
           await appWindow.setSize(new PhysicalSize(w.width, w.height));
@@ -686,6 +687,7 @@ function App() {
       }
     })();
 
+    if (!appWindow) return;
     let timer: ReturnType<typeof setTimeout>;
     const persistWindow = async () => {
       try {
@@ -1410,7 +1412,7 @@ function App() {
   // negada, etc.) é ignorada. Nunca notifica cancelamento (o usuário fez).
   async function notifyDone(body: string) {
     try {
-      if (await appWindow.isFocused()) return;
+      if (!appWindow || (await appWindow.isFocused())) return;
       let ok = await isPermissionGranted();
       if (!ok) ok = (await requestPermission()) === "granted";
       if (ok) sendNotification({ title: "USKMaker", body });
@@ -1443,7 +1445,7 @@ function App() {
       setSkipping(false);
       skipRequestedRef.current = false;
       startedAtRef.current = Date.now();
-      appWindow.setTitle(t("windowGenerating", { song: `${item.artist} - ${item.title}` }));
+      appWindow?.setTitle(t("windowGenerating", { song: `${item.artist} - ${item.title}` }));
 
       try {
         const res = await invoke<PipelineResult>("run_pipeline", { input: item.input, lang });
@@ -1490,7 +1492,7 @@ function App() {
     setIsRunning(false);
     setCancelling(false);
     setSkipping(false);
-    appWindow.setTitle("USKMaker");
+    appWindow?.setTitle("USKMaker");
 
     // Avisa que terminou (janela fora de foco). Cancelamento não avisa.
     if (!cancelledInRun) {

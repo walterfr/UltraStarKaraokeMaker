@@ -182,6 +182,8 @@ What changed in each version is in the [CHANGELOG](CHANGELOG.en.md). Installers 
 
 MIT. See the [LICENSE](LICENSE) file.
 
+> **Note on third-party models:** USKMaker's source code is licensed under the MIT License. The default forced-alignment acoustic model (`torchaudio.pipelines.MMS_FA`, by Meta AI), downloaded locally at runtime, has weights licensed under **[CC-BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)** (non-commercial use). For commercial use, run with `--aligner whisper`.
+
 ## Acknowledgements & Community
 
 Special thanks to everyone who contributed code, testing, bug reports, feature suggestions, and financial support to make version **1.0.0** possible!

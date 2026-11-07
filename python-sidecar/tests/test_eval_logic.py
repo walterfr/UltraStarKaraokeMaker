@@ -469,6 +469,33 @@ def test_pitch_mod12_nao_perdoa_nota_errada():
     assert m["within_2st_mod12"] < 0.6
     assert m["contour_corr"] < 0
 
+
+def test_cached_alignment_ctc_usa_cache_separado_e_fallback_whisper():
+    import json
+    import tempfile
+    from pathlib import Path
+    from unittest.mock import patch
+    from pipeline.align import WordTiming
+
+    gwords = [{"text": "sol", "start": 1.0, "end": 1.5, "line_index": 0},
+              {"text": "azul", "start": 1.6, "end": 2.0, "line_index": 0}]
+    with tempfile.TemporaryDirectory() as td:
+        cache = Path(td)
+        stem = cache / "vocals.wav"
+        stem.write_bytes(b"")
+        (cache / "align.json").write_text(
+            json.dumps({"words": [{"text": "sol", "start": 9.0, "end": 9.5, "source": "anchor", "score": 0.9}],
+                        "interp_frac": 0.0, "rescue": {"tried": False, "won": False}}),
+            encoding="utf-8",
+        )
+        fake_ctc = [WordTiming(word="sol", start=1.1, end=1.4, score=0.8, source="ctc"),
+                    WordTiming(word="azul", start=1.6, end=1.9, score=0.8, source="ctc")]
+        with patch("pipeline.ctc_align.align_lyrics_ctc_to_audio", return_value=fake_ctc):
+            res = library_replay._cached_alignment(stem, cache, gwords, "pt", "cpu", aligner="ctc")
+        assert res["aligner_used"] == "ctc"
+        assert res["words"][0]["start"] == 1.1
+        assert (cache / "align_ctc.json").exists()
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0
