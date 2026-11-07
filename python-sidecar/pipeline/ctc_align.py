@@ -138,6 +138,7 @@ def build_targets(
 
 MAX_INTRA_WORD_GAP_S = 0.8
 MAX_PREMATURE_PREFIX_S = 0.4
+MIN_TRIMMED_SUFFIX_S = 0.10
 
 
 def _trim_premature_word_prefix(
@@ -150,13 +151,22 @@ def _trim_premature_word_prefix(
     216,2 s; "missing" com "miss" em 88,3 s e "ing" em 93,6 s), descarta o
     prefixo prematuro curto (<= 0,4 s) para a palavra não esticar por segundos
     de silêncio ou melisma da linha anterior.
+
+    Guarda contra melisma real (ex.: "pa~rt", "ri~ng", "keep", "far", "amar"):
+    se a cauda pós-gap (`spans[k+1:]`) tiver duração <= 0,10 s (1-5 quadros,
+    apenas a consoante final fechando a nota sustentada), preserva o início.
     """
     if len(spans) < 2 or frame_s <= 0:
         return spans
     for k in range(len(spans) - 1):
         gap_s = (spans[k + 1][0] - spans[k][1]) * frame_s
         prefix_dur_s = (spans[k][1] - spans[0][0]) * frame_s
-        if gap_s > MAX_INTRA_WORD_GAP_S and prefix_dur_s <= MAX_PREMATURE_PREFIX_S:
+        suffix_dur_s = (spans[-1][1] - spans[k + 1][0]) * frame_s
+        if (
+            gap_s > MAX_INTRA_WORD_GAP_S
+            and prefix_dur_s <= MAX_PREMATURE_PREFIX_S
+            and suffix_dur_s > MIN_TRIMMED_SUFFIX_S
+        ):
             return spans[k + 1 :]
     return spans
 
@@ -716,11 +726,95 @@ def flag_low_confidence_lines(timings: list, threshold: float = LOW_LINE_SCORE) 
     return flagged
 
 
+def _w_get(w, key: str, default=None):
+    return w.get(key, default) if isinstance(w, dict) else getattr(w, key, default)
+
+
 def low_confidence_frac(timings: list) -> float:
     """Fração das palavras em linha de confiança baixa (ou não medidas)."""
     from .align import SOURCE_INTERPOLATED
-    bad = sum(1 for w in timings if w.source in (SOURCE_CTC_LOW, SOURCE_INTERPOLATED))
+    bad = sum(1 for w in timings if _w_get(w, "source") in (SOURCE_CTC_LOW, SOURCE_INTERPOLATED))
     return bad / max(len(timings), 1)
+
+
+def mean_word_score(timings: list) -> float:
+    """Score médio por palavra (0..1)."""
+    if not timings:
+        return 0.0
+    return sum(float(_w_get(w, "score", 0.0) or 0.0) for w in timings) / len(timings)
+
+
+def should_try_whisper_fallback(
+    ctc_timings: list | None,
+    low_frac_threshold: float = 0.20,
+    mean_score_threshold: float = 0.25,
+) -> bool:
+    """
+    Indica quando vale rodar o Whisper para arbitrar contra o CTC (após eventual
+    resgate 4b): quando a fração de baixa confiança passa de `low_frac_threshold`
+    ou o score médio global por palavra fica abaixo de `mean_score_threshold`.
+    """
+    if not ctc_timings:
+        return True
+    return (
+        low_confidence_frac(ctc_timings) > low_frac_threshold
+        or mean_word_score(ctc_timings) < mean_score_threshold
+    )
+
+
+def prefer_whisper_over_ctc(
+    ctc_timings: list | None,
+    whisper_timings: list | None,
+    severe_low_frac: float = 0.35,
+    max_whisper_interp_frac: float = 0.08,
+    min_disagree_score_gap: float = 0.25,
+) -> bool:
+    """
+    Arbitragem entre alinhamento CTC e Whisper sem ground truth (medido em n=54
+    do seed-set):
+      - Se o próprio Whisper colapsou (`w_interp >= c_low`), NUNCA troca o CTC
+        pelo Whisper (evita regressões catastróficas como 4 Non Blondes, Weezer,
+        Beatles I'll Follow The Sun e RHCP By The Way).
+      - Acima de `severe_low_frac` (0,35), aceita o Whisper desde que tenha menos
+        palavras interpoladas que `c_low`.
+      - Em incerteza moderada (`low <= 0,35`), só troca pelo Whisper se o Whisper
+        estiver limpo (`w_interp < max_whisper_interp_frac`, 8%) E, nas palavras
+        em que os dois discordam em > 1,0 s, o score médio do Whisper superar o
+        do CTC em pelo menos `min_disagree_score_gap` (0,25).
+    """
+    from .align import SOURCE_INTERPOLATED
+
+    if not ctc_timings:
+        return bool(whisper_timings)
+    if not whisper_timings:
+        return False
+
+    c_low = low_confidence_frac(ctc_timings)
+    w_interp = sum(
+        1 for w in whisper_timings if _w_get(w, "source") == SOURCE_INTERPOLATED
+    ) / max(len(whisper_timings), 1)
+
+    if w_interp >= c_low and c_low > 0:
+        return False
+    if c_low > severe_low_frac:
+        return w_interp < c_low
+    if w_interp >= max_whisper_interp_frac:
+        return False
+
+    m = min(len(ctc_timings), len(whisper_timings))
+    dis_c, dis_w = [], []
+    for i in range(m):
+        cw, ww = ctc_timings[i], whisper_timings[i]
+        t_c = float(_w_get(cw, "start", 0.0) or 0.0)
+        t_w = float(_w_get(ww, "start", 0.0) or 0.0)
+        if abs(t_c - t_w) > 1.0:
+            dis_c.append(float(_w_get(cw, "score", 0.0) or 0.0))
+            dis_w.append(float(_w_get(ww, "score", 0.0) or 0.0))
+
+    if not dis_c:
+        return False
+    gap = (sum(dis_w) / len(dis_w)) - (sum(dis_c) / len(dis_c))
+    return gap > min_disagree_score_gap
 
 
 def verified_lrc_blocks(

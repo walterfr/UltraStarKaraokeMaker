@@ -590,11 +590,6 @@ def _align_with_ctc(stems, work_path: Path, lyrics_path: str, language: str,
     low = low_confidence_frac(word_timings)
     debug_log(f"ETAPA 4 - CTC concluído. {len(word_timings)} palavras, {100 * low:.1f}% em linha de confiança baixa")
 
-    if low > CTC_FALLBACK_LOW_FRAC:
-        debug_log(f"ETAPA 4 - CTC com {100 * low:.1f}% em linha de confiança baixa, caindo pro Whisper")
-        console.print(t("main.ctc_fallback", pct=100 * low))
-        return None, stems
-
     if low > CTC_RESCUE_LOW_FRAC and not duet:
         console.print(t("main.ctc_rescue4b_try", pct=100 * low))
         debug_log(f"ETAPA 4b (CTC) - resgate: low={low:.2f}, iniciando isolate_lead_vocal")
@@ -1025,17 +1020,43 @@ def run_pipeline(
 
     word_timings = None
     if aligner == "ctc":
-        word_timings, stems = _align_with_ctc(
+        from pipeline.ctc_align import (
+            low_confidence_frac,
+            prefer_whisper_over_ctc,
+            should_try_whisper_fallback,
+        )
+        ctc_timings, stems = _align_with_ctc(
             stems, work_path, lyrics_path, language, device, duet, synced_lyrics_path,
         )
-    if word_timings is None:
+        if ctc_timings is not None and not should_try_whisper_fallback(
+            ctc_timings, low_frac_threshold=CTC_RESCUE_LOW_FRAC,
+        ):
+            word_timings = ctc_timings
+            _report_ctc_alignment(word_timings)
+        else:
+            if ctc_timings is not None:
+                low = low_confidence_frac(ctc_timings)
+                debug_log(f"ETAPA 4 - arbitrando CTC (low={100 * low:.1f}%) com Whisper")
+                console.print(t("main.ctc_fallback", pct=100 * low))
+            whi_timings, whi_stems = _align_with_whisper(
+                stems, source, work_path, lyrics_path, language, device, duet, whisper_model,
+                synced_lyrics_path,
+            )
+            if ctc_timings is None or prefer_whisper_over_ctc(
+                ctc_timings, whi_timings, severe_low_frac=CTC_FALLBACK_LOW_FRAC,
+            ):
+                word_timings, stems = whi_timings, whi_stems
+                _report_whisper_alignment(word_timings)
+            else:
+                debug_log("ETAPA 4 - arbitragem manteve CTC (Whisper com mais interpolacao ou menor confianca)")
+                word_timings = ctc_timings
+                _report_ctc_alignment(word_timings)
+    else:
         word_timings, stems = _align_with_whisper(
             stems, source, work_path, lyrics_path, language, device, duet, whisper_model,
             synced_lyrics_path,
         )
         _report_whisper_alignment(word_timings)
-    else:
-        _report_ctc_alignment(word_timings)
 
     # Checagem de cobertura: avisa se a letra termina muito antes do áudio
     # (refrão repetido escrito só uma vez - erro comum de letras "(2x)").

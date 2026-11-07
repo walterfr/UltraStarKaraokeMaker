@@ -211,6 +211,42 @@ const NOTE_EDGE_PX = 6; // zona de "pegar a borda" para redimensionar
 const MIN_PX_PER_SEC = 8;
 const MAX_PX_PER_SEC = 800;
 
+interface PitchScale {
+  laneTop: number;
+  laneH: number;
+  pMin: number;
+  pMax: number;
+  semitoneH: number;
+  yOfPitch: (p: number) => number;
+}
+
+function computePitchScale(notes: USNote[], canvasH: number): PitchScale {
+  const laneTop = RULER_H + WAVE_H + 6;
+  const laneH = canvasH - laneTop - 4;
+  let pMin = Infinity;
+  let pMax = -Infinity;
+  for (const n of notes) {
+    if (n.pitch < pMin) pMin = n.pitch;
+    if (n.pitch > pMax) pMax = n.pitch;
+  }
+  if (!isFinite(pMin)) {
+    pMin = 0;
+    pMax = 12;
+  }
+  pMin -= 2;
+  pMax += 2;
+  if (pMax - pMin < 12) pMax = pMin + 12;
+  const semitoneH = laneH / (pMax - pMin + 1);
+  return {
+    laneTop,
+    laneH,
+    pMin,
+    pMax,
+    semitoneH,
+    yOfPitch: (p: number) => laneTop + (pMax - p) * semitoneH,
+  };
+}
+
 // Pitch do UltraStar é relativo ao C4 (dó central): pitch 0 = C4 = MIDI 60.
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 function pitchName(pitch: number): string {
@@ -813,23 +849,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     }
 
     // --- faixa de notas: escala de pitch ---
-    const laneTop = RULER_H + WAVE_H + 6;
-    const laneH = h - laneTop - 4;
-    let pMin = Infinity;
-    let pMax = -Infinity;
-    for (const n of s.notes) {
-      if (n.pitch < pMin) pMin = n.pitch;
-      if (n.pitch > pMax) pMax = n.pitch;
-    }
-    if (!isFinite(pMin)) {
-      pMin = 0;
-      pMax = 12;
-    }
-    pMin -= 2;
-    pMax += 2;
-    if (pMax - pMin < 12) pMax = pMin + 12;
-    const semitoneH = laneH / (pMax - pMin + 1);
-    const yOfPitch = (p: number) => laneTop + (pMax - p) * semitoneH;
+    const { laneTop, laneH, pMin, pMax, semitoneH, yOfPitch } = computePitchScale(s.notes, h);
 
     // ------------------------------------------------ piano roll
     const piano = pianoRollRef.current;
@@ -1439,21 +1459,8 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   const noteAt = useCallback((mx: number, my: number): { idx: number; onEdge: boolean } | null => {
     const canvas = canvasRef.current;
     const s = songRef.current;
-    if (!canvas || !s) return null;
-    const h = canvas.clientHeight;
-    const laneTop = RULER_H + WAVE_H + 6;
-    const laneH = h - laneTop - 4;
-    let pMin = Infinity;
-    let pMax = -Infinity;
-    for (const n of s.notes) {
-      if (n.pitch < pMin) pMin = n.pitch;
-      if (n.pitch > pMax) pMax = n.pitch;
-    }
-    if (!isFinite(pMin)) return null;
-    pMin -= 2;
-    pMax += 2;
-    if (pMax - pMin < 12) pMax = pMin + 12;
-    const semitoneH = laneH / (pMax - pMin + 1);
+    if (!canvas || !s || s.notes.length === 0) return null;
+    const { semitoneH, yOfPitch } = computePitchScale(s.notes, canvas.clientHeight);
     const { start, pxPerSec } = viewRef.current;
 
     // percorre de trás pra frente: nota desenhada por cima ganha o clique
@@ -1463,7 +1470,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
       const t1 = beatToSec(s, n.start_beat + n.duration_beats);
       const x = (t0 - start) * pxPerSec;
       const nw = Math.max(3, (t1 - t0) * pxPerSec);
-      const y = laneTop + (pMax - n.pitch) * semitoneH;
+      const y = yOfPitch(n.pitch);
       const nh = Math.max(8, semitoneH - 2);
       if (mx >= x && mx <= x + nw && my >= y && my <= y + nh) {
         return { idx: i, onEdge: mx > x + nw - NOTE_EDGE_PX && nw > NOTE_EDGE_PX * 2 };
@@ -1477,21 +1484,8 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   const notesInRect = useCallback((x0: number, y0: number, x1: number, y1: number): number[] => {
     const canvas = canvasRef.current;
     const s = songRef.current;
-    if (!canvas || !s) return [];
-    const h = canvas.clientHeight;
-    const laneTop = RULER_H + WAVE_H + 6;
-    const laneH = h - laneTop - 4;
-    let pMin = Infinity;
-    let pMax = -Infinity;
-    for (const n of s.notes) {
-      if (n.pitch < pMin) pMin = n.pitch;
-      if (n.pitch > pMax) pMax = n.pitch;
-    }
-    if (!isFinite(pMin)) return [];
-    pMin -= 2;
-    pMax += 2;
-    if (pMax - pMin < 12) pMax = pMin + 12;
-    const semitoneH = laneH / (pMax - pMin + 1);
+    if (!canvas || !s || s.notes.length === 0) return [];
+    const { semitoneH, yOfPitch } = computePitchScale(s.notes, canvas.clientHeight);
     const { start, pxPerSec } = viewRef.current;
     const rx0 = Math.min(x0, x1);
     const rx1 = Math.max(x0, x1);
@@ -1505,7 +1499,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
       const t1 = beatToSec(s, n.start_beat + n.duration_beats);
       const x = (t0 - start) * pxPerSec;
       const nw = Math.max(3, (t1 - t0) * pxPerSec);
-      const y = laneTop + (pMax - n.pitch) * semitoneH;
+      const y = yOfPitch(n.pitch);
       const nh = Math.max(8, semitoneH - 2);
       if (x < rx1 && x + nw > rx0 && y < ry1 && y + nh > ry0) out.push(i);
     }
@@ -1522,38 +1516,8 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
       const rect = piano.getBoundingClientRect();
       const my = e.clientY - rect.top;
 
-      const h = piano.clientHeight;
-      const laneTop = RULER_H + WAVE_H + 6;
-      const laneH = h - laneTop - 4;
-
-      let pMin = Infinity;
-      let pMax = -Infinity;
-
-      for (const n of s.notes) {
-        if (n.pitch < pMin) pMin = n.pitch;
-        if (n.pitch > pMax) pMax = n.pitch;
-      }
-
-      if (!isFinite(pMin)) {
-        pMin = 0;
-        pMax = 12;
-      }
-
-      pMin -= 2;
-      pMax += 2;
-
-      if (pMax - pMin < 12) {
-        pMax = pMin + 12;
-      }
-
-      const semitoneH =
-        laneH / (pMax - pMin + 1);
-
-      const pitch = Math.round(
-        pMax -
-          (my - laneTop - semitoneH / 2) /
-            semitoneH
-      );
+      const { laneTop, pMin, pMax, semitoneH } = computePitchScale(s.notes, piano.clientHeight);
+      const pitch = Math.round(pMax - (my - laneTop - semitoneH / 2) / semitoneH);
 
       if (pitch >= pMin && pitch <= pMax) {
         playPianoPitch(pitch);

@@ -552,7 +552,12 @@ def _cached_alignment(stem: Path, cache: Path, gwords: list[dict],
             with open(aj_ctc, encoding="utf-8") as f:
                 return json.load(f)
 
-        from pipeline.ctc_align import align_lyrics_ctc_to_audio, low_confidence_frac
+        from pipeline.ctc_align import (
+            align_lyrics_ctc_to_audio,
+            low_confidence_frac,
+            prefer_whisper_over_ctc,
+            should_try_whisper_fallback,
+        )
 
         lyrics_path = cache / "lyrics.txt"
         lyrics_path.write_text(gold_lyrics_text(gwords), encoding="utf-8")
@@ -573,14 +578,6 @@ def _cached_alignment(stem: Path, cache: Path, gwords: list[dict],
             return res
 
         low = low_confidence_frac(timings)
-        if low > 0.35:
-            log(f"  ctc low_conf={100 * low:.1f}% > 35% -> fallback whisper...")
-            fb = _cached_alignment(stem, cache, gwords, language, device, aligner="whisper")
-            res = {**fb, "aligner_used": "whisper_fallback_low_conf", "ctc_low_frac": round(low, 3)}
-            with open(aj_ctc, "w", encoding="utf-8") as f:
-                json.dump(res, f, ensure_ascii=False)
-            return res
-
         rescue = {"tried": False, "won": False, "base_interp_frac": round(low, 3)}
         if low > 0.20:
             rescue["tried"] = True
@@ -599,6 +596,15 @@ def _cached_alignment(stem: Path, cache: Path, gwords: list[dict],
             except Exception as e:  # noqa: BLE001
                 rescue["error"] = repr(e)
                 log(f"  rescue (ctc) failed (non-fatal): {e!r}")
+
+        if should_try_whisper_fallback(timings):
+            log(f"  ctc uncertain (low={100 * low:.1f}%) -> arbitrating with whisper...")
+            fb = _cached_alignment(stem, cache, gwords, language, device, aligner="whisper")
+            if prefer_whisper_over_ctc(timings, fb["words"]):
+                res = {**fb, "aligner_used": "whisper_fallback_low_conf", "ctc_low_frac": round(low, 3)}
+                with open(aj_ctc, "w", encoding="utf-8") as f:
+                    json.dump(res, f, ensure_ascii=False)
+                return res
 
         result = {"words": _timings_to_dicts(timings),
                   "interp_frac": round(low, 3),

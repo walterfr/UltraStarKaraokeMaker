@@ -286,6 +286,23 @@ def test_trim_premature_word_prefix_drops_stray_leading_letter_before_long_gap()
     assert tt[0][0][0] == pytest.approx(4.20)
 
 
+def test_trim_premature_word_prefix_preserves_melisma_when_tail_is_only_closing_consonant():
+    from pipeline.ctc_align import spans_to_word_times, word_token_times
+    # "keep" held 1.3s: 'k e e' at 1.00..1.24s, blank during held vowel, closing 'p' at 2.34..2.36s (0.02s <= 0.10s)
+    spans = [
+        (50, 52, 0.8),    # 1.00..1.04s ('k')
+        (52, 57, 0.9),    # 1.04..1.14s ('e')
+        (57, 62, 0.9),    # 1.14..1.24s ('e')
+        (117, 118, 0.1),  # 2.34..2.36s ('p' - 1 frame closing consonant)
+    ]
+    wt = spans_to_word_times(spans, [(0, 4)], frame_s=0.02)
+    assert wt[0] is not None
+    assert wt[0][0] == pytest.approx(1.00)
+    assert wt[0][1] == pytest.approx(2.36)
+    tt = word_token_times(spans, [(0, 4)], frame_s=0.02)
+    assert tt[0][0][0] == pytest.approx(1.00)
+
+
 def test_verified_lrc_blocks_triggers_when_majority_agrees_but_bridge_drifts():
     from pipeline.ctc_align import verified_lrc_blocks
     lrc_lines = [
@@ -309,5 +326,34 @@ def test_verified_lrc_blocks_triggers_when_majority_agrees_but_bridge_drifts():
     assert len(blocks) == 6
 
 
+def test_should_try_whisper_fallback_and_prefer_whisper_over_ctc():
+    from pipeline.align import WordTiming
+    from pipeline.ctc_align import prefer_whisper_over_ctc, should_try_whisper_fallback
 
+    # 1. Confident CTC (low_frac = 0.0, mean_score = 0.8) -> does not trigger Whisper
+    good_ctc = [
+        WordTiming(word="a", start=1.0, end=1.2, score=0.8, source="ctc"),
+        WordTiming(word="b", start=2.0, end=2.2, score=0.8, source="ctc"),
+    ]
+    assert should_try_whisper_fallback(good_ctc) is False
 
+    # 2. Uncertain CTC (mean_score = 0.15 < 0.25) -> triggers Whisper
+    uncertain_ctc = [
+        WordTiming(word="a", start=1.0, end=1.2, score=0.20, source="ctc"),
+        WordTiming(word="b", start=5.0, end=5.2, score=0.10, source="ctc_low"),
+    ]
+    assert should_try_whisper_fallback(uncertain_ctc) is True
+
+    # 3. Whisper collapsed (interp_frac = 0.50 >= c_low = 0.50) -> NEVER switch to Whisper
+    collapsed_whi = [
+        WordTiming(word="a", start=1.0, end=1.2, score=0.70, source="anchor"),
+        WordTiming(word="b", start=2.0, end=2.2, score=0.00, source="interpolated"),
+    ]
+    assert prefer_whisper_over_ctc(uncertain_ctc, collapsed_whi) is False
+
+    # 4. Clean Whisper (interp_frac = 0.0 < 0.08) with much higher score on discordant word -> switch to Whisper
+    clean_whi = [
+        WordTiming(word="a", start=1.0, end=1.2, score=0.75, source="anchor"),
+        WordTiming(word="b", start=2.0, end=2.2, score=0.80, source="anchor"),
+    ]
+    assert prefer_whisper_over_ctc(uncertain_ctc, clean_whi) is True
