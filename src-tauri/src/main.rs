@@ -68,11 +68,6 @@ mod platform;
 #[cfg(windows)]
 use platform::CREATE_NO_WINDOW;
 
-/// Trait que expõe `.creation_flags()` no `std::process::Command` (o do
-/// tokio já traz o método embutido).
-#[cfg(windows)]
-use std::os::windows::process::CommandExt as _;
-
 /// Sidecar Python PERSISTENTE: fica vivo entre músicas para manter os modelos
 /// de IA quentes (ver server.py + caches em pipeline/align.py). O Rust manda
 /// cada job pela stdin e espera o arquivo de status aparecer na pasta de saída.
@@ -955,6 +950,7 @@ fn detect_amd_gpu() -> Option<String> {
 /// Inc. [AMD/ATI]" "Navi 32 [Radeon RX 7700 XT / 7800 XT]" ...` -> o nome
 /// comercial entre colchetes do 4º campo ("AMD Radeon RX 7700 XT / 7800 XT"),
 /// ou o campo inteiro se não houver colchetes.
+#[cfg(any(target_os = "linux", test))]
 fn amd_name_from_lspci(line: &str) -> Option<String> {
     let device = line.split('"').nth(5)?.trim();
     if device.is_empty() {
