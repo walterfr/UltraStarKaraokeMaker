@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { PitchDetector } from "pitchy";
+import { MIC_GAP_S, pushMicSample, type MicSample } from "./micPitch";
 import { useI18n } from "../i18n";
 import LyricTimingPanel from "./LyricTimingPanel";
 import { BufferPlayer, ReviewAudio } from "./bufferPlayer";
@@ -431,9 +432,10 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   const micStreamRef = useRef<MediaStream | null>(null);
   const micAnalyserRef = useRef<AnalyserNode | null>(null);
   const micDetectorRef = useRef<PitchDetector<Float32Array> | null>(null);
-  const micTrailRef = useRef<{ t: number; pitch: number }[]>([]);
-  const MIC_TRAIL_S = 5;
-  const MIC_CLARITY_MIN = 0.9;
+  const micTrailRef = useRef<MicSample[]>([]);
+  // WebView sem getUserMedia (ex.: webkit2gtk no Linux, que nega mídia por
+  // padrão): o botão some em vez de falhar ao clicar.
+  const micSupported = typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
 
   const PIANO_ROLL_W = 92;
 
@@ -696,6 +698,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   // mic NÃO se conecta ao destino (ctx.destination) - só ao analyser -, senão
   // o áudio do microfone tocaria de volta no alto-falante.
   const toggleMic = useCallback(async () => {
+    if (!micSupported) return; // atalho M num WebView sem getUserMedia
     if (micEnabled) {
       micStreamRef.current?.getTracks().forEach((t) => t.stop());
       micStreamRef.current = null;
@@ -1068,13 +1071,13 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     // --- rastro do sing-along (mic), por cima das notas ---
     if (micEnabledRef.current && micTrailRef.current.length > 1) {
       ctx.strokeStyle = "#ff3fa4";
-      ctx.fillStyle = "#ff3fa4";
       ctx.lineWidth = 2;
       ctx.beginPath();
-      micTrailRef.current.forEach((sample, i) => {
+      micTrailRef.current.forEach((sample, i, arr) => {
         const mx = xOf(sample.t);
         const my = yOfPitch(sample.pitch);
-        if (i === 0) ctx.moveTo(mx, my);
+        // pausa na voz = traçado interrompido, não uma reta entre duas notas
+        if (i === 0 || sample.t - arr[i - 1].t > MIC_GAP_S) ctx.moveTo(mx, my);
         else ctx.lineTo(mx, my);
       });
       ctx.stroke();
@@ -1347,15 +1350,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
           const buffer = new Float32Array(analyser.fftSize);
           analyser.getFloatTimeDomainData(buffer);
           const [hz, clarity] = detector.findPitch(buffer, analyser.context.sampleRate);
-          if (clarity >= MIC_CLARITY_MIN && hz > 0) {
-            const midi = 69 + 12 * Math.log2(hz / 440);
-            const pitch = midi - 60; // UltraStar pitch 0 == C4 == MIDI 60
-            micTrailRef.current.push({ t: audio.currentTime, pitch });
-          }
-          const cutoff = audio.currentTime - MIC_TRAIL_S;
-          while (micTrailRef.current.length && micTrailRef.current[0].t < cutoff) {
-            micTrailRef.current.shift();
-          }
+          pushMicSample(micTrailRef.current, hz, clarity, audio.currentTime);
         }
         draw();
       }
@@ -2322,13 +2317,16 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
             <option value="vocals">{t("revListenVocals")}</option>
           </select>
         )}
-        <button
-          className={micEnabled ? "mic-on" : undefined}
-          onClick={() => void toggleMic()}
-          title={t("micToggleHint")}
-        >
-          {t("micToggleLabel")}
-        </button>
+        {micSupported && (
+          <button
+            className={micEnabled ? "mic-on" : undefined}
+            onClick={() => void toggleMic()}
+            title={t("micToggleHint")}
+            aria-pressed={micEnabled}
+          >
+            {t("micToggleLabel")}
+          </button>
+        )}
         {micError && <span className="field-hint">{micError}</span>}
         <span className="toolbar-sep" />
         <label className="inline-label">

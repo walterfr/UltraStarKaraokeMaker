@@ -4,6 +4,16 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [Não lançado]
+
+### Adicionado
+
+- **Sing-along: o microfone desenha o seu pitch em tempo real por cima das notas, na tela de Revisão.** Botão **🎤 Cantar junto** (atalho `M`) na barra de ferramentas: enquanto a música toca, o app capta o microfone, detecta o tom da sua voz (McLeod Pitch Method via `pitchy`) e traça um rastro rosa sobre o piano roll, na mesma escala das notas, para comparar o que você canta com o que a nota pede. Tudo roda localmente na tela: o áudio do microfone só é analisado, nunca gravado nem enviado. Use fones — nos alto-falantes o microfone capta a própria música. Estava em `main` desde 13/09 como "wip", incluído nas versões 2.0.x sem registro aqui.
+
+### Corrigido
+
+- **Sing-along:** o traçado deixa de ligar duas notas com uma reta falsa quando você fica em silêncio; voltar a música (clicar mais atrás) zera o rastro em vez de desenhar uma linha para o "futuro"; só entram leituras na faixa de voz cantada (70–1200 Hz); o botão ligado agora muda de cor (a classe existia mas não tinha estilo); e o botão some em WebViews sem suporte a microfone (ex.: Linux/webkit2gtk), em vez de falhar ao clicar.
+
 ## [2.0.2] - 2026-11-03
 
 ### Corrigido
