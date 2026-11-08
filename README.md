@@ -145,6 +145,11 @@ O pacote resultante contém o `.txt` UltraStar, o áudio `.ogg`/`.mp3`, a capa `
    - **🎤 Cantar junto:** ligue o microfone (atalho `M`) para desenhar sua voz em tempo real sobre as notas e testar a afinação na hora.
    - Salve com segurança: alterações nunca são perdidas em caso de erro, e gerar novamente cria backup `.bak` automático.
 
+### Dicas para outros idiomas (Japonês, Chinês, etc.)
+
+- **Idiomas sem espaços (*scriptio continua*)**: o USKMaker agrupa palavras e notas por espaços (` `). Para músicas em japonês (Kanji/Kana) ou chinês, prefira colar a letra em **Romaji / Pinyin** com espaçamento normal entre palavras. Se colar em caracteres originais, separe manualmente as palavras/morae por espaço (*wakachigaki*), caso contrário cada verso vira uma única palavra e nota gigante.
+- **Primeiro download de modelo acústico**: alfabetos não latinos acionam modelos acústicos dedicados do WhisperX (ex.: ~1,26 GB para japonês). Na primeira vez em que um idioma desses for executado, o download ocorre em segundo plano na etapa *"Alinhar letras com o áudio"* e pode parecer congelado por alguns minutos dependendo da sua conexão; nas músicas seguintes o modelo já fica em cache no disco.
+
 ## Estado do projeto
 
 Funcional de ponta a ponta pela interface gráfica. Todas as etapas de escopo estão concluídas:

@@ -145,6 +145,11 @@ The resulting package contains the UltraStar `.txt`, the `.ogg`/`.mp3` audio, th
    - **🎤 Sing along:** turn on your microphone (shortcut `M`) to draw your live vocal pitch over the notes in real time.
    - Safe saving: edits are never lost on error, and generating again keeps automatic `.bak` backups.
 
+### Tips for other languages (Japanese, Chinese, etc.)
+
+- **Languages without spaces (*scriptio continua*)**: USKMaker segments words and notes by spaces (` `). For songs in Japanese (Kanji/Kana) or Chinese, prefer pasting lyrics in **Romaji / Pinyin** with standard word spacing. If pasting in original characters, separate words/morae manually with spaces (*wakachigaki*), otherwise the entire line is treated as a single oversized note.
+- **Initial acoustic model download**: non-Latin scripts automatically trigger dedicated acoustic models in WhisperX (e.g. ~1.26 GB for Japanese). When running such a language for the first time, the download runs in the background during the *"Aligning lyrics with audio"* step and may appear frozen for a few minutes depending on your internet connection; subsequent songs will reuse the cached model on disk.
+
 ## Project status
 
 Fully functional end to end through the GUI. All scoped milestones are complete:
