@@ -492,7 +492,11 @@ if ($torchFrozen.Count -eq 0) {
 # per-machine extra still gets picked, and no path is mishandled.
 $sepExtra = if ($hasNvidia) { 'gpu' } else { 'cpu' }
 Write-Step "Installing/updating the pipeline dependencies (audio-separator extra [$sepExtra])"
-& $uvExe pip install --python "$venvPython" @upgradeArgs -r "$reqFile" "audio-separator[$sepExtra]>=0.44.0"
+# onnxruntime-gpu: teto <1.21.0 necessário no Windows com CUDA 12 / Torch 2.8+cu126.
+# A partir da 1.21/1.27 o onnxruntime-gpu no PyPI é compilado contra CUDA 13
+# (exige cublasLt64_13.dll que não existe no CUDA 12, caindo silenciosamente para CPU).
+$extraPkgs = if ($hasNvidia) { @("audio-separator[gpu]>=0.44.0", "onnxruntime-gpu<1.21.0") } else { @("audio-separator[cpu]>=0.44.0") }
+& $uvExe pip install --python "$venvPython" @upgradeArgs -r "$reqFile" @extraPkgs
 if ($LASTEXITCODE -ne 0) { Fail "Failed to install the dependencies (requirements.txt + audio-separator[$sepExtra])." }
 
 Remove-Item $constraintsFile -Force -ErrorAction SilentlyContinue

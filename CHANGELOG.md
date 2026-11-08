@@ -4,6 +4,19 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [2.2.0] - 2026-11-08
+
+### Adicionado
+
+- **Arbitragem Guardada entre Alinhador CTC e Whisper:** seleção inteligente entre alinhamento acústico CTC (`MMS_FA`) e Whisper (`large-v3`) com base na taxa de interpolação e pontuação de confiança em palavras discordantes (`dis_sc_gap > 0.25`), evitando substituições quando o Whisper colapsa e elevando a precisão sem intervenção manual.
+- **Dicas para Idiomas sem Espaços (Japonês/Chinês):** orientações e documentação detalhada para processamento de escritas contínuas (*wakachigaki* / Romaji) e aviso sobre o download inicial do modelo acústico do Hugging Face.
+
+### Corrigido
+
+- **Compatibilidade CUDA 12 no ONNX Runtime (GPU):** trava de versão `onnxruntime-gpu<1.21.0` no instalador do ambiente de IA (`setup-sidecar.ps1`), prevenindo que o pacote baixe versões compiladas para CUDA 13 que caíam silenciosamente para a CPU durante o resgate de lead vocal via RoFormer (acelerando o processo de 1h30m para ~15s em GPUs NVIDIA).
+- **Preservação de Início de Notas em Melismas Longos:** adicionada guarda `MIN_TRIMMED_SUFFIX_S = 0.10` em `ctc_align.py` para não descartar a consoante/sílaba inicial antes de vogais prolongadas pós-gap, corrigindo atrasos de alinhamento em músicas com notas sustentadas.
+- **Deduplicação de Escala de Pitch na Revisão:** refatoração de cálculo de limites e escala de pitch centralizada em `computePitchScale` no editor de revisão.
+
 ## [2.1.0] - 2026-11-07
 
 ### Adicionado

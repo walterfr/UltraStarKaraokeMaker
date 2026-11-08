@@ -4,6 +4,19 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [2.2.0] — 2026-11-08
+
+### Added
+
+- **Guarded CTC vs Whisper Arbitration:** intelligent selection between CTC (`MMS_FA`) and Whisper (`large-v3`) alignment based on interpolation fractions and score confidence gap on disagreeing words (`dis_sc_gap > 0.25`), preventing regressions when Whisper collapses and maximizing alignment quality.
+- **Language Guidance for Non-Spaced Scripts (Japanese/Chinese):** comprehensive documentation for continuous script lyrics (*wakachigaki* / Romaji) and initial Hugging Face acoustic model download transparency.
+
+### Fixed
+
+- **CUDA 12 Compatibility in ONNX Runtime (GPU):** pinned `onnxruntime-gpu<1.21.0` in `setup-sidecar.ps1`, preventing installations from pulling CUDA 13 builds that silently degraded to CPU during RoFormer lead vocal separation (cutting runtime from 90+ minutes to ~15 seconds on NVIDIA GPUs).
+- **Melisma Note Prefix Trimming Guard:** added `MIN_TRIMMED_SUFFIX_S = 0.10` guard in `ctc_align.py` to preserve initial syllable onsets preceding extended vowel gaps, eliminating false note shifts on sustained vocals.
+- **Pitch Scale Deduplication in Review Screen:** unified and deduplicated pitch scale bounds calculation into `computePitchScale`.
+
 ## [2.1.0] — 2026-11-07
 
 ### Added
