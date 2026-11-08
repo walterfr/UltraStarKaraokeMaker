@@ -27,8 +27,8 @@ modules:
       - install -Dm644 /app/share/icons/hicolor/128x128/apps/USKMaker.png /app/share/icons/hicolor/128x128/apps/br.com.walterfr.uskmaker.png
     sources:
       - type: file
-        url: https://github.com/walterfr/UltraStarKaraokeMaker/releases/download/v0.29.0/USKMaker_0.29.0_amd64.deb
-        sha256: b82dfefe7dcff083953735d2d3e26447f99243fc6b891e957d1fa6850d0b94a9
+        url: https://github.com/walterfr/UltraStarKaraokeMaker/releases/download/v2.1.0/USKMaker_2.1.0_amd64.deb
+        sha256: 73f2a9ed51ea6e0da057ed8e5af9a04847fac832069850024fdf3dcf0cad7775
         dest-filename: USKMaker.deb
         only-arches:
           - x86_64
