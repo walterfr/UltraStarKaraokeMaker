@@ -4,6 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/walterfr/UltraStarKaraokeMaker?color=blue)](https://github.com/walterfr/UltraStarKaraokeMaker/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-brightgreen)](https://github.com/walterfr/UltraStarKaraokeMaker/releases)
 [![WinGet](https://img.shields.io/badge/winget-walterfr.USKMaker-blue)](https://github.com/microsoft/winget-pkgs/tree/master/manifests/w/walterfr/USKMaker)
+[![Microsoft Store](https://img.shields.io/badge/Microsoft_Store-USKMaker-0078D4?logo=microsoft-store&logoColor=white)](https://apps.microsoft.com/detail/9PM26VDJM55R)
 [![Pacstall](https://img.shields.io/badge/pacstall-uskmaker--deb-blue?logo=gnu-bash&logoColor=white)](https://pacstall.dev)
 [![AppImage](https://img.shields.io/badge/AppImage-x86__64%20(OTA)-2c9784?logo=linux&logoColor=white)](https://github.com/walterfr/UltraStarKaraokeMaker/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/walterfr/UltraStarKaraokeMaker/total?color=success&label=downloads)](https://github.com/walterfr/UltraStarKaraokeMaker/releases)
@@ -61,9 +62,9 @@ O pipeline tem seis etapas:
 
 ## Instalação
 
-### Opção A (Windows) — WinGet ou Instalador (recomendado para uso)
+### Opção A (Windows) — Microsoft Store, WinGet ou Instalador (recomendado para uso)
 
-Instale direto pelo terminal via **Windows Package Manager (WinGet)**:
+Instale direto pela **[Microsoft Store](https://apps.microsoft.com/detail/9PM26VDJM55R)** ou pelo terminal via **Windows Package Manager (WinGet)**:
 
 ```powershell
 winget install walterfr.USKMaker

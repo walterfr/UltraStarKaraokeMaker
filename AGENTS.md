@@ -13,13 +13,15 @@
 - **Release local opcional**: O script `scripts/release.ps1` pode ser usado caso deseje compilar ou testar localmente.
 - **Bump de versão (o `release.ps1` NÃO faz isso)**: alterar à mão `package.json`, `src-tauri/Cargo.toml` e `src-tauri/tauri.conf.json`; o `Cargo.lock` se atualiza sozinho com `cargo check --manifest-path src-tauri/Cargo.toml`. **Nunca fazer substituição global da versão antiga no `Cargo.lock`**: na v2.1.0 isso trocou também `webkit2gtk`, `webkit2gtk-sys` e `proc-macro-crate` (que estavam na 2.0.2), quebrou o CI do Windows (`failed to select a version for the requirement webkit2gtk = "^2" (locked to 2.1.0)`) e obrigou a reescrever o commit da release com push forçado na `main`. Antes de commitar, conferir com `git diff src-tauri/Cargo.lock`: só o bloco `name = "uskmaker"` pode mudar.
 - **Microsoft Store (`UltraStar Karaoke Maker` / `USKMaker`)**:
+  - **Status**: Aprovado e publicado na loja (10/11/2026).
   - **Store ID**: `9PM26VDJM55R`
+  - **URL**: `https://apps.microsoft.com/detail/9PM26VDJM55R`
   - **Package Family Name (PFN)**: `walterfr.UltraStarKaraokeMaker_13vxnhy6xyrz2`
   - **Package Name**: `walterfr.UltraStarKaraokeMaker`
   - **Publisher**: `CN=2D8170EA-4E46-4D87-AB01-FA235CAE3F0D` (`walterfr`)
   - **Formato**: MSIX nativo (`scripts/build-msix.ps1`, MakeAppx do Windows SDK, assinado pela Microsoft Store).
-  - **Submissão Inicial**: enviada em 09/11/2026 (MSIX v2.2.0.0).
-  - **Após aprovação**: adicionar badge oficial da Microsoft Store nos cabeçalhos de `README.md` e `README.en.md` (Store ID: `9PM26VDJM55R`).
+  - **Submissão Inicial**: enviada em 09/11/2026, aprovada em 10/11/2026.
+  - **Badge ativa**: presente nos cabeçalhos de `README.md` e `README.en.md`.
 - **Pendências de Lojas Linux (em `packaging/linux/` e `.github/workflows/publish-linux-repos.yml`)**:
   - **AUR (`uskmaker-bin`) — Pendente (cadastro no AUR temporariamente suspenso)**: Assim que o cadastro reabrir em `https://aur.archlinux.org`, criar conta, registrar chave pública SSH (`ssh-keygen -t ed25519 -f ~/.ssh/aur`) e salvar a chave privada em `AUR_SSH_PRIVATE_KEY` nos Secrets do GitHub (`gh secret set AUR_SSH_PRIVATE_KEY < ~/.ssh/aur`). O workflow `.github/workflows/publish-linux-repos.yml` e o `packaging/linux/aur/PKGBUILD` já estão prontos e publicarão automaticamente.
   - **Snap Store (`uskmaker`) — Pendente (instabilidade no servidor Snapcraft)**: Assim que normalizar em `https://snapcraft.io`, registrar o nome `uskmaker`, exportar credencial (`snapcraft export-login snap.login`) e salvar em `SNAPCRAFT_STORE_CREDENTIALS` nos Secrets do GitHub (`gh secret set SNAPCRAFT_STORE_CREDENTIALS < snap.login`). O manifesto `packaging/linux/snap/snapcraft.yaml` e o workflow já estão prontos.
