@@ -88,3 +88,15 @@ def test_english_colloquial_g_drop_in_words_split_cleanly():
     assert split_word_syllables("wonderin'", "en") == ["won", "der", "in'"]
     assert split_word_syllables("Thinkin'", "en") == ["Think", "in'"]
 
+def test_japanese_kana_splits_into_moras():
+    assert split_word_syllables("どこまでも", "ja") == ["ど", "こ", "ま", "で", "も"]
+    assert split_word_syllables("乗って", "ja") == ["乗っ", "て"]
+    assert split_word_syllables("しょうゆ", "ja") == ["しょ", "う", "ゆ"]
+    assert split_word_syllables("ラーメン", "ja") == ["ラー", "メ", "ン"]
+
+
+def test_cjk_kanji_and_punctuation_preservation():
+    assert split_word_syllables("「今夜」", "ja") == ["「今", "夜」"]
+    assert split_word_syllables("世界、", "ja") == ["世", "界、"]
+    assert split_word_syllables("你好", "zh") == ["你", "好"]
+

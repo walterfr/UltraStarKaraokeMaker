@@ -158,8 +158,61 @@ def count_singer_tagged_lines(lyrics_path: Path) -> int:
     )
 
 
+def is_kana_char(c: str) -> bool:
+    cp = ord(c)
+    return (0x3040 <= cp <= 0x309F) or (0x30A0 <= cp <= 0x30FF)
+
+
+def segment_line_words(line: str, language: str | None = None) -> list[str]:
+    """
+    Segmenta uma linha de letra em palavras.
+    Para idiomas ocidentais/espaçados, equivale a `line.split()`.
+    Para escritas sem espaços (Japonês/Chinês / CJK), aplica segmentação
+    morfológica (wakachigaki via pykakasi para japonês ou por ideograma
+    para chinês) para evitar colapso de versos inteiros em nota única.
+    """
+    if not line:
+        return []
+    from .syllabify import is_cjk_char
+
+    if not any(is_cjk_char(c) for c in line):
+        return line.split()
+
+    lang = (language or "").lower()
+    has_kana = any(is_kana_char(c) for c in line)
+
+    if has_kana or lang == "ja":
+        try:
+            from pykakasi import kakasi
+            kks = kakasi()
+            tokens = [item["orig"].strip() for item in kks.convert(line) if item["orig"].strip()]
+            if tokens:
+                return tokens
+        except Exception:
+            pass
+
+    tokens: list[str] = []
+    buf = ""
+    for c in line:
+        if c.isspace():
+            if buf:
+                tokens.append(buf)
+                buf = ""
+        elif is_cjk_char(c):
+            if buf:
+                tokens.append(buf)
+                buf = ""
+            tokens.append(c)
+        else:
+            buf += c
+    if buf:
+        tokens.append(buf)
+    return tokens
+
+
 def _load_lyrics_words_with_line_ends(
     lyrics_path: Path,
+    language: str | None = None,
 ) -> tuple[list[str], list[bool], list[int]]:
     """
     Lê o arquivo de letra e retorna três listas paralelas:
@@ -184,7 +237,7 @@ def _load_lyrics_words_with_line_ends(
         tag, line = _parse_singer_tag(line)
         if tag is not None:
             current = tag
-        line_words = line.split()
+        line_words = segment_line_words(line, language)
         for i, w in enumerate(line_words):
             words.append(w)
             line_ends.append(i == len(line_words) - 1)
@@ -224,7 +277,7 @@ def parse_lrc(text: str) -> list[tuple[float, str]]:
     return out
 
 
-def _lyric_lines_with_start_index(lyrics_path: Path) -> list[tuple[str, int]]:
+def _lyric_lines_with_start_index(lyrics_path: Path, language: str | None = None) -> list[tuple[str, int]]:
     """
     Retorna, para cada linha NÃO vazia da letra, o par (texto_da_linha,
     índice da PRIMEIRA palavra da linha na lista global de palavras). Usa
@@ -241,7 +294,7 @@ def _lyric_lines_with_start_index(lyrics_path: Path) -> list[tuple[str, int]]:
         # remove a tag de cantor pra o texto casar com o .lrc e os índices
         # baterem com _load_lyrics_words_with_line_ends (que também remove)
         _, line = _parse_singer_tag(line)
-        line_words = line.split()
+        line_words = segment_line_words(line, language)
         if line_words:
             lines.append((line, word_idx))
             word_idx += len(line_words)
@@ -1399,7 +1452,7 @@ def align_lyrics_to_audio(
 
     # 3) Âncoras exatas + fuzzy sobre a letra real.
     real_words, line_end_flags, singer_flags = _load_lyrics_words_with_line_ends(
-        lyrics_path
+        lyrics_path, language
     )
     anchors = compute_anchors(whisper_words, real_words)
 

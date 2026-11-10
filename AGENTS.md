@@ -109,9 +109,10 @@ Tudo em `python-sidecar/eval_runs/` (ignorado pelo git; só existe nesta máquin
 
 ## Ideias Futuras (Backlog)
 
-- **Suporte nativo a escritas sem espaços (Japonês/Chinês)**:
-  - Detectar caracteres CJK na letra e aplicar segmentador morfológico (ex.: `pykakasi`/`fugashi` para japonês) para gerar espaçamento (*wakachigaki*) automaticamente antes da tokenização por espaços em `align.py`, evitando colapso de âncoras e geração de nota única por linha.
-  - Exibir aviso/progresso visual de download na UI quando o WhisperX estiver baixando modelos acústicos pesados (como `wav2vec2-large-xlsr-53-japanese` de 1,26 GB).
+- **Suporte nativo a escritas sem espaços (Japonês/Chinês) (Implementado)**:
+  - Detecta caracteres CJK na letra e aplica segmentador morfológico (*wakachigaki* via `pykakasi` para japonês e por ideograma para chinês) em `align.py` (`segment_line_words`), evitando colapso de âncoras e geração de nota única por linha.
+  - Divisão silábica precisa em moras e ideogramas individuais em `syllabify.py` (`is_cjk_char`, `_SMALL_KANA`).
+  - *Pendente futuro*: Exibir aviso/progresso visual de download na UI quando o WhisperX estiver baixando modelos acústicos pesados (como `wav2vec2-large-xlsr-53-japanese` de 1,26 GB).
 - **Pré-filtro de Redução de Ruído FFT na Voz (`afftdn`) antes do Pitch/Silence**:
   - Passar a faixa vocal isolada (`vocals.wav` do Demucs) por `ffmpeg -af "afftdn=nr=70:nf=-80:tn=1"` (FFT denoise com *noise floor tracking*) antes da extração de pitch e detecção de silêncio, caso vazamentos residuais de pratos/bateria no Demucs alonguem indevidamente finais de notas sustentadas.
 - **Descartado**: Exportação de partitura PDF/MusicXML via MuseScore (desnecessário pois o USKMaker já possui exportação nativa de MIDI com sílabas/letras embutidas compatível com MuseScore e DAWs).

@@ -32,6 +32,20 @@ _LANG_DICTS = {
 }
 _dic_cache: dict[str, pyphen.Pyphen] = {}
 
+_SMALL_KANA = frozenset("ぁぃぅぇぉゃゅょゎァィゥェォャュョヮヵヶっッー")
+
+
+def is_cjk_char(c: str) -> bool:
+    """True se o caractere for Hiragana, Katakana ou ideograma CJK (Kanji/Hanzi)."""
+    cp = ord(c)
+    return (
+        (0x3040 <= cp <= 0x309F)
+        or (0x30A0 <= cp <= 0x30FF)
+        or (0x4E00 <= cp <= 0x9FFF)
+        or (0x3400 <= cp <= 0x4DBF)
+        or (0xF900 <= cp <= 0xFAFF)
+    )
+
 # Contrações faladas e palavras comuns de 2 sílabas que o dicionário tipográfico
 # en_US (TeX) não separa por estética de impressão (prefixos de 1 vogal como
 # "a-round", "o-ver", "e-ven", além de "to-night" e "clo-ver"), mas que no canto
@@ -120,6 +134,20 @@ def split_word_syllables(word: str, language: str | None = None) -> list[str]:
         # própria. Mais seguro manter a palavra inteira como uma sílaba só
         # do que arriscar uma hifenização sem sentido.
         return [leading_punct + core + trailing_punct]
+
+    if any(is_cjk_char(c) for c in core):
+        # Escrita CJK: divide em moras (kana japonês com pequenos kana/sokuon/chōonpu
+        # acoplados) ou ideogramas individuais (kanji/hanzi).
+        syls = []
+        for c in core:
+            if c in _SMALL_KANA and syls:
+                syls[-1] += c
+            else:
+                syls.append(c)
+        if syls:
+            syls[0] = leading_punct + syls[0]
+            syls[-1] = syls[-1] + trailing_punct
+            return syls
 
     lang_low = (language or "").lower()
     cut = _EN_SPLITS.get(core.lower()) if lang_low == "en" else None

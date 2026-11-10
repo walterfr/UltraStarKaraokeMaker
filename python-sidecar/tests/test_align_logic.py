@@ -535,3 +535,29 @@ def test_transcribe_lyrics_mock(monkeypatch, tmp_path):
     lines = transcribe_lyrics(wav_path, language="pt", device="cpu")
     assert lines == ["Primeira linha cantada", "Segunda linha cantada"]
 
+def test_segment_line_words_western():
+    from pipeline.align import segment_line_words
+    assert segment_line_words("I want to break free") == ["I", "want", "to", "break", "free"]
+    assert segment_line_words("  uma linha normal   ") == ["uma", "linha", "normal"]
+
+
+def test_segment_line_words_japanese_wakachigaki():
+    from pipeline.align import segment_line_words
+    # Linha sem espaços em japonês é segmentada morfologicamente
+    res = segment_line_words("今夜の風に乗ってどこまでも行こう")
+    assert len(res) >= 6
+    assert "".join(res) == "今夜の風に乗ってどこまでも行こう"
+    assert "どこまでも" in res
+
+
+def test_segment_line_words_mixed_ascii_japanese():
+    from pipeline.align import segment_line_words
+    res = segment_line_words("Baby 今夜の風に乗って")
+    assert res[0] == "Baby"
+    assert "今夜" in res
+
+
+def test_segment_line_words_chinese_hanzi():
+    from pipeline.align import segment_line_words
+    assert segment_line_words("你好世界我爱唱歌", "zh") == ["你", "好", "世", "界", "我", "爱", "唱", "歌"]
+

@@ -913,7 +913,7 @@ def align_lyrics_ctc_to_audio(
     from .i18n import t as _t
 
     audio = whisperx.load_audio(str(vocals_wav))
-    words, line_ends, singers = A._load_lyrics_words_with_line_ends(lyrics_path)
+    words, line_ends, singers = A._load_lyrics_words_with_line_ends(lyrics_path, language)
     if not words:
         return None
     model, dictionary = ctc_model_for(language, device)
@@ -930,7 +930,7 @@ def align_lyrics_ctc_to_audio(
         lrc_text = Path(synced_lyrics_path).read_text(encoding="utf-8")
         if A.lrc_is_approved(lrc_text):
             approved_lrc = True
-            lyric_lines = A._lyric_lines_with_start_index(lyrics_path)
+            lyric_lines = A._lyric_lines_with_start_index(lyrics_path, language)
             matched = A.match_lrc_to_lines([t for t, _ in lyric_lines], A.parse_lrc(lrc_text))
             starts = [(lyric_lines[li][1], t) for li, t in matched.items()]
             blocks = lrc_blocks(len(words), starts, audio_dur)
@@ -942,7 +942,7 @@ def align_lyrics_ctc_to_audio(
                                       dictionary["-"], return_tokens=True,
                                       sep_id=dictionary.get(SEP_KEY))
     if lrc_text and not approved_lrc and not all(t is None for t in times):
-        lyric_lines = A._lyric_lines_with_start_index(lyrics_path)
+        lyric_lines = A._lyric_lines_with_start_index(lyrics_path, language)
         rescued_blocks = verified_lrc_blocks(
             times, lyric_lines, A.parse_lrc(lrc_text), len(words), audio_dur
         )
@@ -995,6 +995,6 @@ def align_file(vocals_wav: Path, lyrics_path: Path, language: str, device: str =
     from .align import _load_lyrics_words_with_line_ends
 
     audio = whisperx.load_audio(str(vocals_wav))
-    words, line_ends, singers = _load_lyrics_words_with_line_ends(lyrics_path)
+    words, line_ends, singers = _load_lyrics_words_with_line_ends(lyrics_path, language)
     res = align_lyrics_ctc(audio, words, line_ends, language, device, use_star)
     return None if res is None else to_word_timings(words, line_ends, singers, res)
