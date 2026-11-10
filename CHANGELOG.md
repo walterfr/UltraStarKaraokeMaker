@@ -4,6 +4,19 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [2.3.0] - 2026-11-09
+
+### Adicionado
+
+- **Melodia MIDI e Áudio Feedback no Editor de Revisão:**
+  - Botão **🎹 Melodia MIDI** (atalho `P`) na barra de ferramentas: toca as notas do chart com sintetizador em tempo real sincronizado ao playhead, facilitando a conferência auditiva da melodia e afinação contra o áudio da música.
+  - **Feedback sonoro instantâneo**: clicar em notas, arrastar o tom verticalmente ou ajustar pitch com o teclado (`↑`/`↓` ou letras `C` a `B`) agora emite o tom exato da escala musical imediatamente via Web Audio API.
+- **Suporte Nativo a Escritas sem Espaços (Japonês e Chinês):**
+  - Segmentação morfológica automática (*wakachigaki* via `pykakasi` para japonês e por ideogramas para chinês) em `align.py`, dividindo versos contínuos em palavras antes do alinhamento fonético e prevenindo o colapso de frases inteiras em notas únicas.
+  - Divisão silábica por moras em `syllabify.py`, agrupando pequenos kana (`っ`, `ー`, `ょ`, `ゅ`, `ゃ`) e caracteres CJK preservando pontuações de borda.
+- **Empacotamento MSIX Nativo para Windows e Microsoft Store:**
+  - Script automatizado `scripts/build-msix.ps1` com geração de manifestos completos, identidade `walterfr.UltraStarKaraokeMaker` e assets em todas as escalas visuais para publicação oficial na Microsoft Store (Store ID: `9PM26VDJM55R`).
+
 ## [2.2.0] - 2026-11-08
 
 ### Adicionado

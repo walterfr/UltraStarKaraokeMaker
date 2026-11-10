@@ -4,6 +4,19 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [2.3.0] — 2026-11-09
+
+### Added
+
+- **MIDI Melody Synth and Audio Feedback in Review Screen:**
+  - **🎹 MIDI melody** toggle button (shortcut `P`) in the editor toolbar: plays chart notes using a real-time synth oscillator synchronized to playback, enabling instant by-ear verification of pitches and rhythms.
+  - **Instant pitch audio feedback**: clicking notes, dragging pitch vertically, or shifting notes with keyboard shortcuts (`↑`/`↓` or keys `C`–`B`) plays the exact note pitch immediately via the Web Audio API.
+- **Native Support for Non-Spaced Scripts (Japanese & Chinese):**
+  - Automatic morphological word segmentation (*wakachigaki* via `pykakasi` for Japanese, and character ideograms for Chinese) in `align.py`, breaking continuous lines into words prior to phonetic alignment and preventing entire phrases from collapsing into a single note.
+  - Accurate mora-based syllable splitting in `syllabify.py`, correctly clustering small kana (`っ`, `ー`, `ょ`, `ゅ`, `ゃ`) and CJK ideographs while preserving punctuation.
+- **Native MSIX Packaging for Windows & Microsoft Store:**
+  - Dedicated packaging workflow in `scripts/build-msix.ps1` with full app manifests, package identity `walterfr.UltraStarKaraokeMaker`, and high-DPI assets for official submission to the Microsoft Store (Store ID: `9PM26VDJM55R`).
+
 ## [2.2.0] — 2026-11-08
 
 ### Added
