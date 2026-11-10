@@ -268,6 +268,10 @@ button.secondary {
   border-color: #ff3fa4;
   background: rgba(255, 63, 164, 0.15);
 }
+.review-toolbar button.synth-on {
+  border-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.15);
+}
 .toolbar-sep {
   width: 1px;
   height: 22px;

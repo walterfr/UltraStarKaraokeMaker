@@ -375,13 +375,13 @@ type DragMode =
   | { kind: "none" }
   | { kind: "seek" }
   | { kind: "pan"; startX: number; viewStart0: number }
-  | { kind: "move"; noteIdx: number; startX: number; startY: number; beat0: number; pitch0: number }
+  | { kind: "move"; noteIdx: number; startX: number; startY: number; beat0: number; pitch0: number; lastPitch?: number }
   | { kind: "resize"; noteIdx: number; startX: number; dur0: number }
   // Move em BLOCO: várias notas selecionadas, todas somam o MESMO delta de
   // tempo/pitch (não recalcula posição relativa entre elas) - 1 undo pro
   // gesto inteiro (issue #11, pedido de usuário: música com trecho inteiro
   // deslocado, sem jeito de mover tudo de uma vez).
-  | { kind: "moveGroup"; noteIdxs: number[]; startX: number; startY: number; beats0: number[]; pitches0: number[] }
+  | { kind: "moveGroup"; noteIdxs: number[]; startX: number; startY: number; beats0: number[]; pitches0: number[]; lastDPitch?: number }
   // Retângulo de seleção (Shift+arraste no fundo do piano roll).
   | { kind: "rubberband"; startX: number; startY: number; curX: number; curY: number };
 
@@ -473,6 +473,11 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   // padrão): o botão some em vez de falhar ao clicar.
   const micSupported = typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
 
+  const [synthEnabled, setSynthEnabled] = useState(false);
+  const synthEnabledRef = useRef(false);
+  const synthNodesRef = useRef<{ osc: OscillatorNode; gain: GainNode } | null>(null);
+  const activeSynthPitchRef = useRef<number | null>(null);
+
   const PIANO_ROLL_W = 92;
 
   // Fecha o AudioContext do piano roll ao desmontar - sem isso, cada vez que
@@ -483,6 +488,10 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   useEffect(() => {
     return () => {
       micStreamRef.current?.getTracks().forEach((t) => t.stop());
+      try {
+        synthNodesRef.current?.osc.stop();
+        synthNodesRef.current?.osc.disconnect();
+      } catch {}
       pianoAudioRef.current?.close();
     };
   }, []);
@@ -491,6 +500,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   selectedRef.current = selected;
   multiSelectedRef.current = multiSelected;
   micEnabledRef.current = micEnabled;
+  synthEnabledRef.current = synthEnabled;
 
   // Busca a versão aprovada assim que artista/título são conhecidos. Não
   // achar é o caso normal (a maioria das músicas nunca foi conferida), então
@@ -680,7 +690,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     setSelected(null);
   }, []);
 
-  const playPianoPitch = useCallback((pitch: number) => {
+  const playPianoPitch = useCallback((pitch: number, durationSec = 0.3) => {
     const AudioContextClass =
       window.AudioContext ||
       (
@@ -708,24 +718,37 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     const oscillator = ctx.createOscillator();
     const gain = ctx.createGain();
 
-    oscillator.type = "square";
+    oscillator.type = "triangle";
     oscillator.frequency.value = frequency;
 
     gain.gain.setValueAtTime(0.0001, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(
-      0.8,
+      0.5,
       ctx.currentTime + 0.01
     );
     gain.gain.exponentialRampToValueAtTime(
       0.0001,
-      ctx.currentTime + 1
+      ctx.currentTime + durationSec
     );
 
     oscillator.connect(gain);
     gain.connect(ctx.destination);
 
     oscillator.start();
-    oscillator.stop(ctx.currentTime + 1);
+    oscillator.stop(ctx.currentTime + durationSec);
+  }, []);
+
+  const toggleSynth = useCallback(() => {
+    setSynthEnabled((prev) => {
+      const next = !prev;
+      synthEnabledRef.current = next;
+      if (!next && synthNodesRef.current) {
+        const { gain } = synthNodesRef.current;
+        gain.gain.setTargetAtTime(0, gain.context.currentTime, 0.015);
+        activeSynthPitchRef.current = null;
+      }
+      return next;
+    });
   }, []);
 
   // Liga/desliga o microfone pro sing-along. Reusa o MESMO AudioContext do
@@ -1372,6 +1395,64 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
           const [hz, clarity] = detector.findPitch(buffer, analyser.context.sampleRate);
           pushMicSample(micTrailRef.current, hz, clarity, audio.currentTime);
         }
+        const s = songRef.current;
+        // Melodia MIDI (Synth): se ativado e tocando, toca a nota da melodia em tempo real
+        if (synthEnabledRef.current && !audio.paused && s && s.notes.length > 0) {
+          const t = audio.currentTime;
+          let curNote: USNote | null = null;
+          for (let i = 0; i < s.notes.length; i++) {
+            const n = s.notes[i];
+            const t0 = beatToSec(s, n.start_beat);
+            if (t0 > t) break;
+            const t1 = beatToSec(s, n.start_beat + n.duration_beats);
+            if (t >= t0 && t < t1) {
+              curNote = n;
+              break;
+            }
+          }
+
+          if (!pianoAudioRef.current) {
+            const AudioContextClass =
+              window.AudioContext ||
+              (
+                window as typeof window & {
+                  webkitAudioContext?: typeof AudioContext;
+                }
+              ).webkitAudioContext;
+            if (AudioContextClass) pianoAudioRef.current = new AudioContextClass();
+          }
+          const ctx = pianoAudioRef.current;
+          if (ctx) {
+            if (ctx.state === "suspended") void ctx.resume();
+            if (!synthNodesRef.current) {
+              const osc = ctx.createOscillator();
+              const gain = ctx.createGain();
+              osc.type = "triangle";
+              gain.gain.setValueAtTime(0, ctx.currentTime);
+              osc.connect(gain);
+              gain.connect(ctx.destination);
+              osc.start();
+              synthNodesRef.current = { osc, gain };
+            }
+            const { osc, gain } = synthNodesRef.current;
+            if (curNote && curNote.note_type !== "F") {
+              const midi = curNote.pitch + 60;
+              const freq = 440 * Math.pow(2, (midi - 69) / 12);
+              if (activeSynthPitchRef.current !== curNote.pitch) {
+                activeSynthPitchRef.current = curNote.pitch;
+                osc.frequency.setValueAtTime(freq, ctx.currentTime);
+              }
+              gain.gain.setTargetAtTime(0.25, ctx.currentTime, 0.015);
+            } else {
+              activeSynthPitchRef.current = null;
+              gain.gain.setTargetAtTime(0, ctx.currentTime, 0.015);
+            }
+          }
+        } else if (synthNodesRef.current) {
+          const { gain } = synthNodesRef.current;
+          gain.gain.setTargetAtTime(0, gain.context.currentTime, 0.015);
+          activeSynthPitchRef.current = null;
+        }
         draw();
       }
       rafRef.current = requestAnimationFrame(tick);
@@ -1548,6 +1629,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
       if (hit) {
         setSelected(hit.idx);
         selectedRef.current = hit.idx;
+        playPianoPitch(s.notes[hit.idx].pitch, 0.3);
 
         if (e.shiftKey) {
           // Shift+clique: alterna a nota no grupo, sem iniciar arraste - o
@@ -1644,10 +1726,15 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
       } else if (drag.kind === "move") {
         const dBeats = Math.round((mx - drag.startX) / pxPerSec / beatDur);
         const dPitch = -Math.round((my - drag.startY) / 12);
+        const newPitch = drag.pitch0 + dPitch;
+        if (drag.lastPitch !== newPitch) {
+          drag.lastPitch = newPitch;
+          playPianoPitch(newPitch, 0.2);
+        }
         mutate((d) => {
           const n = d.notes[drag.noteIdx];
           n.start_beat = drag.beat0 + dBeats;
-          n.pitch = drag.pitch0 + dPitch;
+          n.pitch = newPitch;
         }, false); // snapshot já foi feito no mousedown
       } else if (drag.kind === "resize") {
         const dBeats = Math.round((mx - drag.startX) / pxPerSec / beatDur);
@@ -1660,6 +1747,12 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
         // recalcula posição relativa entre elas, só desloca o bloco inteiro.
         const dBeats = Math.round((mx - drag.startX) / pxPerSec / beatDur);
         const dPitch = -Math.round((my - drag.startY) / 12);
+        if (drag.lastDPitch !== dPitch) {
+          drag.lastDPitch = dPitch;
+          if (drag.pitches0.length > 0) {
+            playPianoPitch(drag.pitches0[0] + dPitch, 0.2);
+          }
+        }
         const { noteIdxs, beats0, pitches0 } = drag;
         mutate((d) => {
           noteIdxs.forEach((idx, i) => {
@@ -1764,6 +1857,11 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
         void toggleMic();
         return;
       }
+      if (e.key.toLowerCase() === "p") {
+        e.preventDefault();
+        toggleSynth();
+        return;
+      }
 
       const sel = selectedRef.current;
       const s = songRef.current;
@@ -1838,10 +1936,12 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
               d.notes[idx].pitch += delta;
             }
           });
+          playPianoPitch(s.notes[idxs[0]].pitch + delta, 0.25);
         } else {
           mutate((d) => {
             d.notes[sel].pitch += delta;
           });
+          playPianoPitch(s.notes[sel].pitch + delta, 0.25);
         }
       } else if (
         !e.ctrlKey &&
@@ -2291,6 +2391,14 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
             {t("micToggleLabel")}
           </button>
         )}
+        <button
+          className={synthEnabled ? "synth-on" : undefined}
+          onClick={toggleSynth}
+          title={t("synthToggleHint")}
+          aria-pressed={synthEnabled}
+        >
+          {t("synthToggleLabel")}
+        </button>
         {micError && <span className="field-hint">{micError}</span>}
         <span className="toolbar-sep" />
         <label className="inline-label">
