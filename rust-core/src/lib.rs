@@ -6,6 +6,8 @@
 //! incorporado ao src-tauri/.
 
 pub mod midi_writer;
+pub mod tags;
 pub mod ultrastar_writer;
 
+pub use tags::{read_audio_tags, AudioTags};
 pub use ultrastar_writer::{Note, NoteOverlap, Song};

@@ -2153,31 +2153,22 @@ async fn fetch_netease_lyrics(
 }
 /// Lê as tags básicas (título/artista/álbum/ano/gênero) de um arquivo de
 /// áudio local, para o app pré-preencher o formulário ao selecionar o arquivo.
-/// Roda o leitor leve `read_tags.py` (só mutagen) no python do sidecar e
-/// devolve o JSON como está. É uma conveniência: se o ambiente ainda não foi
-/// configurado (sem venv) ou algo falhar, o frontend simplesmente ignora.
-/// `async` + tokio: um comando Tauri sem `async` roda na THREAD PRINCIPAL, a
-/// mesma que desenha a janela - esperar o Python aqui congelava a interface
-/// enquanto o YouTube respondia (segundos; um download de vídeo, bem mais).
+/// Lê nativamente em Rust via lofty (uskmaker-core) em thread separada com tokio,
+/// instantâneo (~2 ms) e sem exigir o Python ou sidecar configurado.
 #[tauri::command]
 async fn read_audio_tags(
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     path: String,
-    lang: String,
+    _lang: String,
 ) -> Result<serde_json::Value, String> {
-    let (code_dir, python_exe) = resolve_sidecar(&app, &lang)?;
-    let script = code_dir.join("read_tags.py");
+    let p = path.clone();
+    let tags = tokio::task::spawn_blocking(move || {
+        uskmaker_core::read_audio_tags(&p)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
 
-    let mut cmd = Command::new(&python_exe);
-    cmd.arg(&script).arg(&path);
-    #[cfg(windows)]
-    cmd.creation_flags(CREATE_NO_WINDOW);
-
-    let output = cmd.output().await.map_err(|e| tr_err(&lang, "read_tags", &e))?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    // read_tags.py nunca sai com traceback (imprime {} em erro); mesmo assim,
-    // se a saída não for JSON válido, devolvemos um objeto vazio.
-    Ok(serde_json::from_str(stdout.trim()).unwrap_or_else(|_| serde_json::json!({})))
+    Ok(serde_json::to_value(tags).unwrap_or_else(|_| serde_json::json!({})))
 }
 
 /// Baixa os assets faltantes (capa/fundo/vídeo) de um pacote já existente.

@@ -17,5 +17,6 @@ name = "uskmaker-writer"
 path = "src/main.rs"
 
 [dependencies]
+lofty = "0.25.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
