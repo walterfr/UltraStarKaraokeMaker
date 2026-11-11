@@ -200,7 +200,7 @@ function lrcLastSungSecond(lrc: string): number | null {
     const stamps = [...raw.matchAll(/\[(\d+):(\d{1,2})(?:[.:](\d{1,3}))?\]/g)];
     if (!stamps.length) continue;
     const tail = stamps[stamps.length - 1];
-    const after = raw.slice((tail.index ?? 0) + tail[0].length).trim();
+    const after = raw.slice((tail.index ?? 0) + tail[0].length).replace(/<[^>]*>/g, '').trim();
     if (!after) continue;
     for (const m of stamps) {
       const secs =
@@ -230,7 +230,7 @@ function fmtMMSS(seconds: number): string {
 function lrcToPlain(lrc: string): string {
   return lrc
     .split("\n")
-    .map((l) => l.replace(/\[[^\]]*\]/g, "").trim())
+    .map((l) => l.replace(/\[[^\]]*\]/g, "").replace(/<[^>]*>/g, "").trim())
     .filter(Boolean)
     .join("\n");
 }

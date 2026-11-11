@@ -247,6 +247,7 @@ def _load_lyrics_words_with_line_ends(
 
 
 _LRC_TS_RE = re.compile(r"\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]")
+_ENHANCED_TS_RE = re.compile(r"<(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?>")
 
 
 def parse_lrc(text: str) -> list[tuple[float, str]]:
@@ -256,6 +257,7 @@ def parse_lrc(text: str) -> list[tuple[float, str]]:
     ([ar:], [ti:], [length:] etc. - o "tag" ali dentro é alfabético, não um
     timestamp) e linhas sem texto (só o timestamp). Uma mesma linha pode ter
     vários timestamps (refrão repetido) - cada um vira uma entrada.
+    Higieniza e remove tags intra-linha <mm:ss.xx> (Enhanced LRC / Karaokê).
     """
     out: list[tuple[float, str]] = []
     for raw in text.splitlines():
@@ -266,13 +268,51 @@ def parse_lrc(text: str) -> list[tuple[float, str]]:
         content = raw[stamps[-1].end():].strip()
         if not content:
             continue
+        # Limpa timestamps intra-linha do formato Enhanced LRC (<mm:ss.xx>)
+        clean_content = _ENHANCED_TS_RE.sub("", content)
+        clean_content = " ".join(clean_content.split())
+        if not clean_content:
+            continue
         for m in stamps:
             minutes = int(m.group(1))
             seconds = int(m.group(2))
             frac_raw = m.group(3) or "0"
             # normaliza a fração para milissegundos (2 dígitos = centésimos)
             frac = float(f"0.{frac_raw}")
-            out.append((minutes * 60 + seconds + frac, content))
+            out.append((minutes * 60 + seconds + frac, clean_content))
+    out.sort(key=lambda p: p[0])
+    return out
+
+
+def parse_enhanced_lrc_words(text: str) -> list[tuple[float, str]]:
+    """
+    Extrai timestamps no nível de palavra de um Enhanced LRC (<mm:ss.xx> Palavra).
+    Retorna lista ordenada de (segundos, palavra).
+    """
+    out: list[tuple[float, str]] = []
+    for raw in text.splitlines():
+        stamps = list(_LRC_TS_RE.finditer(raw))
+        if not stamps:
+            continue
+        content = raw[stamps[-1].end():].strip()
+        if not content or "<" not in content:
+            continue
+        tokens = re.split(r"(<(?:\d{1,2}):(?:\d{2})(?:[.:](?:\d{1,3}))?>)", content)
+        current_ts: float | None = None
+        for tok in tokens:
+            tok = tok.strip()
+            if not tok:
+                continue
+            m = _ENHANCED_TS_RE.match(tok)
+            if m:
+                minutes = int(m.group(1))
+                seconds = int(m.group(2))
+                frac_raw = m.group(3) or "0"
+                frac = float(f"0.{frac_raw}")
+                current_ts = minutes * 60 + seconds + frac
+            elif current_ts is not None:
+                for w in tok.split():
+                    out.append((current_ts, w))
     out.sort(key=lambda p: p[0])
     return out
 

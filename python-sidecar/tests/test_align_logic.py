@@ -24,6 +24,7 @@ from pipeline.align import (
     demote_anchors_conflicting_with_lrc,
     lrc_duration_mismatch,
     match_lrc_to_lines,
+    parse_enhanced_lrc_words,
     parse_lrc,
     seed_line_anchors,
     _fuzzy_pairs,
@@ -560,4 +561,35 @@ def test_segment_line_words_mixed_ascii_japanese():
 def test_segment_line_words_chinese_hanzi():
     from pipeline.align import segment_line_words
     assert segment_line_words("你好世界我爱唱歌", "zh") == ["你", "好", "世", "界", "我", "爱", "唱", "歌"]
+
+
+def test_parse_lrc_standard():
+    raw = "[00:10.50] Primeira linha\n[00:15.20] Segunda linha"
+    parsed = parse_lrc(raw)
+    assert len(parsed) == 2
+    assert parsed[0] == (10.50, "Primeira linha")
+    assert parsed[1] == (15.20, "Segunda linha")
+
+
+def test_parse_enhanced_lrc_cleans_tags_and_extracts_words():
+    raw = (
+        "[00:05.00] <00:05.00> Hoje <00:05.50> a <00:06.10> noite\n"
+        "[00:10.00] <00:10.00> O <00:10.30> ceu <00:10.80> claro"
+    )
+    # parse_lrc limpa tags <mm:ss.xx> do texto da linha
+    lines = parse_lrc(raw)
+    assert len(lines) == 2
+    assert lines[0] == (5.0, "Hoje a noite")
+    assert lines[1] == (10.0, "O ceu claro")
+
+    # parse_enhanced_lrc_words extrai tempos por palavra
+    words = parse_enhanced_lrc_words(raw)
+    assert len(words) == 6
+    assert words[0] == (5.0, "Hoje")
+    assert words[1] == (5.5, "a")
+    assert words[2] == (6.1, "noite")
+    assert words[3] == (10.0, "O")
+    assert words[4] == (10.3, "ceu")
+    assert words[5] == (10.8, "claro")
+
 
