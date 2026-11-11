@@ -4,6 +4,20 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [2.4.0] - 2026-11-10
+
+### Adicionado
+
+- **Leitura Nativa de Tags e Duração de Áudio em Rust (`lofty`):**
+  - Leitura instantânea (<2 ms) de metadados de áudio (título, artista, álbum, ano, gênero e duração) diretamente no Rust (`uskmaker-core`) com a crate `lofty`.
+  - Elimina overhead de subprocesso Python e funciona imediatamente ao selecionar arquivos locais, inclusive antes de configurar o ambiente de IA.
+- **Suporte a Enhanced LRC (Karaokê por Palavra):**
+  - Higienização e remoção automática de tags de timestamp intra-linha (`<mm:ss.xx>`) no frontend e no sidecar (`align.py`), impedindo que marcações de karaokê poluam a letra.
+  - Parser dedicado `parse_enhanced_lrc_words` para extração de âncoras acústicas finas no nível de palavra.
+- **Automação de Pacote MSIX para a Microsoft Store no CI:**
+  - Inclusão do passo de empacotamento com `MakeAppx` no workflow `.github/workflows/build-windows.yml`.
+  - O pacote `USKMaker_vX.Y.Z.0_x64.msix` agora é compilado e anexado automaticamente a cada Release do GitHub.
+
 ## [2.3.0] - 2026-11-09
 
 ### Adicionado
