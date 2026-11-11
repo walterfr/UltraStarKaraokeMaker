@@ -117,4 +117,8 @@ Tudo em `python-sidecar/eval_runs/` (ignorado pelo git; só existe nesta máquin
   - *Pendente futuro*: Exibir aviso/progresso visual de download na UI quando o WhisperX estiver baixando modelos acústicos pesados (como `wav2vec2-large-xlsr-53-japanese` de 1,26 GB).
 - **Pré-filtro de Redução de Ruído FFT na Voz (`afftdn`) antes do Pitch/Silence**:
   - Passar a faixa vocal isolada (`vocals.wav` do Demucs) por `ffmpeg -af "afftdn=nr=70:nf=-80:tn=1"` (FFT denoise com *noise floor tracking*) antes da extração de pitch e detecção de silêncio, caso vazamentos residuais de pratos/bateria no Demucs alonguem indevidamente finais de notas sustentadas.
+- **Oportunidades inspiradas no `lrcget` (LRCLIB client)**:
+  - **Parser nativo de tags de áudio em Rust (`lofty` / `symphonia`)**: Substituir ou acelerar a leitura de metadados em lote (`read_tags.py`) diretamente pelo Rust no `rust-core`/Tauri, permitindo varreduras instantâneas de pastas de áudio locais sem overhead de subprocesso Python.
+  - **Enhanced LRC (Karaokê por palavra / sílaba `<mm:ss.xx>`)**: O LRCLIB suporta timestamps no nível de palavra em faixas enriquecidas pela comunidade. Extrair e converter essas âncoras finas para guiar o alinhamento de sílabas quando o `.lrc` contiver marcação intra-linha.
+  - **Identificação do Client na API LRCLIB**: Mantido atualizado com a versão corrente em `src/App.tsx` (`USKMaker/vX.Y.Z`).
 - **Descartado**: Exportação de partitura PDF/MusicXML via MuseScore (desnecessário pois o USKMaker já possui exportação nativa de MIDI com sílabas/letras embutidas compatível com MuseScore e DAWs).

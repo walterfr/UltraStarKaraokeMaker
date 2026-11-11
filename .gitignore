@@ -43,7 +43,9 @@ target/
 node_modules/
 dist/
 
-# --- IDE / SO ---
+# --- Pacotes e instaladores gerados ---
+*.msix
+packaging/msix/staging/
 .vscode/
 .idea/
 Thumbs.db

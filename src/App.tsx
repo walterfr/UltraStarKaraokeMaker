@@ -39,8 +39,8 @@ async function lrclibGet<T>(
         method: "GET",
         // o LRCLIB pede que clientes se identifiquem
         headers: {
-          "Lrclib-Client": "USKMaker/0.25.2 (https://github.com/walterfr/UltraStarKaraokeMaker)",
-          "User-Agent": "USKMaker/0.25.2 (https://github.com/walterfr/UltraStarKaraokeMaker)",
+          "Lrclib-Client": "USKMaker/2.3.0 (https://github.com/walterfr/UltraStarKaraokeMaker)",
+          "User-Agent": "USKMaker/2.3.0 (https://github.com/walterfr/UltraStarKaraokeMaker)",
         },
         signal: AbortSignal.timeout(12_000),
       });
