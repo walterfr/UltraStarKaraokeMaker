@@ -68,8 +68,8 @@ jobs:
       - name: Instalar dependências do front-end
         run: npm ci
 
-      - name: Checar tipos (TypeScript)
-        run: npx tsc --noEmit
+      - name: Build do front-end (dist)
+        run: npm run build
 
       - name: Testes do rust-core
         run: cargo test --manifest-path rust-core/Cargo.toml
