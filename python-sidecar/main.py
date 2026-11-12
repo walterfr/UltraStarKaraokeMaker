@@ -552,7 +552,8 @@ def split_duet_artists(artist: str) -> tuple[str | None, str | None]:
 
 
 def _align_with_ctc(stems, work_path: Path, lyrics_path: str, language: str,
-                    device: str, duet: bool, synced_lyrics_path: str | None):
+                    device: str, duet: bool, synced_lyrics_path: str | None,
+                    strict_lrc: bool = False):
     """
     Etapa 4 pelo CTC global (pipeline/ctc_align.py): a letra inteira alinhada
     de uma vez, sem Whisper. Devolve (word_timings, stems), ou (None, stems)
@@ -577,6 +578,7 @@ def _align_with_ctc(stems, work_path: Path, lyrics_path: str, language: str,
     try:
         word_timings = align_lyrics_ctc_to_audio(
             stems.vocals, Path(lyrics_path), language, device, synced_lyrics_path=synced,
+            strict_lrc=strict_lrc,
         )
     except Exception as e:
         debug_log(f"ETAPA 4 - CTC falhou, caindo pro Whisper: {e!r}")
@@ -597,6 +599,7 @@ def _align_with_ctc(stems, work_path: Path, lyrics_path: str, language: str,
             lead_vocals = isolate_lead_vocal(stems.vocals, work_path / "lead_vocal")
             retry = align_lyrics_ctc_to_audio(
                 lead_vocals, Path(lyrics_path), language, device, synced_lyrics_path=synced,
+                strict_lrc=strict_lrc,
             )
             retry_low = low_confidence_frac(retry) if retry else 1.0
             debug_log(f"ETAPA 4b (CTC) - baixa confiança: demucs={low:.3f} lead={retry_low:.3f}")
@@ -627,7 +630,8 @@ def _report_ctc_alignment(word_timings) -> None:
 
 def _align_with_whisper(stems, source, work_path: Path, lyrics_path: str, language: str,
                         device: str, duet: bool, whisper_model: str,
-                        synced_lyrics_path: str | None):
+                        synced_lyrics_path: str | None,
+                        strict_lrc: bool = False):
     """
     Etapa 4 pelo caminho do Whisper (align.align_lyrics_to_audio) + os resgates
     4b/4d/4c. É o alinhador de antes do CTC global, e o fallback dele quando a
@@ -648,6 +652,7 @@ def _align_with_whisper(stems, source, work_path: Path, lyrics_path: str, langua
         stems.vocals, Path(lyrics_path), language=language, device=device, whisper_device=whisper_device,
         whisper_model_size=whisper_model_size,
         synced_lyrics_path=Path(synced_lyrics_path) if synced_lyrics_path else None,
+        strict_lrc=strict_lrc,
     )
     debug_log(f"ETAPA 4 - concluída. {len(word_timings)} palavras")
 
@@ -885,6 +890,7 @@ def run_pipeline(
     aligner: str = DEFAULT_ALIGNER,
     creator: str | None = None,
     app_version: str | None = None,
+    strict_lrc: bool = False,
 ):
     global _debug_log_path
 
@@ -1027,6 +1033,7 @@ def run_pipeline(
         )
         ctc_timings, stems = _align_with_ctc(
             stems, work_path, lyrics_path, language, device, duet, synced_lyrics_path,
+            strict_lrc=strict_lrc,
         )
         if ctc_timings is not None and not should_try_whisper_fallback(
             ctc_timings, low_frac_threshold=CTC_RESCUE_LOW_FRAC,
@@ -1041,6 +1048,7 @@ def run_pipeline(
             whi_timings, whi_stems = _align_with_whisper(
                 stems, source, work_path, lyrics_path, language, device, duet, whisper_model,
                 synced_lyrics_path,
+                strict_lrc=strict_lrc,
             )
             if ctc_timings is None or prefer_whisper_over_ctc(
                 ctc_timings, whi_timings, severe_low_frac=CTC_FALLBACK_LOW_FRAC,
@@ -1055,6 +1063,7 @@ def run_pipeline(
         word_timings, stems = _align_with_whisper(
             stems, source, work_path, lyrics_path, language, device, duet, whisper_model,
             synced_lyrics_path,
+            strict_lrc=strict_lrc,
         )
         _report_whisper_alignment(word_timings)
 
@@ -1414,6 +1423,8 @@ if __name__ == "__main__":
         default=None,
         help="Arquivo .lrc (letra sincronizada, ex.: LRCLIB) para semear âncoras de início de linha",
     )
+    parser.add_argument("--strict-lrc", action="store_true",
+                        help="Força limites estritos de linha pelo .lrc (trava o alinhamento de versos; anti-colapso Rock/Metal)")
     parser.add_argument("--audio-format", default="ogg", choices=["ogg", "mp3"],
                         help="Formato de saída de todos os áudios do pacote")
     parser.add_argument("--max-video-resolution", type=int, default=0,
@@ -1466,6 +1477,7 @@ if __name__ == "__main__":
             aligner=args.aligner,
             creator=args.creator,
             app_version=args.app_version,
+            strict_lrc=args.strict_lrc,
         )
     except Exception:
         debug_log("EXCEÇÃO NÃO TRATADA:\n" + traceback.format_exc())

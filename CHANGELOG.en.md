@@ -4,6 +4,22 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [2.5.0] — 2026-11-12
+
+### Added
+
+- **Strict Line Boundaries from .lrc & Anti-Collapse Guard (Rock/Metal):**
+  - **Line Collapse Detection & Automatic Rescue (`detect_line_collapse`)**: automatically identifies when unconstrained CTC alignment compresses distinct `.lrc` lines into under 0.8s (a frequent issue in screaming, distorted vocals, Rock and Heavy Metal). Triggers block-constrained alignment (`lrc_blocks`) to stop entire verses from piling up in fractions of a second.
+  - **Automatic Approval for Manually Pasted `.lrc`**: manually provided or pasted `.lrc` files are now immediately tagged as authoritative (`[uskmapproved:1]`), ensuring human-verified line timings guide the alignment without being discarded by agreement heuristics.
+  - **UI Option (Anti-Collapse Toggle)**: new *"Strict .lrc line boundaries (Anti-collapse Rock/Metal)"* setting in the main screen with persistence, allowing users to strictly lock verse boundaries to `.lrc` markers.
+
+### Fixed
+
+- **Microsoft Store Certification Compliance (MSIX / DisplayName / Offline):**
+  - Unified `<DisplayName>` and `<uap:VisualElements DisplayName>` in `AppxManifest.xml` to match the Store reserved listing name (`USKMaker`), satisfying Store policy 10.1.1.1.
+  - Enabled `default = ["custom-protocol"]` in `src-tauri/Cargo.toml` to guarantee offline production asset embedding in the MSIX executable, resolving the non-functional page error (`localhost refused to connect` / policy 10.1.2.10).
+  - Fixed `TargetDeviceFamily.MinVersion` to `10.0.17763.0` in `build-msix.ps1`, eliminating Store package validation errors.
+
 ## [2.4.0] — 2026-11-10
 
 ### Added

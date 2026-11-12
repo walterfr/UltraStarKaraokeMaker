@@ -151,6 +151,7 @@ def _run_one(job: dict) -> None:
                     aligner=job.get("aligner", pipeline_main.DEFAULT_ALIGNER),
                     app_version=job.get("app_version"),
                     creator=job.get("creator"),
+                    strict_lrc=job.get("strict_lrc", False),
                 )
             status_path.write_text(json.dumps({"status": "ok"}), encoding="utf-8")
         except Exception as e:

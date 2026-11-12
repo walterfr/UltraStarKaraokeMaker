@@ -290,6 +290,9 @@ struct PipelineInput {
     /// ("confirm you're not a bot"). Vazio = desligado (o default de sempre).
     #[serde(default)]
     yt_cookies_browser: String,
+    /// Travar limites de linha estritos pelo .lrc (anti-colapso Rock/Metal).
+    #[serde(default)]
+    strict_lrc: bool,
 }
 
 /// Env que o sidecar lê para os cookies do YouTube (pipeline/proc_utils.py,
@@ -713,6 +716,7 @@ async fn run_pipeline(
         "transcribe": input.transcribe,
         "romanize": input.romanize,
         "synced_lyrics_path": synced_path.as_ref().map(|p| p.to_string_lossy().to_string()),
+        "strict_lrc": input.strict_lrc,
         "audio_format": input.audio_format,
         "max_video_resolution": input.max_video_resolution,
         "yt_cookies_browser": input.yt_cookies_browser,

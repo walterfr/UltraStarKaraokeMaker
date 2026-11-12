@@ -1464,6 +1464,7 @@ def align_lyrics_to_audio(
     synced_lyrics_path: Path | None = None,
     vad_options: dict | None = None,
     whisper_device: str | None = None,
+    strict_lrc: bool = False,
 ) -> list[WordTiming]:
     """
     Retorna uma lista de WordTiming na ordem da letra fornecida, usando a
@@ -1506,7 +1507,7 @@ def align_lyrics_to_audio(
         lrc_lines = parse_lrc(lrc_text)
         lyric_lines = _lyric_lines_with_start_index(lyrics_path)
         audio_duration = float(len(audio)) / 16000  # whisperx.audio.SAMPLE_RATE
-        approved = lrc_is_approved(lrc_text)
+        approved = lrc_is_approved(lrc_text) or strict_lrc
 
         # Guarda-chuva: o LRCLIB é buscado só por artista/título (sem
         # duração), pode devolver a letra de OUTRA gravação (ao vivo, remix,

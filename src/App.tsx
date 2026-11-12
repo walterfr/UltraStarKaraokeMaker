@@ -254,6 +254,7 @@ interface PersistedSettings {
   // Navegador de onde o yt-dlp lê os cookies do YouTube ("" = desligado).
   ytCookiesBrowser: string;
   romanize: boolean;
+  strictLrc?: boolean;
   audioFormat: "ogg" | "mp3";
   maxVideoResolution: number;
 }
@@ -445,6 +446,7 @@ function App() {
   const [trackAlbum, setTrackAlbum] = useState<string>("");
   const [fetchingInfo, setFetchingInfo] = useState(false);
   const [romanize, setRomanize] = useState(saved.romanize ?? false);
+  const [strictLrc, setStrictLrc] = useState(saved.strictLrc ?? false);
   const [audioFormat, setAudioFormat] = useState<"ogg" | "mp3">(saved.audioFormat ?? "ogg");
   const [maxVideoResolution, setMaxVideoResolution] = useState(saved.maxVideoResolution ?? 1080);
   const [outDir, setOutDir] = useState(saved.outDir ?? "");
@@ -624,9 +626,9 @@ function App() {
 
   // ------------------------------------------------ persistência leve
   useEffect(() => {
-    const settings: PersistedSettings = { sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, keepHarmonies, yargExport, mp4Export, midiExport, whisperModel, ytCookiesBrowser, romanize, audioFormat, maxVideoResolution };
+    const settings: PersistedSettings = { sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, keepHarmonies, yargExport, mp4Export, midiExport, whisperModel, ytCookiesBrowser, romanize, strictLrc, audioFormat, maxVideoResolution };
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  }, [sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, keepHarmonies, yargExport, mp4Export, midiExport, whisperModel, ytCookiesBrowser, romanize, audioFormat, maxVideoResolution]);
+  }, [sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, keepHarmonies, yargExport, mp4Export, midiExport, whisperModel, ytCookiesBrowser, romanize, strictLrc, audioFormat, maxVideoResolution]);
 
   useEffect(() => {
     try {
@@ -1180,8 +1182,9 @@ function App() {
       const ok = await ask(t("lyricsOverwriteConfirm"), { title: "USKMaker" });
       if (!ok) return;
     }
+    const approvedLrc = isApprovedLrc(trimmed) ? trimmed : `[uskmapproved:1]\n${trimmed}`;
     setLyricsText(plain);
-    setSyncedLyrics(trimmed);
+    setSyncedLyrics(approvedLrc);
     setManualLrcOpen(false);
     setManualLrcText("");
     setLyricsSearchMsg({ kind: "ok", text: t("manualLrcApplied") });
@@ -1225,6 +1228,7 @@ function App() {
       whisperModel,
       ytCookiesBrowser,
       romanize,
+      strictLrc,
       audioFormat,
       maxVideoResolution: sourceMode === "youtube" && withVideo ? maxVideoResolution : 0,
     };
@@ -2505,6 +2509,16 @@ function App() {
             <span className="tip-mark" aria-hidden="true">?</span>
           </label>
         )}
+        <label className="checkbox-line" title={t("strictLrcHint")}>
+          <input
+            type="checkbox"
+            checked={strictLrc}
+            onChange={(e) => setStrictLrc(e.target.checked)}
+            disabled={isRunning}
+          />
+          {t("strictLrcLabel")}
+          <span className="tip-mark" aria-hidden="true">?</span>
+        </label>
         <label className="checkbox-line" title={t("withStemsHint")}>
           <input
             type="checkbox"

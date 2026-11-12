@@ -817,6 +817,23 @@ def prefer_whisper_over_ctc(
     return gap > min_disagree_score_gap
 
 
+def detect_line_collapse(
+    pairs: list[tuple[int, float, float]],
+    min_lrc_gap: float = 1.8,
+    max_ctc_gap: float = 0.8,
+) -> bool:
+    """
+    Detecta versos com espaçamento normal no .lrc (>= 1,8 s) comprimidos pelo CTC em <= 0,8 s
+    (colapso clássico de Trellis em vocais com drive, screaming, Metal ou Rock pesado).
+    """
+    for k in range(len(pairs) - 1):
+        _, ctc1, lrc1 = pairs[k]
+        _, ctc2, lrc2 = pairs[k + 1]
+        if (lrc2 - lrc1) >= min_lrc_gap and (ctc2 - ctc1) <= max_ctc_gap:
+            return True
+    return False
+
+
 def verified_lrc_blocks(
     times: list[tuple[float, float, float] | None],
     lyric_lines: list[tuple[str, int]],
@@ -825,6 +842,7 @@ def verified_lrc_blocks(
     audio_dur: float,
     pad: float = 1.5,
     drift_threshold: float = 2.0,
+    force: bool = False,
 ) -> list[tuple[int, int, float, float]] | None:
     """
     Para um .lrc NÃO aprovado manualmente (ex.: vindo do LRCLIB): confirma se
@@ -835,6 +853,9 @@ def verified_lrc_blocks(
     Viterbi global puxou o verso 15 s pra trás, caso real "Jimmy Eat World -
     A Praise Chorus"), devolve os blocos com `pad` folgado (1,5 s) para
     restringir as linhas desgarradas à janela certa sem engessar o resto.
+
+    Se for detectado colapso de linhas (detect_line_collapse) ou force=True,
+    os blocos são adotados para impedir que versos continuem comprimidos.
     """
     from . import align as A
 
@@ -843,6 +864,10 @@ def verified_lrc_blocks(
     matched = A.match_lrc_to_lines([t for t, _ in lyric_lines], lrc_lines)
     if len(matched) < A.LRC_OFFSET_MIN_LINES:
         return None
+
+    if force:
+        starts = [(lyric_lines[li][1], max(0.0, t)) for li, t in matched.items()]
+        return lrc_blocks(n_words, starts, audio_dur, pad=pad)
 
     diffs: list[float] = []
     pairs: list[tuple[int, float, float]] = []
@@ -868,19 +893,26 @@ def verified_lrc_blocks(
         if i - j > best_hi - best_lo:
             best_lo, best_hi = j, i
     cluster = sorted_diffs[best_lo : best_hi + 1]
+
+    is_collapsed = detect_line_collapse(pairs)
     if (
         len(cluster) < A.LRC_OFFSET_MIN_LINES
         or len(cluster) / len(diffs) < A.LRC_OFFSET_MIN_AGREE_FRAC
     ):
-        return None
+        if not is_collapsed:
+            return None
+        offset = float(np.median(cluster)) if cluster else 0.0
+    else:
+        offset = float(np.median(cluster))
 
-    offset = float(np.median(cluster))
     if abs(offset) > A.LRC_OFFSET_MAX_SHIFT_S:
-        return None
+        offset = 0.0
     if abs(offset) < A.LRC_OFFSET_MIN_SHIFT_S:
         offset = 0.0
 
-    has_drift = any(abs(ctc_s - (t_lrc + offset)) > drift_threshold for _, ctc_s, t_lrc in pairs)
+    has_drift = is_collapsed or any(
+        abs(ctc_s - (t_lrc + offset)) > drift_threshold for _, ctc_s, t_lrc in pairs
+    )
     if not has_drift:
         return None
 
@@ -894,6 +926,7 @@ def align_lyrics_ctc_to_audio(
     language: str,
     device: str = "cuda",
     synced_lyrics_path: Path | None = None,
+    strict_lrc: bool = False,
 ):
     """
     Ponto de entrada do app (main.py, Etapa 4): list[WordTiming] alinhada por
@@ -901,11 +934,11 @@ def align_lyrics_ctc_to_audio(
     a letra não cabe no vocabulário do modelo (outro alfabeto) - o chamador
     cai no align.align_lyrics_to_audio de sempre.
 
-    Um .lrc APROVADO pelo usuário ([uskmapproved:1]) define os blocos direto
-    (pad curto de 0,3 s). Um .lrc não aprovado (LRCLIB) passa primeiro pelo
-    alinhamento global e só vira blocos (pad folgado de 1,5 s) se concordar com
-    a gravação e houver linha desgarrada (> 2 s de desvio, ex.: ponte após
-    pausa instrumental).
+    Um .lrc APROVADO pelo usuário ([uskmapproved:1]) ou com strict_lrc=True
+    define os blocos direto (pad de 0,3s ou 0,5s). Um .lrc não aprovado (LRCLIB)
+    passa primeiro pelo alinhamento global e vira blocos (pad folgado de 1,5 s)
+    se houver linha desgarrada (> 2 s de desvio) ou se for detectado colapso
+    de versos (comum em Rock/Metal).
     """
     import whisperx
 
@@ -928,12 +961,12 @@ def align_lyrics_ctc_to_audio(
     approved_lrc = False
     if synced_lyrics_path is not None and Path(synced_lyrics_path).exists():
         lrc_text = Path(synced_lyrics_path).read_text(encoding="utf-8")
-        if A.lrc_is_approved(lrc_text):
+        if A.lrc_is_approved(lrc_text) or strict_lrc:
             approved_lrc = True
             lyric_lines = A._lyric_lines_with_start_index(lyrics_path, language)
             matched = A.match_lrc_to_lines([t for t, _ in lyric_lines], A.parse_lrc(lrc_text))
             starts = [(lyric_lines[li][1], t) for li, t in matched.items()]
-            blocks = lrc_blocks(len(words), starts, audio_dur)
+            blocks = lrc_blocks(len(words), starts, audio_dur, pad=0.5 if strict_lrc else 0.3)
             print(_t("align.ctc_lrc_blocks", n=len(starts)))
 
     em, frame_s = compute_emissions(model, audio, device)
@@ -948,11 +981,13 @@ def align_lyrics_ctc_to_audio(
         )
         if rescued_blocks is not None:
             print(_t("align.ctc_lrc_blocks", n=len(rescued_blocks)))
-            times, token_times = align_blocks(
+            rescued_times, rescued_token_times = align_blocks(
                 em, frame_s, rescued_blocks, word_tokens, line_ends, star_id,
                 dictionary["-"], return_tokens=True,
                 sep_id=dictionary.get(SEP_KEY),
             )
+            if not all(t is None for t in rescued_times):
+                times, token_times = rescued_times, rescued_token_times
     if all(t is None for t in times):
         return None
     timings = to_word_timings(words, line_ends, singers, fill_missing(times))

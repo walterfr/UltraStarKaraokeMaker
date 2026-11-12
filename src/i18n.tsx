@@ -169,6 +169,8 @@ const STRINGS = {
     exportMidiDone: "MIDI exportado: {path}",
     romanizeLabel: "Romanizar",
     romanizeHint: "Reescreve a letra do pacote em alfabeto latino, no sistema padrão do idioma (japonês: Hepburn · chinês: Pinyin · coreano: Revised Romanization · russo/ucraniano: transliteração · hindi: IAST), para quem não lê o script original conseguir cantar. O alinhamento roda sobre o idioma original — só o texto final muda.",
+    strictLrcLabel: "Limites de linha pelo .lrc (Anti-colapso Rock/Metal)",
+    strictLrcHint: "Trava o alinhamento de cada verso rigorosamente dentro do intervalo de tempo marcado no .lrc. Impede que a IA agrupe versos inteiros em poucos segundos em músicas de Rock, Heavy Metal e vocais guturais/pesados.",
 
     // ---- validação ----
     valNeedYoutube: "Informe o link do YouTube.",
@@ -556,6 +558,8 @@ const STRINGS = {
     exportMidiDone: "MIDI exported: {path}",
     romanizeLabel: "Romanize",
     romanizeHint: "Rewrites the package lyrics in the Latin alphabet, using the standard romanization system for the language (Japanese: Hepburn · Chinese: Pinyin · Korean: Revised Romanization · Russian/Ukrainian: transliteration · Hindi: IAST), so people who can't read the original script can sing along. Alignment runs on the original language — only the final text changes.",
+    strictLrcLabel: "Strict .lrc line boundaries (Anti-collapse Rock/Metal)",
+    strictLrcHint: "Strictly constrains each line's alignment within the time window marked in the .lrc. Prevents the AI from bunching entire lines into a few seconds in Rock, Heavy Metal, screamed and distorted vocals.",
 
     valNeedYoutube: "Enter the YouTube link.",
     valNeedFile: "Select a local audio/video file.",

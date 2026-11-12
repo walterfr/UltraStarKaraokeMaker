@@ -4,6 +4,22 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [2.5.0] - 2026-11-12
+
+### Adicionado
+
+- **Alinhamento Estrito por Verso (.lrc) & Proteção Anti-Colapso (Rock/Metal):**
+  - **Detecção e Resgate de Colapso de Linhas (`detect_line_collapse`)**: identifica quando o alinhador acústico CTC livre colapsa versos consecutivos espaçados no `.lrc` em menos de 0,8 s (típico em vocais com drive, screaming, Heavy Metal ou Rock com instrumentação densa). Quando detectado, o CTC re-alinha automaticamente os versos confinados em janelas (`lrc_blocks`), impedindo que versos inteiros se amontoem numa fração de segundo.
+  - **Aprovação Automática de `.lrc` Manual**: letras sincronizadas coladas ou carregadas manualmente na interface agora são tratadas imediatamente com prioridade máxima (`[uskmapproved:1]`), guiando o alinhamento como verdade humana sem serem descartadas por heurísticas de concordância prévia.
+  - **Opção na Interface (Toggle Anti-Colapso)**: novo checkbox *"Limites de linha pelo .lrc (Anti-colapso Rock/Metal)"* na tela inicial (com persistência de preferências), permitindo forçar limites estritos de início e fim por verso diretamente no alinhador.
+
+### Corrigido
+
+- **Certificação Microsoft Store (MSIX / DisplayName / Offline):**
+  - Unificação de `<DisplayName>` e `<uap:VisualElements DisplayName>` no `AppxManifest.xml` para coincidir estritamente com o nome reservado na loja (`USKMaker`), resolvendo a política 10.1.1.1.
+  - Habilitado `default = ["custom-protocol"]` no `src-tauri/Cargo.toml` para garantir que o bundle web de produção seja sempre embutido no executável do pacote MSIX, prevenindo o erro de página não funcional (`localhost refused to connect` / política 10.1.2.10).
+  - Correção de `TargetDeviceFamily.MinVersion` para `10.0.17763.0` no empacotador `build-msix.ps1`, eliminando o erro de validação de versão mínima da loja.
+
 ## [2.4.0] - 2026-11-10
 
 ### Adicionado

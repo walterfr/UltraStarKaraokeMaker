@@ -357,3 +357,66 @@ def test_should_try_whisper_fallback_and_prefer_whisper_over_ctc():
         WordTiming(word="b", start=2.0, end=2.2, score=0.80, source="anchor"),
     ]
     assert prefer_whisper_over_ctc(uncertain_ctc, clean_whi) is True
+
+
+def test_detect_line_collapse_identifies_squished_metal_verses():
+    from pipeline.ctc_align import detect_line_collapse
+
+    # Normal spacing: LRC spacing matches vocal spacing
+    normal_pairs = [
+        (0, 10.0, 10.0),
+        (5, 13.5, 13.0),
+        (10, 17.0, 16.5),
+    ]
+    assert detect_line_collapse(normal_pairs) is False
+
+    # Rock/Metal collapse: LRC lines 2.5s apart, but CTC squished into 0.8s
+    collapsed_pairs = [
+        (0, 34.0, 33.13),
+        (6, 34.8, 35.64),  # ctc gap 0.8s, lrc gap 2.51s -> colapso!
+        (12, 38.0, 39.0),
+    ]
+    assert detect_line_collapse(collapsed_pairs) is True
+
+
+def test_verified_lrc_blocks_rescues_collapsed_rock_verses_below_agreement_threshold():
+    from pipeline.ctc_align import verified_lrc_blocks
+
+    lrc_lines = [
+        (33.13, "I don't wanna stand beside you"),
+        (35.64, "I don't wanna try and feel the pain you're going through"),
+        (40.00, "Line three in the verse here"),
+        (45.00, "Line four in the verse here"),
+        (50.00, "Line five in the verse here"),
+    ]
+    lyric_lines = [(txt, i * 6) for i, (_, txt) in enumerate(lrc_lines)]
+    # All lines drifted / collapsed erratically in CTC (agreement < 40%)
+    # but line 1 & line 2 are squashed in 0.8s
+    starts = [34.0, 34.8, 36.0, 42.0, 48.0]
+    times = [
+        (t + i * 0.1, t + (i + 1) * 0.1, 0.4)
+        for t in starts
+        for i in range(6)
+    ]
+    blocks = verified_lrc_blocks(times, lyric_lines, lrc_lines, n_words=len(times), audio_dur=65.0)
+    assert blocks is not None
+    assert len(blocks) == 5
+
+
+def test_verified_lrc_blocks_supports_force_parameter():
+    from pipeline.ctc_align import verified_lrc_blocks
+
+    lrc_lines = [
+        (10.0, "Line one here"),
+        (15.0, "Line two here"),
+        (20.0, "Line three here"),
+        (25.0, "Line four here"),
+        (30.0, "Line five here"),
+    ]
+    lyric_lines = [(txt, i * 3) for i, (_, txt) in enumerate(lrc_lines)]
+    times = [(0.0, 0.1, 0.1)] * (len(lrc_lines) * 3)
+    # force=True immediately returns blocks (coverage 30s/45s = 67% > 50%)
+    blocks = verified_lrc_blocks(times, lyric_lines, lrc_lines, n_words=len(times), audio_dur=45.0, force=True)
+    assert blocks is not None
+    assert len(blocks) == 5
+

@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10" xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10" xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities" IgnorableNamespaces="uap rescap">
-  <Identity Name="walterfr.UltraStarKaraokeMaker" Publisher="CN=2D8170EA-4E46-4D87-AB01-FA235CAE3F0D" Version="2.4.0.0" ProcessorArchitecture="x64" />
+  <Identity Name="walterfr.UltraStarKaraokeMaker" Publisher="CN=2D8170EA-4E46-4D87-AB01-FA235CAE3F0D" Version="2.5.0.0" ProcessorArchitecture="x64" />
   <Properties>
     <DisplayName>USKMaker</DisplayName>
     <PublisherDisplayName>walterfr</PublisherDisplayName>
