@@ -252,11 +252,15 @@ def download_from_youtube_with_video(url: str, out_dir: Path, max_resolution: in
     # preferencial por compatibilidade máxima.
     if max_resolution > 0:
         video_format = (
+            f"bestvideo[ext=mp4][vcodec^=avc1][height<={max_resolution}]+bestaudio[ext=m4a]/"
             f"bestvideo[ext=mp4][height<={max_resolution}]+bestaudio[ext=m4a]/"
             f"best[ext=mp4][height<={max_resolution}]/best[height<={max_resolution}]"
         )
     else:
-        video_format = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+        video_format = (
+            "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/"
+            "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+        )
     cmd = _yt_dlp_base_cmd() + [
         "-f", video_format,
         "--merge-output-format", "mp4",
@@ -324,7 +328,7 @@ def download_background_video(url_or_query: str, out_dir: Path) -> tuple[Path | 
     output_template = str(out_dir / "bgvideo.%(ext)s")
 
     cmd = _yt_dlp_base_cmd() + [
-        "-f", "bestvideo[ext=mp4][height<=1080]/bestvideo[height<=1080]/best[ext=mp4]/best",
+        "-f", "bestvideo[ext=mp4][vcodec^=avc1][height<=1080]/bestvideo[ext=mp4][height<=1080]/bestvideo[height<=1080]/best[ext=mp4]/best",
         "--print-to-file", "%(webpage_url)s", str(url_file),
         "-o", output_template,
         url_or_query,

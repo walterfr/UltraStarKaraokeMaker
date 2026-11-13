@@ -29,6 +29,7 @@ from update_ytdlp import build_upgrade_command, data_dir, is_prerelease
     ("Love Like Blood [HD]", "Love Like Blood"),
     ("Until Death (Remastered 2019)", "Until Death"),
     ("Close To Me (Official Video) [4K]", "Close To Me"),
+    ("🔥 Bohemian Rhapsody ✨ (Official Video) 🎤", "Bohemian Rhapsody"),
 ])
 def test_tira_o_ruido_de_titulo(cru, limpo):
     assert strip_title_noise(cru) == limpo
@@ -122,6 +123,11 @@ def test_uploader_e_o_ultimo_recurso_para_artista():
 
 def test_info_vazia_nao_quebra():
     assert pick_artist_title({}) == (None, None)
+
+
+def test_limpa_sufixos_topic_e_vevo_do_uploader():
+    assert pick_artist_title({"title": "Bohemian Rhapsody", "uploader": "Queen - Topic"}) == ("Queen", "Bohemian Rhapsody")
+    assert pick_artist_title({"title": "Roar", "uploader": "KatyPerryVEVO"}) == ("KatyPerry", "Roar")
 
 
 # ---------------------------------------------------------------------------

@@ -22,6 +22,12 @@
   - **Formato**: MSIX nativo (`scripts/build-msix.ps1`, MakeAppx do Windows SDK, assinado pela Microsoft Store).
   - **Submissão Inicial**: enviada em 09/11/2026, aprovada em 10/11/2026.
   - **Badge ativa**: presente nos cabeçalhos de `README.md` e `README.en.md`.
+- **itch.io (`walterfr/uskmaker`)**:
+  - **URL**: `https://walterfr.itch.io/uskmaker`
+  - **Automação**: `.github/workflows/publish-itch.yml` via Butler CLI oficial.
+  - **Secret necessário**: `BUTLER_API_KEY` (gerar chave em `https://itch.io/user/settings/api-keys` e salvar nos Secrets do GitHub via `gh secret set BUTLER_API_KEY`).
+  - **Canais**: `walterfr/uskmaker:windows` (instalador `.exe`) e `walterfr/uskmaker:linux` (pacote `.AppImage`).
+  - **Badge ativa**: presente nos cabeçalhos de `README.md` e `README.en.md`.
 - **Pendências de Lojas Linux (em `packaging/linux/` e `.github/workflows/publish-linux-repos.yml`)**:
   - **AUR (`uskmaker-bin`) — Pendente (cadastro no AUR temporariamente suspenso)**: Assim que o cadastro reabrir em `https://aur.archlinux.org`, criar conta, registrar chave pública SSH (`ssh-keygen -t ed25519 -f ~/.ssh/aur`) e salvar a chave privada em `AUR_SSH_PRIVATE_KEY` nos Secrets do GitHub (`gh secret set AUR_SSH_PRIVATE_KEY < ~/.ssh/aur`). O workflow `.github/workflows/publish-linux-repos.yml` e o `packaging/linux/aur/PKGBUILD` já estão prontos e publicarão automaticamente.
   - **Snap Store (`uskmaker`) — Pendente (instabilidade no servidor Snapcraft)**: Assim que normalizar em `https://snapcraft.io`, registrar o nome `uskmaker`, exportar credencial (`snapcraft export-login snap.login`) e salvar em `SNAPCRAFT_STORE_CREDENTIALS` nos Secrets do GitHub (`gh secret set SNAPCRAFT_STORE_CREDENTIALS < snap.login`). O manifesto `packaging/linux/snap/snapcraft.yaml` e o workflow já estão prontos.

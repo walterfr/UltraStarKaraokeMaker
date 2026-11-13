@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+import unicodedata
 
 # Ruído que gravadora/uploader grudam no título e que não é o nome da música.
 # Removido do TÍTULO, nunca do artista - "(Band)" não existe, "(Live)" sim.
@@ -93,8 +94,8 @@ def _drop_unbalanced_brackets(text: str) -> str:
 
 
 def strip_title_noise(text: str) -> str:
-    """Tira "(Official Video)", "[HD]", "(Remastered 2019)" e afins."""
-    out = text
+    """Tira "(Official Video)", "[HD]", "(Remastered 2019)", emojis e afins."""
+    out = "".join(c for c in text if unicodedata.category(c) not in ("So", "Sk", "Cs"))
     for pattern in _NOISE_PATTERNS:
         out = re.sub(pattern, " ", out, flags=re.IGNORECASE)
     # Parênteses/colchetes que ficaram VAZIOS depois de tirar o conteúdo.
@@ -146,7 +147,9 @@ def pick_artist_title(info: dict) -> tuple[str | None, str | None]:
         return artist, track
 
     guess_artist, guess_title = split_artist_title(info.get("title") or "")
-    artist = artist or guess_artist or ((info.get("uploader") or "").strip() or None)
+    raw_uploader = (info.get("uploader") or "").strip()
+    clean_uploader = re.sub(r"\s*-\s*Topic$|VEVO$", "", raw_uploader, flags=re.IGNORECASE).strip() or None
+    artist = artist or guess_artist or clean_uploader
     title = track or guess_title
     return artist, title
 

@@ -1,0 +1,108 @@
+name: Publish to itch.io
+
+# Publica automaticamente os instaladores do USKMaker no itch.io (walterfr/uskmaker)
+# usando a ferramenta oficial Butler (https://itch.io/docs/butler/).
+#
+# Precisa do secret BUTLER_API_KEY configurado no repositório GitHub:
+# https://itch.io/user/settings/api-keys
+# Se o secret não estiver configurado, o workflow avisa e conclui sem falhar.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Tag da release (ex.: v2.5.1) para publicar no itch.io"
+        required: false
+        default: ""
+
+jobs:
+  publish-itch:
+    name: Publish to itch.io (Butler)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verificar se BUTLER_API_KEY está configurada
+        id: check-secret
+        env:
+          BUTLER_KEY: ${{ secrets.BUTLER_API_KEY }}
+        run: |
+          if [ -z "$BUTLER_KEY" ]; then
+            echo "::warning::BUTLER_API_KEY não configurada nos Secrets do repositório. Configure em https://itch.io/user/settings/api-keys e adicione em Settings > Secrets > Actions."
+            echo "has_key=false" >> $GITHUB_OUTPUT
+          else
+            echo "has_key=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Determinar Tag da Release
+        if: steps.check-secret.outputs.has_key == 'true'
+        id: vars
+        run: |
+          TAG="${{ inputs.release_tag || github.event.release.tag_name || github.ref_name }}"
+          VER="${TAG#v}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=$VER" >> $GITHUB_OUTPUT
+
+      - name: Aguardar e Baixar Artefatos do Release
+        if: steps.check-secret.outputs.has_key == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.vars.outputs.tag }}"
+          echo "Aguardando instaladores ficarem disponíveis no release $TAG..."
+          MAX_RETRIES=40
+          COUNT=0
+          mkdir -p dist-win dist-linux
+          while [ $COUNT -lt $MAX_RETRIES ]; do
+            gh release download "$TAG" --repo "${{ github.repository }}" --pattern "*_x64-setup.exe" --dir ./dist-win 2>/dev/null || true
+            gh release download "$TAG" --repo "${{ github.repository }}" --pattern "*.AppImage" --dir ./dist-linux 2>/dev/null || true
+            
+            HAS_WIN=$(ls ./dist-win/*.exe 2>/dev/null | wc -l)
+            HAS_LINUX=$(ls ./dist-linux/*.AppImage 2>/dev/null | wc -l)
+            
+            if [ "$HAS_WIN" -gt 0 ] && [ "$HAS_LINUX" -gt 0 ]; then
+              echo "Instaladores Windows e Linux baixados com sucesso!"
+              ls -la ./dist-win/ ./dist-linux/
+              exit 0
+            fi
+            echo "Aguardando artefatos (tentativa $((COUNT+1))/$MAX_RETRIES). Aguardando 30s..."
+            sleep 30
+            COUNT=$((COUNT+1))
+          done
+          echo "Aviso: Timeout aguardando ambos os artefatos. Prosseguindo com o que estiver disponível."
+
+      - name: Instalar Butler
+        if: steps.check-secret.outputs.has_key == 'true'
+        run: |
+          curl -L -o butler.zip https://broth.itch.zone/butler/linux-amd64/LATEST/archive/default
+          unzip -q butler.zip -d /tmp/butler
+          chmod +x /tmp/butler/butler
+          sudo mv /tmp/butler/butler /usr/local/bin/butler
+          rm -rf butler.zip /tmp/butler
+          butler -V
+
+      - name: Publicar canal Windows no itch.io
+        if: steps.check-secret.outputs.has_key == 'true'
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        run: |
+          WIN_INSTALLER=$(ls ./dist-win/*_x64-setup.exe 2>/dev/null | head -n 1)
+          if [ -n "$WIN_INSTALLER" ]; then
+            echo "Enviando $WIN_INSTALLER para walterfr/uskmaker:windows..."
+            butler push "$WIN_INSTALLER" walterfr/uskmaker:windows --userversion "${{ steps.vars.outputs.version }}"
+          else
+            echo "Nenhum instalador Windows encontrado para envio."
+          fi
+
+      - name: Publicar canal Linux no itch.io
+        if: steps.check-secret.outputs.has_key == 'true'
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        run: |
+          LINUX_APPIMAGE=$(ls ./dist-linux/*.AppImage 2>/dev/null | head -n 1)
+          if [ -n "$LINUX_APPIMAGE" ]; then
+            echo "Enviando $LINUX_APPIMAGE para walterfr/uskmaker:linux..."
+            butler push "$LINUX_APPIMAGE" walterfr/uskmaker:linux --userversion "${{ steps.vars.outputs.version }}"
+          else
+            echo "Nenhum AppImage Linux encontrado para envio."
+          fi

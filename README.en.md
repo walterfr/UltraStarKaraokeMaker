@@ -5,6 +5,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-brightgreen)](https://github.com/walterfr/UltraStarKaraokeMaker/releases)
 [![WinGet](https://img.shields.io/badge/winget-walterfr.USKMaker-blue)](https://github.com/microsoft/winget-pkgs/tree/master/manifests/w/walterfr/USKMaker)
 [![Microsoft Store](https://img.shields.io/badge/Microsoft_Store-USKMaker-0078D4?logo=microsoft-store&logoColor=white)](https://apps.microsoft.com/detail/9PM26VDJM55R)
+[![itch.io](https://img.shields.io/badge/itch.io-USKMaker-FA5C5C?logo=itchdotio&logoColor=white)](https://walterfr.itch.io/uskmaker)
 [![Pacstall](https://img.shields.io/badge/pacstall-uskmaker--deb-blue?logo=gnu-bash&logoColor=white)](https://pacstall.dev)
 [![AppImage](https://img.shields.io/badge/AppImage-x86__64%20(OTA)-2c9784?logo=linux&logoColor=white)](https://github.com/walterfr/UltraStarKaraokeMaker/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/walterfr/UltraStarKaraokeMaker/total?color=success&label=downloads)](https://github.com/walterfr/UltraStarKaraokeMaker/releases)

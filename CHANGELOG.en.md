@@ -4,6 +4,18 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [Unreleased]
+
+### Added
+
+- **Distribution on itch.io (`walterfr/uskmaker`)**:
+  - Automated workflow `.github/workflows/publish-itch.yml` via Butler CLI to publish releases to `windows` (`.exe`) and `linux` (`.AppImage`) channels.
+  - Official itch.io badge added to the documentation header.
+- **YouTube Metadata and Video Download Enhancements (inspired by Karaokiza)**:
+  - **H.264 (AVC1) Codec Prioritization**: `yt-dlp` format selection prefers `[vcodec^=avc1]` to ensure downloaded YouTube videos play smoothly across all UltraStar players.
+  - **Channel Suffix Stripping (`- Topic` and `VEVO`)**: automatically cleans up YouTube Music automated topic channels and VEVO suffixes when guessing artist names.
+  - **Emoji Sanitization in Titles**: strips emoji characters from video titles to prevent compatibility issues on legacy filesystems or ID3 parsers.
+
 ## [2.5.1] — 2026-11-12
 
 ### Fixed
