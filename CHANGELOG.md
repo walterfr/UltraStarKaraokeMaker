@@ -4,6 +4,15 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [2.5.1] - 2026-11-12
+
+### Corrigido
+
+- **Eliminação de Sobreposição e Inversão entre Versos Consecutivos:**
+  - Particionamento estrito de janelas temporais em `lrc_blocks`: os limites de cada bloco de verso agora terminam exatamente onde o verso seguinte se inicia, eliminando o sangramento temporal (`pad` bidirecional) que permitia que o final de uma linha competisse pelo áudio do início da próxima.
+  - Garantia de monotonicidade em `fill_missing`: assegura que nenhuma palavra comece antes do término da palavra anterior, prevenindo inversões temporais no alinhamento acústico CTC.
+  - Resolução de inversões residuais em `build_song.py`: correção limpa de eventuais descompassos de arredondamento de beat entre versos para impedir notas sobrepostas ou fora de ordem no arquivo UltraStar e no piano roll da tela de revisão.
+
 ## [2.5.0] - 2026-11-12
 
 ### Adicionado

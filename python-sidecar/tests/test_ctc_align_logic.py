@@ -231,14 +231,33 @@ def test_viterbi_matches_torchaudio_on_random_emissions():
 def test_lrc_blocks_bound_each_line_by_the_next_start():
     from pipeline.ctc_align import lrc_blocks
     blocks = lrc_blocks(10, [(0, 5.0), (4, 12.0), (7, 20.0)], audio_dur=60.0, pad=0.3)
-    assert blocks == [(0, 4, 4.7, 12.3), (4, 7, 11.7, 20.3), (7, 10, 19.7, 60.0)]
+    assert blocks == [(0, 4, 4.7, 12.0), (4, 7, 12.0, 20.0), (7, 10, 20.0, 60.0)]
 
 
 def test_lrc_blocks_unmatched_head_and_backwards_times():
     from pipeline.ctc_align import lrc_blocks
     blocks = lrc_blocks(10, [(3, 8.0), (6, 4.0)], audio_dur=30.0, pad=0.3)
-    assert blocks == [(0, 3, 0.0, 8.3), (3, 10, 7.7, 30.0)]  # (6, 4.0) goes back: dropped
+    assert blocks == [(0, 3, 0.0, 8.0), (3, 10, 8.0, 30.0)]  # (6, 4.0) goes back: dropped
     assert lrc_blocks(5, [], audio_dur=9.0) == [(0, 5, 0.0, 9.0)]
+
+
+def test_lrc_blocks_no_inter_block_overlaps():
+    from pipeline.ctc_align import lrc_blocks
+    # 4 linhas: 0:32 "Who do you think you are?", 0:35 "Tearing us all apart"
+    starts = [(0, 10.0), (5, 20.0), (11, 32.0), (17, 35.0)]
+    blocks = lrc_blocks(22, starts, audio_dur=50.0, pad=0.5)
+    for k in range(len(blocks) - 1):
+        assert blocks[k][3] <= blocks[k + 1][2], f"Bloco {k} sobrepõe com bloco {k+1}!"
+
+
+def test_fill_missing_enforces_monotonicity():
+    from pipeline.ctc_align import fill_missing
+    # Inversão artificial vinda de blocos sobrepostos: word 1 antes do fim de word 0
+    raw_times = [(32.0, 35.2, 0.8), (34.8, 35.5, 0.9)]
+    fixed = fill_missing(raw_times)
+    assert fixed[0][0] == 32.0
+    assert fixed[0][1] == 35.2
+    assert fixed[1][0] >= fixed[0][1], "Segunda palavra não pode começar antes da primeira terminar!"
 
 
 def _wt(score, line_end=False, source="ctc"):

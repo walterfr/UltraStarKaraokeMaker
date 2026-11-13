@@ -4,6 +4,15 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [2.5.1] — 2026-11-12
+
+### Fixed
+
+- **Elimination of Verse Collisions and Cross-Line Inversions:**
+  - Strict temporal boundary partitioning in `lrc_blocks`: each verse window now ends cleanly at the start of the next verse, eliminating the bidirectional padding overlap that caused the end of one line to bleed into the acoustic onset of the next.
+  - Monotonicity guarantee in `fill_missing`: ensures no word timing starts before the preceding word has ended, preventing acoustic inversion across block transitions.
+  - Residual inversion safety in `build_song.py`: cleanly resolves inter-verse beat rounding edges to guarantee notes never render out-of-order or nested on the piano roll or in the output UltraStar `.txt`.
+
 ## [2.5.0] — 2026-11-12
 
 ### Added

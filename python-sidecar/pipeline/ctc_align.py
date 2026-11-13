@@ -235,19 +235,23 @@ def syllable_starts(
 
 def fill_missing(times: list[tuple[float, float, float] | None]) -> list[tuple[float, float, float, bool]]:
     """Palavras sem token herdam um ponto entre as vizinhas medidas (duração
-    zero-ish). Devolve (start, end, score, medido)."""
+    zero-ish). Devolve (start, end, score, medido). Garante monotonicidade
+    estrita para que nenhuma palavra comece antes do fim da anterior."""
     out: list[tuple[float, float, float, bool]] = []
     last_end = 0.0
     n = len(times)
     for k, t in enumerate(times):
         if t is not None:
-            out.append((t[0], t[1], t[2], True))
-            last_end = t[1]
+            s = max(t[0], last_end)
+            e = max(s + 0.02, max(t[1], s))
+            out.append((s, e, t[2], True))
+            last_end = e
             continue
         nxt = next((times[j][0] for j in range(k + 1, n) if times[j] is not None), last_end)
         s = last_end
-        e = max(s, min(nxt, s + 0.05))
+        e = max(s + 0.02, min(max(nxt, s + 0.02), s + 0.05))
         out.append((s, e, 0.0, False))
+        last_end = e
     return out
 
 
@@ -682,12 +686,11 @@ def lrc_blocks(
     pad: float = 0.3,
 ) -> list[tuple[int, int, float, float]]:
     """
-    Blocos (i0, i1, t0, t1) a partir dos inícios de linha de um .lrc APROVADO
-    pelo usuário: `line_starts` = (índice da 1ª palavra da linha, tempo),
-    casados via align.match_lrc_to_lines. Cada bloco vai do início de uma
-    linha casada até o início da próxima (com `pad` de folga), então o CTC não
-    pode tirar uma linha do lugar que o usuário conferiu de ouvido. Tempos que
-    voltam no tempo são descartados.
+    Blocos (i0, i1, t0, t1) a partir dos inícios de linha de um .lrc.
+    Cada bloco delimita uma linha entre o seu início e o início da próxima
+    linha (particionamento estrito, sem sobreposição entre versos adjacentes).
+    Evita que o final de uma linha invada o áudio do verso seguinte e cause
+    colisão ou inversão de notas no piano roll.
     """
     starts: list[tuple[int, float]] = []
     for i, t in sorted(line_starts):
@@ -699,10 +702,12 @@ def lrc_blocks(
         return [(0, n_words, 0.0, audio_dur)]
     blocks: list[tuple[int, int, float, float]] = []
     if starts[0][0] > 0:
-        blocks.append((0, starts[0][0], 0.0, starts[0][1] + pad))
+        blocks.append((0, starts[0][0], 0.0, starts[0][1]))
     for k, (i, t) in enumerate(starts):
         nxt_i, nxt_t = starts[k + 1] if k + 1 < len(starts) else (n_words, audio_dur)
-        blocks.append((i, nxt_i, max(0.0, t - pad), min(audio_dur, nxt_t + pad)))
+        t_start = max(0.0, t - pad) if k == 0 and starts[0][0] == 0 else t
+        t_end = nxt_t
+        blocks.append((i, nxt_i, t_start, t_end))
     return blocks
 
 
