@@ -3,6 +3,7 @@ import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { PitchDetector } from "pitchy";
 import { MIC_GAP_S, pushMicSample, type MicSample } from "./micPitch";
+import { countLines, nextSuspectLine, suspectLines, type LineRange } from "./suspectLines";
 import { useI18n } from "../i18n";
 import LyricTimingPanel from "./LyricTimingPanel";
 import { BufferPlayer, ReviewAudio } from "./bufferPlayer";
@@ -89,6 +90,12 @@ function isLowConfidenceAnchor(n: USNote): boolean {
   if (n.source === "ctc_low") return true;
   if (n.source === "ctc") return false;
   return typeof n.score === "number" && n.score < LOW_SCORE_ANCHOR_THRESHOLD;
+}
+
+// Nota desenhada em vermelho/laranja: timing incerto. É o critério das
+// "linhas suspeitas" da toolbar (suspectLines.ts).
+function isSuspectNote(n: USNote): boolean {
+  return n.note_type !== "F" && (isLowConfidenceAnchor(n) || n.source === "interpolated");
 }
 
 // Salto de pitch isolado que NÃO é múltiplo de oitava (issue #7): o
@@ -1193,6 +1200,21 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   // versos derivados (painel lateral de navegação)
   const verses = useMemo(() => (song ? deriveVerses(song, t("revNoText")) : []), [song, t]);
 
+  // Linhas com ao menos uma nota incerta: o contador e o atalho L da toolbar
+  // levam o revisor direto a elas.
+  const suspect = useMemo(
+    () =>
+      song
+        ? {
+            lines: suspectLines(song.notes, song.phrase_breaks_after_index, isSuspectNote),
+            total: countLines(song.notes.length, song.phrase_breaks_after_index),
+          }
+        : { lines: [], total: 0 },
+    [song]
+  );
+  const suspectLinesRef = useRef<LineRange[]>([]);
+  suspectLinesRef.current = suspect.lines;
+
   // Linhas da tabela "Tempos da letra": cada linha do .lrc do LRCLIB ao lado
   // do que a IA realmente mediu naquele verso. Só existe quando o pacote
   // ainda tem o _synced_lyrics.lrc.
@@ -1489,6 +1511,35 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     },
     [draw]
   );
+
+  // Pula pra próxima linha suspeita depois da nota selecionada (sem seleção,
+  // depois da nota sob o marcador de tempo): seleciona a 1ª nota da linha,
+  // posiciona o áudio nela e traz a viewport. Só navega - não passa pelo
+  // mutate, então não cria undo nem suja a música.
+  const jumpToNextSuspectLine = useCallback(() => {
+    const s = songRef.current;
+    if (!s) return;
+    let from = selectedRef.current;
+    if (from === null) {
+      const now = audioRef.current?.currentTime ?? 0;
+      from = -1;
+      for (let i = 0; i < s.notes.length; i++) {
+        if (beatToSec(s, s.notes[i].start_beat) <= now) from = i;
+      }
+    }
+    const lines = suspectLinesRef.current;
+    const li = nextSuspectLine(lines, from);
+    if (li === null) return;
+    const idx = lines[li].start;
+    setSelected(idx);
+    selectedRef.current = idx;
+    // seleção múltipla antiga faria as setas moverem o grupo, não esta nota
+    setMultiSelected(new Set());
+    multiSelectedRef.current = new Set();
+    const sec = beatToSec(s, s.notes[idx].start_beat);
+    viewRef.current.start = Math.max(0, sec - 1); // mesma folga do jumpToVerse
+    seekTo(sec);
+  }, [seekTo]);
 
   // Usado pela tabela de tempos: posiciona e TOCA a partir de um segundo
   // qualquer (o seekTo só posiciona). Limpa o playUntil pra não herdar a
@@ -1862,6 +1913,11 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
         toggleSynth();
         return;
       }
+      if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === "l") {
+        e.preventDefault();
+        jumpToNextSuspectLine();
+        return;
+      }
 
       const sel = selectedRef.current;
       const s = songRef.current;
@@ -1984,7 +2040,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [togglePlay, undo, redo, mutate, playNote, draw, toggleMic]);
+  }, [togglePlay, undo, redo, mutate, playNote, draw, toggleMic, jumpToNextSuspectLine]);
 
   // ------------------------------------------------------ ações pontuais
   // Generalização de deleteNote pra várias notas de uma vez (issue #11):
@@ -2470,6 +2526,24 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
             <span className="toolbar-sep" />
             <button className="jump-interpolated" onClick={jumpToNextFlagged} title={t("revNextFlaggedTitle")}>
               {t("revNextFlagged", { n: flaggedCount })}
+            </button>
+          </>
+        )}
+        {hasSourceInfo && (
+          <>
+            <span className="toolbar-sep" />
+            <span className={suspect.lines.length > 0 ? "field-hint warn" : "field-hint"}>
+              {suspect.lines.length > 0
+                ? t("revSuspectLines", { n: suspect.lines.length, m: suspect.total })
+                : t("revSuspectLinesNone")}
+            </span>
+            <button
+              className="jump-interpolated"
+              onClick={jumpToNextSuspectLine}
+              disabled={suspect.lines.length === 0}
+              title={t("revNextSuspectLineTitle")}
+            >
+              {t("revNextSuspectLine")}
             </button>
           </>
         )}
