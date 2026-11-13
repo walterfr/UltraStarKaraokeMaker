@@ -737,6 +737,97 @@ def flag_low_confidence_lines(timings: list, threshold: float = LOW_LINE_SCORE) 
     return flagged
 
 
+# "Palavra em silêncio": pico do envelope RMS do stem vocal (quadros de 20 ms,
+# dB relativos ao percentil 95 da música) abaixo de -30 dB sob a palavra.
+# MEDIDO (13/11/2026, 51 músicas, 2880 linhas): palavra em silêncio está errada
+# (> 1 s) em 95% dos casos; por linha marca 4,8%, precisão 0,74, recall 0,22.
+SILENCE_FLOOR_DB = -30.0
+SILENCE_HOP_S = 0.02
+
+# Início de linha do CTC a mais disto do Whisper = linha suspeita. MEDIDO
+# (13/11/2026): "discorda > 1 s OU silêncio" marca 23,5% das linhas, precisão
+# 0,52, recall 0,75 (flag de score: 0,42 / 0,61).
+LINE_DISAGREE_S = 1.0
+
+
+def words_on_silence(
+    timings: list, audio: np.ndarray, sample_rate: int = SAMPLE_RATE,
+    floor_db: float = SILENCE_FLOOR_DB,
+) -> list[bool]:
+    """
+    Um bool por palavra: True se não há voz no áudio (mono, float) sob ela -
+    ver SILENCE_FLOOR_DB. Palavra depois do fim do áudio conta como silêncio.
+    Áudio vazio ou menor que um quadro: tudo False (não dá pra medir).
+    """
+    hop = int(sample_rate * SILENCE_HOP_S)
+    n = len(audio) // hop if hop else 0
+    if n == 0:
+        return [False] * len(timings)
+    frames = np.asarray(audio[:n * hop], dtype=np.float32).reshape(n, hop)
+    db = 10.0 * np.log10((frames ** 2).mean(axis=1) + 1e-12)
+    db -= np.percentile(db, 95)
+    out = []
+    for w in timings:
+        a = max(0, int(w.start / SILENCE_HOP_S))
+        seg = db[a:max(a + 1, int(w.end / SILENCE_HOP_S))]
+        out.append(len(seg) == 0 or float(seg.max()) < floor_db)
+    return out
+
+
+def line_start_disagreement(timings: list, other_timings: list) -> list[float | None]:
+    """
+    Um valor por LINHA de `timings` (pelo is_line_end): |início da 1ª palavra
+    em `timings` - início da palavra de MESMO índice em `other_timings`|, em
+    segundos. As duas listas vêm da mesma letra; tamanhos diferentes = None em
+    todas as linhas.
+    """
+    firsts = [k for k in range(len(timings)) if k == 0 or timings[k - 1].is_line_end]
+    if len(timings) != len(other_timings):
+        return [None] * len(firsts)
+    from .align import SOURCE_INTERPOLATED
+
+    # palavra INTERPOLADA do outro alinhador não foi medida no áudio: discordar
+    # dela não diz nada (medido: nesses casos o CTC acerta 68% e o Whisper 7%)
+    return [
+        None if _w_get(other_timings[k], "source") == SOURCE_INTERPOLATED
+        else abs(float(timings[k].start) - float(_w_get(other_timings[k], "start")))
+        for k in firsts
+    ]
+
+
+def reflag_lines(
+    timings: list, silent: list[bool] | None = None,
+    disagreement: list[float | None] | None = None,
+    disagree_s: float = LINE_DISAGREE_S,
+) -> int:
+    """
+    Refaz a marca de confiança por linha com os sinais de `words_on_silence`
+    e `line_start_disagreement`. Só mexe em palavras SOURCE_CTC/SOURCE_CTC_LOW.
+      - linha COM valor de discordância: LOW se e só se discorda > `disagree_s`
+        ou tem palavra em silêncio (também LIMPA o LOW de score quando os dois
+        alinhadores concordam e não há silêncio);
+      - linha sem valor: mantém o que tem e marca LOW se tem palavra em silêncio.
+    Devolve quantas palavras mudaram de source.
+    """
+    changed = 0
+    start = li = 0
+    for k, wt in enumerate(timings):
+        if not (wt.is_line_end or k == len(timings) - 1):
+            continue
+        sil = silent is not None and any(silent[start:k + 1])
+        d = disagreement[li] if disagreement is not None else None
+        if d is not None:
+            new = SOURCE_CTC_LOW if (d > disagree_s or sil) else SOURCE_CTC
+        else:
+            new = SOURCE_CTC_LOW if sil else None
+        for w in timings[start:k + 1] if new else ():
+            if w.source in (SOURCE_CTC, SOURCE_CTC_LOW) and w.source != new:
+                w.source = new
+                changed += 1
+        start, li = k + 1, li + 1
+    return changed
+
+
 def _w_get(w, key: str, default=None):
     return w.get(key, default) if isinstance(w, dict) else getattr(w, key, default)
 

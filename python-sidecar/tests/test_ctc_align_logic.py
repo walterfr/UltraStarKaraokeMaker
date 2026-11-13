@@ -273,6 +273,76 @@ def test_flag_low_confidence_lines_marks_whole_lines():
     assert low_confidence_frac(ts) == pytest.approx(3 / 6)
 
 
+def _wts(spec):
+    """spec: (palavra, início, fim, source, fim_de_linha) - palavras inventadas."""
+    from pipeline.align import WordTiming
+    return [WordTiming(word=w, start=s, end=e, score=0.5, is_line_end=le, source=src)
+            for w, s, e, src, le in spec]
+
+
+def _silence_burst_silence(sr=16000):
+    import numpy as np
+    t = np.arange(sr) / sr
+    burst = (0.5 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
+    return np.concatenate([np.zeros(sr, np.float32), burst, np.zeros(sr, np.float32)])
+
+
+def test_words_on_silence_detects_word_without_voice():
+    import numpy as np
+    from pipeline.ctc_align import words_on_silence
+    ts = _wts([("blim", 0.2, 0.6, "ctc", False),    # no silêncio
+               ("zuca", 1.2, 1.6, "ctc", False),    # em cima da voz
+               ("trovi", 0.9, 1.1, "ctc", False),   # encosta na voz: pico conta
+               ("plem", 2.3, 2.31, "ctc", False),   # menor que um quadro, no silêncio
+               ("dorfa", 9.0, 9.4, "ctc", True)])   # depois do fim do áudio
+    assert words_on_silence(ts, _silence_burst_silence()) == [True, False, False, True, True]
+    assert words_on_silence(ts, np.zeros(0, np.float32)) == [False] * 5
+    assert words_on_silence(ts, np.zeros(100, np.float32)) == [False] * 5  # < 1 quadro
+    # outra taxa de amostragem: mesmo resultado
+    assert words_on_silence(ts[:2], _silence_burst_silence(8000), sample_rate=8000) == [True, False]
+
+
+def test_line_start_disagreement_one_value_per_line():
+    from pipeline.ctc_align import line_start_disagreement
+    ts = _wts([("blim", 1.0, 1.2, "ctc", False), ("zuca", 1.3, 1.5, "ctc", True),
+               ("trovi", 5.0, 5.2, "ctc", True),
+               ("plem", 8.0, 8.2, "ctc", False), ("dorfa", 8.3, 8.5, "ctc", False)])
+    other = [{"start": 1.1}, {"start": 9.9}, {"start": 7.5}, {"start": 8.0}, {"start": 0.0}]
+    assert line_start_disagreement(ts, other) == pytest.approx([0.1, 2.5, 0.0])
+    assert line_start_disagreement(ts, other[:-1]) == [None, None, None]
+    assert line_start_disagreement([], []) == []
+
+
+def test_reflag_lines_sets_and_clears():
+    from pipeline.ctc_align import reflag_lines
+    spec = [("blim", 1.0, 1.2, "ctc", False), ("zuca", 1.3, 1.5, "ctc", True),          # linha 0
+            ("trovi", 5.0, 5.2, "ctc_low", False), ("plem", 5.3, 5.5, "ctc_low", True),  # linha 1
+            ("dorfa", 8.0, 8.2, "interpolated", False), ("quix", 8.3, 8.5, "ctc", True),  # linha 2
+            ("narbo", 9.0, 9.2, "ctc_low", False), ("lume", 9.3, 9.5, "lrc", False)]     # linha 3 (sem is_line_end)
+    src = lambda ts: [w.source for w in ts]
+
+    # só silêncio: marca a linha da palavra muda, mantém o resto (não limpa)
+    ts = _wts(spec)
+    assert reflag_lines(ts, silent=[False, True, False, False, False, False, False, False]) == 2
+    assert src(ts) == ["ctc_low", "ctc_low", "ctc_low", "ctc_low", "interpolated", "ctc", "ctc_low", "lrc"]
+
+    # com discordância: marca quem discorda, LIMPA quem concorda, None mantém
+    ts = _wts(spec)
+    assert reflag_lines(ts, disagreement=[2.0, 0.1, 1.0, None]) == 4
+    assert src(ts) == ["ctc_low", "ctc_low", "ctc", "ctc", "interpolated", "ctc", "ctc_low", "lrc"]
+
+    # concorda mas tem silêncio: fica LOW; fontes não-CTC nunca mudam
+    ts = _wts(spec)
+    silent = [False, False, True, False, True, False, False, True]
+    assert reflag_lines(ts, silent, [0.0, 0.0, 0.0, 0.0]) == 1
+    assert src(ts) == ["ctc", "ctc", "ctc_low", "ctc_low", "interpolated", "ctc_low", "ctc_low", "lrc"]
+
+    # limiar próprio e nada a fazer
+    ts = _wts(spec)
+    assert reflag_lines(ts, disagreement=[0.4, None, None, None], disagree_s=0.3) == 2
+    assert reflag_lines(_wts(spec)) == 0
+
+
 def test_syllable_starts_from_letter_times():
     from pipeline.ctc_align import syllable_starts
     # "cabo" -> ["ca", "bo"]: letters c a b o
@@ -439,3 +509,11 @@ def test_verified_lrc_blocks_supports_force_parameter():
     assert blocks is not None
     assert len(blocks) == 5
 
+
+
+def test_line_start_disagreement_ignora_palavra_interpolada_do_outro():
+    # palavra interpolada não foi medida no áudio: discordar dela não é sinal
+    from pipeline.ctc_align import line_start_disagreement
+    ts = _wts([("blim", 1.0, 1.2, "ctc", True), ("trovi", 5.0, 5.2, "ctc", True)])
+    other = [{"start": 9.0, "source": "interpolated"}, {"start": 7.5, "source": "anchor"}]
+    assert line_start_disagreement(ts, other) == [None, pytest.approx(2.5)]

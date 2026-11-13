@@ -615,6 +615,33 @@ def _align_with_ctc(stems, work_path: Path, lyrics_path: str, language: str,
     return word_timings, stems
 
 
+def _reflag_ctc_lines(word_timings, vocals_wav, whisper_timings=None) -> None:
+    """
+    Refaz a marca de "linha suspeita" (SOURCE_CTC_LOW) do CTC com dois sinais
+    melhores que o score de linha sozinho (medido em 13/11, 51 músicas / 2879
+    linhas, eval/error_anatomy.py: precisão 0,42 -> 0,52 e recall 0,61 -> 0,75
+    com a mesma fração de linhas marcadas):
+      - palavra sobre SILÊNCIO do stem vocal (ctc_align.words_on_silence);
+      - quando o Whisper rodou na arbitragem, a linha que começa a mais de 1 s
+        de onde ele a colocou - e a que concorda com ele deixa de ser suspeita.
+    Roda DEPOIS do resgate 4b e da arbitragem: essas decisões continuam usando
+    o sinal de score, que foi o que se mediu para elas. É só sinal de revisão -
+    nunca derruba a geração.
+    """
+    from pipeline.ctc_align import line_start_disagreement, reflag_lines, words_on_silence
+
+    try:
+        import whisperx
+
+        silent = words_on_silence(word_timings, whisperx.load_audio(str(vocals_wav)))
+        disagreement = line_start_disagreement(word_timings, whisper_timings) if whisper_timings else None
+        changed = reflag_lines(word_timings, silent, disagreement)
+        debug_log(f"ETAPA 4 - linhas suspeitas refeitas: {changed} palavras mudaram "
+                  f"({sum(silent)} em silêncio, Whisper={'sim' if whisper_timings else 'não'})")
+    except Exception as e:  # noqa: BLE001 - sinal de revisão, não-fatal
+        debug_log(f"ETAPA 4 - refazer linhas suspeitas falhou (não-fatal): {e!r}")
+
+
 def _report_ctc_alignment(word_timings) -> None:
     """Resumo + aviso do caminho do CTC: quantas palavras em linha de confiança baixa."""
     from pipeline.ctc_align import low_confidence_frac
@@ -1042,6 +1069,7 @@ def run_pipeline(
             ctc_timings, low_frac_threshold=CTC_RESCUE_LOW_FRAC,
         ):
             word_timings = ctc_timings
+            _reflag_ctc_lines(word_timings, stems.vocals)
             _report_ctc_alignment(word_timings)
         else:
             if ctc_timings is not None:
@@ -1061,6 +1089,7 @@ def run_pipeline(
             else:
                 debug_log("ETAPA 4 - arbitragem manteve CTC (Whisper com mais interpolacao ou menor confianca)")
                 word_timings = ctc_timings
+                _reflag_ctc_lines(word_timings, stems.vocals, whi_timings)
                 _report_ctc_alignment(word_timings)
     else:
         word_timings, stems = _align_with_whisper(
