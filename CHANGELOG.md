@@ -4,6 +4,19 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [Não lançado]
+
+### Adicionado
+
+- **Revisão: Contador e Salto por Linha Suspeita:**
+  - A barra da tela de revisão mostra "Linhas suspeitas: N de M" e ganha o botão **Próxima suspeita** (atalho `L`), que seleciona a primeira nota da próxima linha marcada, leva o áudio até ela e centraliza o piano roll. Complementa o "Próxima flagrada", que anda nota a nota.
+
+### Alterado
+
+- **Linhas Suspeitas Mais Certeiras na Revisão (alinhador CTC):**
+  - A marca vermelha de "linha suspeita" deixa de depender só do score de linha. Entram dois sinais: palavra alinhada sobre **silêncio** do vocal isolado e, quando o Whisper roda na arbitragem, linha cujo início **discorda dele em mais de 1 s** (o resultado do Whisper era descartado quando o CTC ganhava). Linha em que os dois alinhadores concordam deixa de ser marcada; palavra interpolada do Whisper não conta como discordância.
+  - Medido em 51 músicas / 2.879 linhas com chart feito à mão (`python-sidecar/eval/error_anatomy.py`): precisão da marca 0,42 → 0,55 e recall 0,61 → 0,74, marcando menos linhas (23,1% → 21,8%). Os tempos das notas não mudam, só o aviso; resgate e arbitragem seguem decididos pelo score.
+
 ## [2.6.1] - 2026-11-13
 
 ### Corrigido

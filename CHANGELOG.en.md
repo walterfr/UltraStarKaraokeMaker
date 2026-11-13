@@ -4,6 +4,19 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [Unreleased]
+
+### Added
+
+- **Review: Suspicious-Line Counter and Jump:**
+  - The review toolbar shows "Suspect lines: N of M" and gains a **Next suspect** button (shortcut `L`) that selects the first note of the next marked line, seeks the audio to it and centers the piano roll. It complements "Next flagged", which moves note by note.
+
+### Changed
+
+- **Sharper Suspicious-Line Marks in Review (CTC aligner):**
+  - The red "suspicious line" mark no longer depends on the line score alone. Two signals were added: a word aligned over **silence** in the isolated vocal and, when Whisper runs for arbitration, a line whose start **disagrees with it by more than 1 s** (the Whisper result used to be discarded when CTC won). Lines where both aligners agree are no longer marked; an interpolated Whisper word does not count as disagreement.
+  - Measured on 51 songs / 2,879 lines with hand-made charts (`python-sidecar/eval/error_anatomy.py`): mark precision 0.42 → 0.55 and recall 0.61 → 0.74, while marking fewer lines (23.1% → 21.8%). Note timings do not change, only the warning; rescue and arbitration are still decided by the score.
+
 ## [2.6.1] - 2026-11-13
 
 ### Fixed

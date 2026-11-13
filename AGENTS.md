@@ -92,9 +92,8 @@ Base medida em 13/11 (51 músicas, 2.880 linhas, caches de 07/11): a flag atual 
 
 | ID | Item | Medido | Esforço |
 |---|---|---|---|
-| B1 | Marcar linha com palavra do CTC sobre silêncio do stem vocal (pico < −30 dB rel. p95) | precisão 0,95 por palavra, 0,74 por linha; recall 0,22 | P **[medir]** |
-| B2 | Guardar o Whisper da arbitragem (hoje é jogado fora quando o CTC ganha) e marcar a linha que discorda em mais de 1 s; linha que concorda em até 0,3 s vira "confirmada" | com B1: precisão 0,52 / recall 0,75 na mesma carga de revisão; confirmadas = 65,9% das linhas, 2,6% erradas | M **[medir]** |
-| B3 | Índice de confiança do pacote (% confirmadas / suspeitas / em silêncio) e atalho "próxima linha suspeita" na Revisão | depende de B1/B2 | M |
+| B1+B2 | **Feito em 13/11 (no `[Não lançado]`, sem release):** `ctc_align.words_on_silence`, `line_start_disagreement` e `reflag_lines`, ligados em `main._reflag_ctc_lines` depois do resgate e da arbitragem (que seguem pelo score). Palavra interpolada do Whisper não conta como discordância (sem essa guarda, Whisper colapsado pintava a música inteira) | flag 23,1% / 0,42 / 0,61 → 21,8% / 0,55 / 0,74; com Whisper em toda música: 23,3% / 0,58 / 0,84 | feito |
+| B3 | **Feito em 13/11 (parcial, sem release):** contador "Linhas suspeitas: N de M" e botão/atalho `L` "Próxima suspeita" na Revisão (`src/review/suspectLines.ts`). Falta o índice no fim da geração e a marca de linha "confirmada" (pede um `source` novo) | interface não exercitada visualmente | P |
 
 ### C. Sincronia: errar menos
 
@@ -105,7 +104,7 @@ O erro vem em rajada (52% das palavras erradas em sequências de 20+, mediana 8,
 | C1 | Fusão segura por linha: discorda em mais de 1 s **e** CTC em silêncio, usa a linha do Whisper (respeitando monotonicidade) | 48 trocas boas, 2 ruins; 0,839 para 0,855 | M **[medir]** |
 | C2 | Cachear emissões no harness (`.npy`) e varrer `STAR_LOGP` / curinga que custa onde há energia vocal, só com Viterbi em CPU | hipótese, não medida | M **[medir]** |
 | C3 | `lrc_blocks` com pad e restrição sequencial em vez de partição dura no timestamp do `.lrc` | não medido (o harness não passa `.lrc`) | M **[medir]** |
-| C4 | Harness chamar a orquestração do `main.py` (hoje reimplementa) e ganhar modo com `.lrc`; versionar os scripts de anatomia do erro em `python-sidecar/eval/` | pré-requisito de C2/C3 | M |
+| C4 | Harness chamar a orquestração do `main.py` (hoje reimplementa) e ganhar modo com `.lrc`. | **parte feita em 13/11:** `eval/error_anatomy.py` mede os detectores no cache, sem GPU, chamando as funções de produção. Falta o harness fiel + `.lrc`, pré-requisito de C2/C3 | M |
 | C5 | Checagem de refrão: avisar antes de alinhar quando a transcrição mostra repetição cantada que falta na letra | ataca a causa das rajadas; não medido | G |
 | C6 | Âncora manual: usuário marca 2 ou 3 inícios de linha e o CTC realinha em blocos (reusa `lrc_blocks`) | não medido | G |
 | C7 | Modo verificação opcional: roda os dois alinhadores sempre | recall 0,86 com precisão 0,53, ao custo de tempo | M (depois de B2) |
