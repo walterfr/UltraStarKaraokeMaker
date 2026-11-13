@@ -6,16 +6,39 @@ name: Publish to itch.io
 # Precisa do secret BUTLER_API_KEY configurado no repositório GitHub:
 # https://itch.io/user/settings/api-keys
 # Se o secret não estiver configurado, o workflow avisa e conclui sem falhar.
+#
+# POR QUE É ENCADEADO (workflow_call) E NÃO `on: release`: o Release é criado
+# pelo softprops/action-gh-release dentro do build-windows.yml usando o
+# GITHUB_TOKEN, e eventos gerados com esse token NÃO disparam outros workflows
+# (regra do GitHub para evitar execuções recursivas). Com `release: published`
+# este workflow nunca rodava sozinho. Por isso o build-windows.yml o chama como
+# job `publish-itch` (needs: build) em tags v*, igual ao `publish-winget`.
+#
+# Disparo manual (republicar uma versão já lançada):
+#   gh workflow run publish-itch.yml -f release_tag=vX.Y.Z
 
 on:
-  release:
-    types: [published]
+  workflow_call:
+    inputs:
+      release_tag:
+        description: "Tag da release (ex.: v2.5.1) para publicar no itch.io"
+        type: string
+        required: false
+        default: ""
+    secrets:
+      BUTLER_API_KEY:
+        required: false
   workflow_dispatch:
     inputs:
       release_tag:
         description: "Tag da release (ex.: v2.5.1) para publicar no itch.io"
+        type: string
         required: false
         default: ""
+
+# Só lê os assets do Release (gh release download).
+permissions:
+  contents: read
 
 jobs:
   publish-itch:
@@ -37,8 +60,21 @@ jobs:
       - name: Determinar Tag da Release
         if: steps.check-secret.outputs.has_key == 'true'
         id: vars
+        env:
+          INPUT_TAG: ${{ inputs.release_tag }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          TAG="${{ inputs.release_tag || github.event.release.tag_name || github.ref_name }}"
+          # Input explícito (workflow_call / dispatch) tem prioridade; sem ele,
+          # só vale o ref se for uma tag (dispatch feito a partir da tag).
+          TAG="$INPUT_TAG"
+          if [ -z "$TAG" ] && [ "$REF_TYPE" = "tag" ]; then
+            TAG="$REF_NAME"
+          fi
+          if [ -z "$TAG" ]; then
+            echo "::error::Nenhuma tag de release informada: release_tag está vazio e o ref atual ($REF_NAME) não é uma tag. Rode de novo informando release_tag (ex.: v2.6.0)."
+            exit 1
+          fi
           VER="${TAG#v}"
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "version=$VER" >> $GITHUB_OUTPUT
@@ -47,15 +83,16 @@ jobs:
         if: steps.check-secret.outputs.has_key == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.vars.outputs.tag }}
+          REPO: ${{ github.repository }}
         run: |
-          TAG="${{ steps.vars.outputs.tag }}"
           echo "Aguardando instaladores ficarem disponíveis no release $TAG..."
           MAX_RETRIES=40
           COUNT=0
           mkdir -p dist-win dist-linux
           while [ $COUNT -lt $MAX_RETRIES ]; do
-            gh release download "$TAG" --repo "${{ github.repository }}" --pattern "*_x64-setup.exe" --dir ./dist-win 2>/dev/null || true
-            gh release download "$TAG" --repo "${{ github.repository }}" --pattern "*.AppImage" --dir ./dist-linux 2>/dev/null || true
+            gh release download "$TAG" --repo "$REPO" --pattern "*_x64-setup.exe" --dir ./dist-win 2>/dev/null || true
+            gh release download "$TAG" --repo "$REPO" --pattern "*.AppImage" --dir ./dist-linux 2>/dev/null || true
             
             HAS_WIN=$(ls ./dist-win/*.exe 2>/dev/null | wc -l)
             HAS_LINUX=$(ls ./dist-linux/*.AppImage 2>/dev/null | wc -l)
@@ -85,11 +122,12 @@ jobs:
         if: steps.check-secret.outputs.has_key == 'true'
         env:
           BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+          VERSION: ${{ steps.vars.outputs.version }}
         run: |
           WIN_INSTALLER=$(ls ./dist-win/*_x64-setup.exe 2>/dev/null | head -n 1)
           if [ -n "$WIN_INSTALLER" ]; then
             echo "Enviando $WIN_INSTALLER para walterfr/uskmaker:windows..."
-            butler push "$WIN_INSTALLER" walterfr/uskmaker:windows --userversion "${{ steps.vars.outputs.version }}"
+            butler push "$WIN_INSTALLER" walterfr/uskmaker:windows --userversion "$VERSION"
           else
             echo "Nenhum instalador Windows encontrado para envio."
           fi
@@ -98,11 +136,12 @@ jobs:
         if: steps.check-secret.outputs.has_key == 'true'
         env:
           BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+          VERSION: ${{ steps.vars.outputs.version }}
         run: |
           LINUX_APPIMAGE=$(ls ./dist-linux/*.AppImage 2>/dev/null | head -n 1)
           if [ -n "$LINUX_APPIMAGE" ]; then
             echo "Enviando $LINUX_APPIMAGE para walterfr/uskmaker:linux..."
-            butler push "$LINUX_APPIMAGE" walterfr/uskmaker:linux --userversion "${{ steps.vars.outputs.version }}"
+            butler push "$LINUX_APPIMAGE" walterfr/uskmaker:linux --userversion "$VERSION"
           else
             echo "Nenhum AppImage Linux encontrado para envio."
           fi
