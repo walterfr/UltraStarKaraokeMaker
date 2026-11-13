@@ -262,6 +262,86 @@ def test_visualiser_britanico_tambem_e_ruido():
     assert strip_title_noise("Freedom! 90 [Official Visualiser]") == "Freedom! 90"
 
 
+# ---------------------------------------------------------------------------
+# Ruído em português/espanhol
+#
+# A lista antiga só conhecia inglês: "(Video Oficial)", "(Clipe Oficial)",
+# "(Letra)" passavam direto e envenenavam a consulta ao LRCLIB.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("titulo", [
+    "Artista Teste - Cancao Inventada (Video Oficial)",
+    "Artista Teste - Cancao Inventada (Clipe Oficial)",
+    "Artista Teste - Cancao Inventada (Áudio Oficial)",
+    "Artista Teste - Cancao Inventada (A\u0301udio Oficial)",   # acento decomposto
+    "Artista Teste - Cancao Inventada (Letra)",
+    "Artista Teste - Cancao Inventada [Legendado]",
+    "Artista Teste - Cancao Inventada (Videoclip Subtitulado)",
+    "Artista Teste - Cancao Inventada (Official 4K Video)",
+    "Artista Teste - Cancao Inventada con letra",
+    "Artista Teste - Cancao Inventada Lyrics",
+    "Artista Teste - Cancao Inventada | Trilha do Filme Tal",
+    "Artista Teste - Cancao Inventada ｜ Canal Tal",
+    "Artista Teste - Cancao Inventada letra | Canal Tal",
+    "Artista Teste | Cancao Inventada | Canal Tal",
+])
+def test_ruido_em_portugues_e_espanhol_sai(titulo):
+    assert pick_artist_title({"title": titulo}) == ("Artista Teste", "Cancao Inventada")
+
+
+@pytest.mark.parametrize("musica", [
+    "Cancao Inventada (Birthday)",      # contém "hd"
+    "Cancao Inventada (Eclipse)",       # contém "clip"
+    "Cancao Inventada (Radio Edit)",
+    "Cancao Inventada (Ao Vivo)",
+    "Cancao Inventada (Acoustic)",
+    "Cancao Inventada (Remix)",
+    "Cancao Inventada (feat. Fulano)",
+    "Lyrics",                           # o título INTEIRO não é ruído
+    "Con Letra",
+])
+def test_palavra_de_ruido_so_vale_inteira(musica):
+    assert pick_artist_title({"title": f"Artista Teste - {musica}"}) == ("Artista Teste", musica)
+
+
+def test_barra_vertical_ainda_separa_artista_e_musica():
+    """O corte do " | canal" só vale DEPOIS da divisão artista/música."""
+    assert split_artist_title("Artista Teste | Cancao Inventada") == ("Artista Teste", "Cancao Inventada")
+
+
+def test_palavra_de_ruido_no_fim_sai_mesmo_sem_artista():
+    assert split_artist_title("Cancao Inventada con letra") == (None, "Cancao Inventada")
+
+
+# ---------------------------------------------------------------------------
+# Emoji sem resto invisível
+#
+# Tirar só a categoria "So" largava U+FE0F, U+20E3 e U+200D no título - não
+# aparecem na tela, mas vão para a consulta do LRCLIB e para o nome da pasta.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("cru,limpo", [
+    ("Cancao \u2764\ufe0f Inventada", "Cancao Inventada"),              # coração + seletor
+    ("Top 1\ufe0f\u20e3 Cancao Inventada", "Top 1 Cancao Inventada"),   # keycap
+    ("\U0001f468\u200d\U0001f469\u200d\U0001f467 Cancao Inventada", "Cancao Inventada"),  # família (ZWJ)
+    ("Cancao\U0001f468\u200d\U0001f469Inventada", "CancaoInventada"),       # ZWJ não vira "entre letras"
+    ("Cancao \U0001f44d\U0001f3fd Inventada", "Cancao Inventada"),              # tom de pele
+])
+def test_emoji_sai_sem_deixar_invisivel(cru, limpo):
+    assert strip_title_noise(cru) == limpo
+
+
+@pytest.mark.parametrize("titulo", [
+    "Cancao Inventada 360°",
+    "Cancao Inventada № 5",
+    "Cancao `Inventada`",
+    "Cancao ^ Inventada",
+    "\u0915\u094d\u200d\u0937",     # devanágari: letra + virama + ZWJ + letra
+])
+def test_simbolo_que_nao_e_emoji_fica(titulo):
+    assert strip_title_noise(titulo) == titulo
+
+
 # --- pasta de dados (onde o setup põe o uv) - espelho do platform.rs ---
 
 def test_data_dir_windows_usa_localappdata():

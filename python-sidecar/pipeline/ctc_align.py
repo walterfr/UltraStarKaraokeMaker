@@ -691,6 +691,12 @@ def lrc_blocks(
     linha (particionamento estrito, sem sobreposição entre versos adjacentes).
     Evita que o final de uma linha invada o áudio do verso seguinte e cause
     colisão ou inversão de notas no piano roll.
+
+    `pad` vale SÓ para o primeiro bloco, e só quando ele começa na palavra 0:
+    recua o início em `pad` s (não há verso anterior para invadir). Todos os
+    outros blocos começam exatamente no tempo do .lrc e terminam onde o
+    próximo começa. Palavras antes da primeira linha casada viram um bloco
+    próprio de 0 s até essa linha.
     """
     starts: list[tuple[int, float]] = []
     for i, t in sorted(line_starts):
@@ -856,8 +862,10 @@ def verified_lrc_blocks(
     linhas). Se confirmar E alguma linha tiver derivado mais que
     `drift_threshold` s (ex.: ponte precedida de pausa instrumental em que o
     Viterbi global puxou o verso 15 s pra trás, caso real "Jimmy Eat World -
-    A Praise Chorus"), devolve os blocos com `pad` folgado (1,5 s) para
-    restringir as linhas desgarradas à janela certa sem engessar o resto.
+    A Praise Chorus"), devolve os blocos do .lrc (lrc_blocks: partição
+    estrita, cada linha entre o seu tempo e o da próxima) para restringir as
+    linhas desgarradas à janela certa. `pad` (1,5 s) só recua o início do
+    PRIMEIRO bloco, quando ele começa na palavra 0 - não há folga entre versos.
 
     Se for detectado colapso de linhas (detect_line_collapse) ou force=True,
     os blocos são adotados para impedir que versos continuem comprimidos.
@@ -940,10 +948,14 @@ def align_lyrics_ctc_to_audio(
     cai no align.align_lyrics_to_audio de sempre.
 
     Um .lrc APROVADO pelo usuário ([uskmapproved:1]) ou com strict_lrc=True
-    define os blocos direto (pad de 0,3s ou 0,5s). Um .lrc não aprovado (LRCLIB)
-    passa primeiro pelo alinhamento global e vira blocos (pad folgado de 1,5 s)
-    se houver linha desgarrada (> 2 s de desvio) ou se for detectado colapso
-    de versos (comum em Rock/Metal).
+    define os blocos direto. Um .lrc não aprovado (LRCLIB) passa primeiro pelo
+    alinhamento global e vira blocos se houver linha desgarrada (> 2 s de
+    desvio) ou se for detectado colapso de versos (comum em Rock/Metal).
+
+    Nos dois casos os blocos são partição estrita (ver lrc_blocks): cada linha
+    vai do seu tempo no .lrc até o da próxima, sem folga entre versos. O `pad`
+    (0,3 s aprovado, 0,5 s strict_lrc, 1,5 s não aprovado) só recua o início
+    do primeiro bloco, quando ele começa na palavra 0.
     """
     import whisperx
 

@@ -224,6 +224,21 @@ def download_from_youtube(url: str, out_dir: Path) -> Path:
     return audio_wav
 
 
+def _video_format(max_resolution: int) -> str:
+    """
+    Seletor de formato do yt-dlp para o vídeo do pacote.
+
+    Até 1080p prefere H.264 (avc1): é o que todo UltraStar toca. Acima disso
+    (1440/2160, ou 0 = sem limite) o YouTube só oferece AV1/VP9 - preferir
+    avc1 ali entregaria 1080p em silêncio, ignorando a escolha do usuário.
+    """
+    if max_resolution <= 0:
+        return "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+    cap = f"[height<={max_resolution}]"
+    h264 = f"bestvideo[ext=mp4][vcodec^=avc1]{cap}+bestaudio[ext=m4a]/" if max_resolution <= 1080 else ""
+    return f"{h264}bestvideo[ext=mp4]{cap}+bestaudio[ext=m4a]/best[ext=mp4]{cap}/best{cap}"
+
+
 def download_from_youtube_with_video(url: str, out_dir: Path, max_resolution: int = 0) -> SourceAudio:
     """
     Baixa o VÍDEO do YouTube (preferindo mp4) UMA vez e extrai o áudio dele
@@ -250,19 +265,8 @@ def download_from_youtube_with_video(url: str, out_dir: Path, max_resolution: in
     # mp4 é o que o UltraStar lê melhor; se o YouTube só tiver webm, o yt-dlp
     # ainda entrega webm e o UltraStar moderno também lê, mas mp4 é o alvo
     # preferencial por compatibilidade máxima.
-    if max_resolution > 0:
-        video_format = (
-            f"bestvideo[ext=mp4][vcodec^=avc1][height<={max_resolution}]+bestaudio[ext=m4a]/"
-            f"bestvideo[ext=mp4][height<={max_resolution}]+bestaudio[ext=m4a]/"
-            f"best[ext=mp4][height<={max_resolution}]/best[height<={max_resolution}]"
-        )
-    else:
-        video_format = (
-            "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/"
-            "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
-        )
     cmd = _yt_dlp_base_cmd() + [
-        "-f", video_format,
+        "-f", _video_format(max_resolution),
         "--merge-output-format", "mp4",
         "-o", output_template,
         url,

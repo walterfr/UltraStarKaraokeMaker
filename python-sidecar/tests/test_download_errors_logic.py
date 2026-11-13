@@ -185,3 +185,28 @@ def test_a_mensagem_nomeia_o_que_falhou(monkeypatch):
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+
+# ---------------------------------------------------------------------------
+# Formato do vídeo: H.264 só onde o YouTube tem H.264 (até 1080p)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("teto", [480, 720, 1080])
+def test_ate_1080p_prefere_h264(teto):
+    fmt = download._video_format(teto)
+    assert fmt.startswith(f"bestvideo[ext=mp4][vcodec^=avc1][height<={teto}]")
+    assert fmt.endswith(f"best[height<={teto}]")  # nunca passa do teto
+
+
+@pytest.mark.parametrize("teto", [1440, 2160])
+def test_acima_de_1080p_nao_pede_h264(teto):
+    # o YouTube não tem avc1 acima de 1080p: pedir avc1 primeiro entregaria
+    # 1080p e a opção escolhida na interface não valeria nada
+    fmt = download._video_format(teto)
+    assert "avc1" not in fmt
+    assert f"[height<={teto}]" in fmt
+
+
+def test_sem_limite_nao_restringe_codec_nem_altura():
+    fmt = download._video_format(0)
+    assert "avc1" not in fmt and "height" not in fmt

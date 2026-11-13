@@ -684,6 +684,7 @@ def _align_with_whisper(stems, source, work_path: Path, lyrics_path: str, langua
                 lead_vocals, Path(lyrics_path), language=language, device=device, whisper_device=whisper_device,
                 whisper_model_size=whisper_model_size,
                 synced_lyrics_path=Path(synced_lyrics_path) if synced_lyrics_path else None,
+                strict_lrc=strict_lrc,
             )
             retry_interp = alignment_stats(retry_timings)["by_source"]["interpolated"]
             base_interp = alignment_stats(word_timings)["by_source"]["interpolated"]
@@ -730,6 +731,7 @@ def _align_with_whisper(stems, source, work_path: Path, lyrics_path: str, langua
                 whisper_model_size=whisper_model_size,
                 synced_lyrics_path=Path(synced_lyrics_path) if synced_lyrics_path else None,
                 vad_options={"vad_onset": 0.3, "vad_offset": 0.2},
+                strict_lrc=strict_lrc,
             )
             vad_retry_interp = alignment_stats(vad_retry_timings)["by_source"]["interpolated"]
             base_interp = alignment_stats(word_timings)["by_source"]["interpolated"]
@@ -778,6 +780,7 @@ def _align_with_whisper(stems, source, work_path: Path, lyrics_path: str, langua
                 stems2.vocals, Path(lyrics_path), language=language, device=device, whisper_device=whisper_device,
                 whisper_model_size=whisper_model_size,
                 synced_lyrics_path=Path(synced_lyrics_path) if synced_lyrics_path else None,
+                strict_lrc=strict_lrc,
             )
             retry_interp = alignment_stats(retry_timings)["by_source"]["interpolated"]
             base_interp = alignment_stats(word_timings)["by_source"]["interpolated"]

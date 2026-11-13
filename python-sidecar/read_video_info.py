@@ -32,17 +32,18 @@ import unicodedata
 
 # Ruído que gravadora/uploader grudam no título e que não é o nome da música.
 # Removido do TÍTULO, nunca do artista - "(Band)" não existe, "(Live)" sim.
+#
+# Palavras que, sozinhas dentro de um (...) ou [...], denunciam o grupo inteiro
+# como ruído - em inglês, português e espanhol: "(Video Oficial)", "(Clipe
+# Oficial)", "(Letra)", "(Official 4K Video)". Sempre como PALAVRA INTEIRA
+# (\b): "(Birthday)" contém "hd" e "(Eclipse)" contém "clip", e os dois ficam.
+_NOISE_WORDS = (
+    r"official|oficial|v[ií]deo|videoclipe?|clipe?|lyrics?|letras?|[aá]udio"
+    r"|visuali[sz]er|legendad[oa]|subtitulad[oa]|hd|hq|4k|8k|1080p|720p"
+)
+
 _NOISE_PATTERNS = (
-    r"\(\s*(?:official\s*)?(?:music\s*)?video\s*\)",
-    r"\[\s*(?:official\s*)?(?:music\s*)?video\s*\]",
-    r"\(\s*official\s*(?:audio|lyric[s]?|visuali[sz]er)?\s*\)",
-    r"\[\s*official\s*(?:audio|lyric[s]?|visuali[sz]er)?\s*\]",
-    r"\(\s*lyric[s]?(?:\s*video)?\s*\)",
-    r"\[\s*lyric[s]?(?:\s*video)?\s*\]",
-    r"\(\s*audio\s*\)",
-    r"\[\s*audio\s*\]",
-    r"\(\s*(?:hd|hq|4k|8k|1080p|720p)\s*\)",
-    r"\[\s*(?:hd|hq|4k|8k|1080p|720p)\s*\]",
+    rf"[\(\[][^\(\)\[\]]*\b(?:{_NOISE_WORDS})\b[^\(\)\[\]]*[\)\]]",
     r"\(\s*remaster(?:ed)?(?:\s*\d{4})?\s*\)",
     r"\[\s*remaster(?:ed)?(?:\s*\d{4})?\s*\]",
     r"\(\s*full\s*album\s*\)",
@@ -93,9 +94,57 @@ def _drop_unbalanced_brackets(text: str) -> str:
         return out
 
 
+def _is_emoji_junk(c: str) -> bool:
+    """Emoji e os invisíveis que só existem grudados nele."""
+    if c in "°№":       # categoria So, mas fazem parte de nome ("360°", "№ 5")
+        return False
+    return (
+        unicodedata.category(c) in ("So", "Cs")
+        or "\U0001f3fb" <= c <= "\U0001f3ff"    # tom de pele (o resto de Sk fica: "`", "^")
+        or "\ufe00" <= c <= "\ufe0f"            # seletores de variação
+        or c == "\u20e3"                        # keycap combinante
+    )
+
+
+def _strip_emoji(text: str) -> str:
+    """
+    Tira emoji SEM deixar invisível para trás: U+2764 U+FE0F largava o U+FE0F,
+    o keycap largava U+FE0F e U+20E3, e a família com ZWJ largava os U+200D.
+
+    Mn/Cf NÃO saem em bloco - hindi, árabe e persa dependem deles. O ZWJ só sai
+    quando está órfão; entre letras/marcas (conjunto do devanágari: letra +
+    virama + ZWJ + letra) ele fica. A vizinhança é a do texto ORIGINAL, senão
+    "a<emoji>ZWJ<emoji>b" deixaria o ZWJ "entre letras".
+    """
+    text = unicodedata.normalize("NFC", text)
+
+    def wordish(c: str) -> bool:
+        return unicodedata.category(c)[0] in "LMN" and not _is_emoji_junk(c)
+
+    out = []
+    for i, c in enumerate(text):
+        if c == "\u200d":
+            if not (0 < i < len(text) - 1 and wordish(text[i - 1]) and wordish(text[i + 1])):
+                continue
+        elif _is_emoji_junk(c):
+            continue
+        out.append(c)
+    return "".join(out)
+
+
+def _strip_trailing_noise_word(title: str) -> str:
+    """
+    "Cancao con letra" -> "Cancao". Só no TÍTULO já separado do artista e só
+    se sobrar alguma palavra: uma música chamada "Lyrics" continua "Lyrics".
+    """
+    m = re.search(r"(?:^|\s+)(?:con\s+letra|lyrics?|letra|legendado)$", title, flags=re.IGNORECASE)
+    head = title[:m.start()].rstrip(_TRIM_CHARS) if m else ""
+    return head if re.search(r"\w", head) else title
+
+
 def strip_title_noise(text: str) -> str:
     """Tira "(Official Video)", "[HD]", "(Remastered 2019)", emojis e afins."""
-    out = "".join(c for c in text if unicodedata.category(c) not in ("So", "Sk", "Cs"))
+    out = _strip_emoji(text)
     for pattern in _NOISE_PATTERNS:
         out = re.sub(pattern, " ", out, flags=re.IGNORECASE)
     # Parênteses/colchetes que ficaram VAZIOS depois de tirar o conteúdo.
@@ -124,10 +173,13 @@ def split_artist_title(video_title: str) -> tuple[str | None, str | None]:
     for sep in _TITLE_SEPARATORS:
         if sep in cleaned:
             artist, _, title = cleaned.partition(sep)
-            artist, title = artist.strip(), strip_title_noise(title)
+            # " | " DEPOIS da divisão não separa mais nada: é o canal/filme
+            # ("Música | Trilha do Filme Tal"). Só sai se sobrar título antes.
+            title = re.split(r"\s[|｜]\s", title, maxsplit=1)[0].strip() or title
+            artist, title = artist.strip(), _strip_trailing_noise_word(strip_title_noise(title))
             if artist and title:
                 return artist, title
-    return None, cleaned
+    return None, _strip_trailing_noise_word(cleaned)
 
 
 def pick_artist_title(info: dict) -> tuple[str | None, str | None]:
