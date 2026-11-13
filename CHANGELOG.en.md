@@ -4,6 +4,26 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [2.6.1] - 2026-11-13
+
+### Fixed
+
+- **itch.io Publishing Chained to the Release Build:**
+  - The `publish-itch.yml` workflow never fired on its own: the Release is created with `GITHUB_TOKEN` inside `build-windows.yml`, and events created with that token do not trigger other workflows (`release: published`). It is now a reusable workflow (`workflow_call`) called by the `publish-itch` job of `build-windows.yml` on `v*` tags, just like `publish-winget` already was.
+  - A manual dispatch without `release_tag` and outside a tag now fails immediately with a clear message, instead of waiting 20 minutes for a release that does not exist.
+- **Release Without the Stale MSIX (2.2.0):**
+  - `packaging/msix/USKMaker_2.2.0_x64.msix` is no longer tracked, and the Release now attaches only the versioned package (`USKMaker_vX.Y.Z.0_x64.msix`), without the obsolete 2.2.0 file or the unversioned copy.
+- **YouTube Video Title Cleanup:**
+  - Emoji removal no longer leaves invisible characters (variation selectors, zero-width joiners) in the title and folder name.
+  - Portuguese and Spanish noise such as `(Vídeo Oficial)`, `(Clipe Oficial)`, `(Letra)`, `(Legendado)` and the suffix after `|` is now removed.
+- **Strict `.lrc` Limits Preserved in Whisper Rescue Passes:**
+  - Strict `.lrc` line boundaries are now kept when a Whisper rescue pass (lead vocal, sensitive VAD or second separation) wins the alignment.
+- **Documentation:**
+  - Credit to [Karaokiza](https://github.com/vicsaizo/Karaokiza) (MIT, by vicsaizo), which inspired the v2.6.0 improvements, added to the README.
+  - `package-lock.json` aligned with the app version (it still said 2.1.0).
+- **Resolutions Above 1080p Work Again (1440p / 2160p / No limit):**
+  - The H.264 (`avc1`) preference from v2.6.0 applied to every cap, but YouTube offers no H.264 above 1080p: choosing 1440p, 2160p or "No limit" silently delivered 1080p. H.264 is now preferred only up to 1080p; above that the download follows the chosen cap (AV1/VP9), and the option's hint warns that some players cannot play those formats.
+
 ## [2.6.0] — 2026-11-13
 
 ### Added

@@ -4,6 +4,26 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [2.6.1] - 2026-11-13
+
+### Corrigido
+
+- **Publicação no itch.io Encadeada ao Build do Release:**
+  - O workflow `publish-itch.yml` nunca disparava sozinho: o Release é criado com o `GITHUB_TOKEN` dentro do `build-windows.yml`, e eventos gerados por esse token não acionam outros workflows (`release: published`). Agora ele é um workflow reutilizável (`workflow_call`) chamado pelo job `publish-itch` do `build-windows.yml` em tags `v*`, como já acontecia com o `publish-winget`.
+  - Disparo manual sem `release_tag` e fora de uma tag agora falha na hora com mensagem clara, em vez de esperar 20 minutos por um release inexistente.
+- **Release sem o MSIX Antigo (2.2.0):**
+  - O arquivo `packaging/msix/USKMaker_2.2.0_x64.msix` deixou de ser versionado e o Release passa a anexar apenas o pacote da versão (`USKMaker_vX.Y.Z.0_x64.msix`), sem o 2.2.0 obsoleto nem a cópia sem versão no nome.
+- **Limpeza de Títulos de Vídeo do YouTube:**
+  - A remoção de emojis não deixa mais caracteres invisíveis (seletores de variação, *zero-width joiners*) no título e no nome da pasta.
+  - Ruídos em português e espanhol, como `(Vídeo Oficial)`, `(Clipe Oficial)`, `(Letra)`, `(Legendado)` e o sufixo após `|`, agora são removidos.
+- **Limites Estritos do `.lrc` Preservados nos Resgates do Whisper:**
+  - Os limites de linha pelo `.lrc` agora são mantidos quando um passe de resgate do Whisper (vocal principal, VAD sensível ou segunda separação) vence o alinhamento.
+- **Documentação:**
+  - Crédito ao [Karaokiza](https://github.com/vicsaizo/Karaokiza) (MIT, de vicsaizo), que inspirou as melhorias da v2.6.0, adicionado ao README.
+  - `package-lock.json` alinhado à versão do app (ainda indicava 2.1.0).
+- **Resoluções Acima de 1080p Voltam a Valer (1440p / 2160p / Sem limite):**
+  - A preferência por H.264 (`avc1`) da v2.6.0 valia para qualquer teto, mas o YouTube não oferece H.264 acima de 1080p: escolher 1440p, 2160p ou "Sem limite" entregava 1080p em silêncio. Agora o H.264 só é preferido até 1080p; acima disso o download segue o teto escolhido (AV1/VP9), e a dica da opção avisa que alguns players não reproduzem esses formatos.
+
 ## [2.6.0] - 2026-11-13
 
 ### Adicionado
