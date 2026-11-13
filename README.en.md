@@ -202,6 +202,8 @@ Special thanks to everyone who contributed code, testing, bug reports, feature s
 
 Built on top of: [WhisperX](https://github.com/m-bain/whisperx), [Demucs](https://github.com/facebookresearch/demucs), [librosa](https://librosa.org/), [SwiftF0](https://github.com/lars76/swift-f0), [yt-dlp](https://github.com/yt-dlp/yt-dlp), [Tauri](https://tauri.app/), [MusicBrainz](https://musicbrainz.org/), [Cover Art Archive](https://coverartarchive.org/), [iTunes Search API](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/), [Deezer API](https://developers.deezer.com/api), [Last.fm](https://www.last.fm/api) and [Discogs](https://www.discogs.com/developers). Flow inspiration: [UltraSinger](https://github.com/rakuri255/UltraSinger).
 
+The v2.6.0 improvements (H.264/avc1 preference in `yt-dlp`, emoji stripping in video titles, `- Topic`/`VEVO` cleanup in channel names and itch.io publishing) were inspired by [Karaokiza](https://github.com/vicsaizo/Karaokiza) (MIT), by [vicsaizo](https://github.com/vicsaizo).
+
 ---
 
 Made with ♥ in Fortaleza-CE, Brazil by [@prof.walterfr](https://www.instagram.com/prof.walterfr)

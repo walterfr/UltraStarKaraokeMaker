@@ -72,11 +72,74 @@
 - `python python-sidecar/server.py`: Servidor persistente de jobs via stdin.
 - `python python-sidecar/main.py --help`: CLI direta do pipeline.
 
-## Próximos passos (atualizado em 07/11/2026, após a v2.1.0)
+## Próximos passos (atualizado em 13/11/2026, após a v2.6.1)
 
-Estado: **v2.1.0** publicada (Windows, Linux, winget). `main` limpa e sincronizada. Saúde medida em 07/11: pytest 1079, `npm test` 16, `rust-core` 19, `src-tauri` 25, `tsc` e `cargo check` limpos, `npm audit` 0.
+Estado: **v2.6.1** (lote 1: bloco A + D1 + D4). O resto está em aberto. A lista junta a auditoria de 13/11, a verificação da v2.6.0 e a análise do `vicsaizo/Karaokiza`.
 
-1. **Seletor CTC × Whisper (investigação, nada implementado).** O CTC perde em 13 de 54 músicas (ver "Decisões medidas"). Simulação offline com os dados em cache:
+Legenda: esforço **P** (até 1 h), **M** (meio dia), **G** (mais de um dia). **[medir]** = mexe no alinhamento, só entra depois de medir no lote inteiro (`--seed-set`).
+
+### A. Correções rápidas (bugs confirmados)
+
+**Lote 1 feito em 13/11 e lançado na v2.6.1:** A1 itch.io encadeado ao build (`publish-itch` em `build-windows.yml`, `publish-itch.yml` virou `workflow_call`); A2 MSIX 2.2.0 fora do git e glob `USKMaker_v*.msix`; A3 limpeza de emoji sem sobras invisíveis; A4 `strict_lrc` repassado nos resgates 4b/4d/4c; A5 docstrings de `lrc_blocks`; A6 H.264 só até 1080p (`download._video_format`), 1440/2160/sem limite voltam a valer e a dica avisa do AV1/VP9; A7 `package-lock.json` em 2.6.0 e PR #478670 do winget fechado; D1 ruído de título PT/ES; D4 crédito ao Karaokiza. Verificado: pytest 1137, `npm test` 16, `tsc` limpo. O job `publish-itch` só será exercitado de verdade na próxima tag.
+
+| ID | Item | Onde | Esforço |
+|---|---|---|---|
+| A8 | Mesmo gatilho morto (`release: published` não dispara com `GITHUB_TOKEN`) em `publish-linux-repos.yml` (AUR/Snap) e no `winget.yml` avulso. O winget já está coberto pelo job encadeado; AUR/Snap não vão disparar sozinhos quando as lojas reabrirem. Encadear como o itch | `.github/workflows/` | P |
+
+### B. Sincronia: avisar melhor o que está errado (revisão)
+
+Base medida em 13/11 (51 músicas, 2.880 linhas, caches de 07/11): a flag atual de linha (`LOW_LINE_SCORE = 0.10`) tem precisão 0,42 e recall 0,61.
+
+| ID | Item | Medido | Esforço |
+|---|---|---|---|
+| B1 | Marcar linha com palavra do CTC sobre silêncio do stem vocal (pico < −30 dB rel. p95) | precisão 0,95 por palavra, 0,74 por linha; recall 0,22 | P **[medir]** |
+| B2 | Guardar o Whisper da arbitragem (hoje é jogado fora quando o CTC ganha) e marcar a linha que discorda em mais de 1 s; linha que concorda em até 0,3 s vira "confirmada" | com B1: precisão 0,52 / recall 0,75 na mesma carga de revisão; confirmadas = 65,9% das linhas, 2,6% erradas | M **[medir]** |
+| B3 | Índice de confiança do pacote (% confirmadas / suspeitas / em silêncio) e atalho "próxima linha suspeita" na Revisão | depende de B1/B2 | M |
+
+### C. Sincronia: errar menos
+
+O erro vem em rajada (52% das palavras erradas em sequências de 20+, mediana 8,6 s, 76% atrasadas) e em linha repetida (19,7% contra 8,2%). O seletor por música já bateu no teto; o ganho que sobra é por linha (CTC 0,839 das linhas certas, oráculo 0,909).
+
+| ID | Item | Medido | Esforço |
+|---|---|---|---|
+| C1 | Fusão segura por linha: discorda em mais de 1 s **e** CTC em silêncio, usa a linha do Whisper (respeitando monotonicidade) | 48 trocas boas, 2 ruins; 0,839 para 0,855 | M **[medir]** |
+| C2 | Cachear emissões no harness (`.npy`) e varrer `STAR_LOGP` / curinga que custa onde há energia vocal, só com Viterbi em CPU | hipótese, não medida | M **[medir]** |
+| C3 | `lrc_blocks` com pad e restrição sequencial em vez de partição dura no timestamp do `.lrc` | não medido (o harness não passa `.lrc`) | M **[medir]** |
+| C4 | Harness chamar a orquestração do `main.py` (hoje reimplementa) e ganhar modo com `.lrc`; versionar os scripts de anatomia do erro em `python-sidecar/eval/` | pré-requisito de C2/C3 | M |
+| C5 | Checagem de refrão: avisar antes de alinhar quando a transcrição mostra repetição cantada que falta na letra | ataca a causa das rajadas; não medido | G |
+| C6 | Âncora manual: usuário marca 2 ou 3 inícios de linha e o CTC realinha em blocos (reusa `lrc_blocks`) | não medido | G |
+| C7 | Modo verificação opcional: roda os dois alinhadores sempre | recall 0,86 com precisão 0,53, ao custo de tempo | M (depois de B2) |
+
+Já feito e fora da lista: arbitragem por música com Whisper guardado (`prefer_whisper_over_ctc`) e correção de melisma. Não reabrir: snap/ajuste acústico de onset e correção constante de viés (NO-GO medidos em 18/07).
+
+### D. Entrada e metadados (do `vicsaizo/Karaokiza`, MIT)
+
+| ID | Item | Evidência | Esforço |
+|---|---|---|---|
+| D2 | Aceitar resultado de metadados só se artista **e** título parecem com a busca (`difflib`, sem dependência nova) | `_pick_itunes_result` e `_mb_find_artist_mbid` pegam o 1º resultado | M |
+| D3 | Idioma por votação nas 5 janelas de 30 s com mais voz, só no caminho sem letra | `transcribe_lyrics` usa o idioma da interface | M |
+
+### E. Robustez, segurança e CI
+
+| ID | Item | Esforço |
+|---|---|---|
+| E1 | Definir CSP e restringir `assetProtocol.scope` (hoje `csp: null` e `**`); validar caminho em `save_queue_file` / `load_queue_file` | M |
+| E2 | Fixar as actions de terceiros por SHA (0 de 22 hoje; o release assina o updater) | P |
+| E3 | Rodar `npm test` no CI e pytest também no Linux | P |
+| E4 | Tirar de `ctc_align.py` o código só usado por `eval/ab_align.py` (`hard_anchor_runs`, `plan_blocks`, `align_lyrics_ctc`, `snap_line_starts`, `align_file`) | P |
+
+### F. Pendências antigas
+
+| ID | Item | Esforço |
+|---|---|---|
+| F1 | Validar o sing-along com microfone real (detalhe no item 2 abaixo) | P (manual) |
+| F2 | Arquivos grandes: `App.tsx` (~2830 linhas), `ReviewScreen.tsx` (~2740), `main.rs` (~2310) | G |
+| F3 | macOS (issue #36) | G |
+| F4 | Lojas Linux pendentes (AUR, Snap), ver "Regras de Release e CI" | P cada, quando reabrirem |
+
+### Detalhes dos itens antigos (07/11/2026)
+
+1. **Seletor CTC × Whisper (investigação de 07/11; a arbitragem guardada entrou depois em `prefer_whisper_over_ctc`).** O CTC perde em 13 de 54 músicas (ver "Decisões medidas"). Simulação offline com os dados em cache:
 
    | Fallback para Whisper quando `low_frac` > | média `w_1s` | mediana | colapsos (`w_1s` < 0,5) |
    |---|---|---|---|
