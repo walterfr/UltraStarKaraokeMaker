@@ -73,7 +73,19 @@
         ],
         "enable": true
       },
-      "csp": null
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self'",
+        "img-src": "'self' asset: http://asset.localhost https://asset.localhost",
+        "media-src": "'self' asset: http://asset.localhost https://asset.localhost blob:",
+        "connect-src": "'self' ipc: http://ipc.localhost https://ipc.localhost asset: http://asset.localhost https://asset.localhost",
+        "font-src": "'self'",
+        "object-src": "'none'",
+        "base-uri": "'self'",
+        "form-action": "'none'",
+        "frame-src": "'none'"
+      }
     }
   }
 }
