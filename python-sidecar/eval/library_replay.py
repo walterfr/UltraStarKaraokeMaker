@@ -518,17 +518,24 @@ def bpm_metric(est: float | None, file_bpm: float) -> dict | None:
 
 # ---------- per-song run (cached, resumable) ----------
 
-def _cached_stems(mp3: str, cache: Path, device: str) -> tuple[Path, Path]:
+def _cached_stems(mp3: str, cache: Path, device: str,
+                  separator: str = "demucs", roformer_model: str | None = None) -> tuple[Path, Path]:
     """Demucs stems, separated once and cached: nondeterministic between runs,
-    so a fixed stem is what makes cross-run comparisons meaningful."""
+    so a fixed stem is what makes cross-run comparisons meaningful.
+    separator="roformer" usa o MelBand Roformer (pipeline.separate) no lugar
+    do Demucs - para medir separadores pelo alinhamento/pitch (AGENTS.md, G2)."""
     vocals = cache / "vocals.wav"
     instrumental = cache / "no_vocals.wav"
     if vocals.exists() and instrumental.exists():
         return vocals, instrumental
-    from pipeline.separate import separate_vocals
-    log("  demucs...")
+    from pipeline.separate import LEAD_VOCAL_MODEL, separate_vocals
+    log(f"  {separator}...")
     tmp = cache / "demucs_tmp"
-    stems = separate_vocals(Path(mp3), tmp, device=device)
+    if separator == "roformer":
+        stems = separate_vocals(Path(mp3), tmp, device=device, backend="roformer",
+                                model=roformer_model or LEAD_VOCAL_MODEL)
+    else:
+        stems = separate_vocals(Path(mp3), tmp, device=device)
     shutil.move(str(stems.vocals), str(vocals))
     shutil.move(str(stems.instrumental), str(instrumental))
     shutil.rmtree(tmp, ignore_errors=True)
@@ -675,7 +682,8 @@ def _cached_pitch(stem: Path, cache: Path):
     return track.timestamps, track.pitch_hz, track.voicing
 
 
-def _run_song(song: dict, run_dir: str, slug: str, device: str, aligner: str = "ctc") -> dict:
+def _run_song(song: dict, run_dir: str, slug: str, device: str, aligner: str = "ctc",
+              separator: str = "demucs", roformer_model: str | None = None) -> dict:
     chart = usdx_parse.read_file(song["gold"])
     gwords = gold_words(chart)
     if len(gwords) < 30:
@@ -695,7 +703,7 @@ def _run_song(song: dict, run_dir: str, slug: str, device: str, aligner: str = "
     cache = Path(run_dir) / "cache" / slug
     cache.mkdir(parents=True, exist_ok=True)
 
-    vocals, instrumental = _cached_stems(song["mp3"], cache, device)
+    vocals, instrumental = _cached_stems(song["mp3"], cache, device, separator, roformer_model)
     align_res = _cached_alignment(vocals, cache, gwords, language, device, aligner=aligner)
     times, hz, voicing = _cached_pitch(vocals, cache)
 
@@ -725,7 +733,8 @@ def _run_song(song: dict, run_dir: str, slug: str, device: str, aligner: str = "
     }
 
 
-def run_song(song: dict, run_dir: str, device: str, aligner: str = "ctc") -> None:
+def run_song(song: dict, run_dir: str, device: str, aligner: str = "ctc",
+             separator: str = "demucs", roformer_model: str | None = None) -> None:
     slug = slugify(song["name"])
     rj = os.path.join(run_dir, "results", f"{slug}.json")
     ej = os.path.join(run_dir, "results", f"{slug}.error.json")
@@ -734,7 +743,8 @@ def run_song(song: dict, run_dir: str, device: str, aligner: str = "ctc") -> Non
         return
     log(f"[run ] {song['name']}")
     try:
-        res = _run_song(song, run_dir, slug, device, aligner=aligner)
+        res = _run_song(song, run_dir, slug, device, aligner=aligner,
+                        separator=separator, roformer_model=roformer_model)
         with open(rj, "w", encoding="utf-8") as f:
             json.dump(res, f, ensure_ascii=False, indent=1, default=float)
     except UnmeasurableSong as e:
@@ -984,6 +994,14 @@ def main() -> int:
     ap.add_argument("--aligner", choices=("ctc", "whisper"), default="ctc",
                     help="alinhador da Etapa 4 (padrão: ctc, igual ao main.py)")
     ap.add_argument("--aggregate-only", action="store_true")
+    # Separador da Etapa 2 (AGENTS.md, G2). Cada separador/modelo grava numa
+    # pasta própria: os stems ficam em cache por música e não podem misturar.
+    ap.add_argument("--separator", choices=("demucs", "roformer"), default="demucs")
+    ap.add_argument("--roformer-model", default=None,
+                    help="checkpoint do audio-separator (padrão: o karaoke do resgate 4b)")
+    # Sufixo extra da pasta do lote (ex.: --tag 2.6.1 para refazer a base com
+    # o código atual sem apagar a medição antiga).
+    ap.add_argument("--tag", default=None)
     # Um lote de UM idioma só. Amostragem estratificada dá poucas músicas dos
     # buckets pequenos (pt é 108/1427 => ~5 num n=60), e cinco músicas não
     # concluem nada. Com --lang o bucket vira o universo e a amostra é dele.
@@ -1018,6 +1036,11 @@ def main() -> int:
         sample, _ = stratified_sample(manifest, args.n, args.seed)
         suffix = f"-{args.lang}" if args.lang else ""
         run_dir = os.path.join(runs_root, f"replay-n{args.n}-seed{args.seed}{suffix}")
+    if args.separator != "demucs":
+        model_tag = slugify(Path(args.roformer_model).stem)[:40] if args.roformer_model else "karaoke"
+        run_dir += f"-{args.separator}-{model_tag}"
+    if args.tag:
+        run_dir += f"-{slugify(args.tag)}"
     counts = ", ".join(
         f"{lg}={sum(1 for s in sample if s['lang_group'] == lg)}"
         for lg in REPORT_LANGS)
@@ -1029,7 +1052,8 @@ def main() -> int:
     if not args.aggregate_only:
         for i, song in enumerate(sample, 1):
             log(f"[{i}/{len(sample)}]")
-            run_song(song, run_dir, args.device, aligner=args.aligner)
+            run_song(song, run_dir, args.device, aligner=args.aligner,
+                     separator=args.separator, roformer_model=args.roformer_model)
 
     aggregate(sample, run_dir)
     return 0
