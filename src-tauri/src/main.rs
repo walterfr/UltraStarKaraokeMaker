@@ -2231,13 +2231,34 @@ fn open_folder(path: String, lang: String) -> Result<(), String> {
     Ok(())
 }
 
+// O frontend só passa caminhos dos diálogos filtrados para JSON; a checagem
+// impede que o webview use estes comandos para ler/gravar qualquer arquivo.
+const QUEUE_FILE_MAX_BYTES: u64 = 5 * 1024 * 1024;
+
+fn check_queue_path(path: &str) -> Result<(), String> {
+    let is_json = std::path::Path::new(path)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("json"));
+    if is_json {
+        Ok(())
+    } else {
+        Err(format!("O arquivo da fila precisa ter extensão .json (queue file must be .json): {path}"))
+    }
+}
+
 #[tauri::command]
 fn save_queue_file(path: String, contents: String) -> Result<(), String> {
+    check_queue_path(&path)?;
     std::fs::write(&path, contents).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn load_queue_file(path: String) -> Result<String, String> {
+    check_queue_path(&path)?;
+    let size = std::fs::metadata(&path).map_err(|e| e.to_string())?.len();
+    if size > QUEUE_FILE_MAX_BYTES {
+        return Err(format!("Arquivo da fila grande demais (queue file too large): {size} bytes, limite 5 MB"));
+    }
     std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
@@ -2260,6 +2281,30 @@ mod tests {
     #[test]
     fn saida_vazia_do_lspci_nao_inventa_nome() {
         assert_eq!(amd_name_from_lspci(""), None);
+    }
+
+    #[test]
+    fn fila_so_aceita_json() {
+        use super::{load_queue_file, save_queue_file};
+        let dir = std::env::temp_dir().join(format!("uskmaker-queue-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = |name: &str| dir.join(name).to_string_lossy().into_owned();
+
+        // Extensão errada: recusa sem tocar no disco.
+        assert!(save_queue_file(p("fila.txt"), "[]".into()).is_err());
+        assert!(!dir.join("fila.txt").exists());
+        assert!(save_queue_file(p("fila"), "[]".into()).is_err());
+        assert!(load_queue_file(p("fila.json.exe")).is_err());
+
+        // .json em qualquer caixa passa e faz ida e volta.
+        save_queue_file(p("fila.JSON"), "[1]".into()).unwrap();
+        assert_eq!(load_queue_file(p("fila.JSON")).unwrap(), "[1]");
+
+        // Acima de 5 MB a leitura é recusada.
+        std::fs::write(dir.join("grande.json"), vec![b' '; 5 * 1024 * 1024 + 1]).unwrap();
+        assert!(load_queue_file(p("grande.json")).is_err());
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
 
