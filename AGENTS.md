@@ -72,9 +72,9 @@
 - `python python-sidecar/server.py`: Servidor persistente de jobs via stdin.
 - `python python-sidecar/main.py --help`: CLI direta do pipeline.
 
-## Próximos passos (atualizado em 13/11/2026, após a v2.6.1)
+## Próximos passos (atualizado em 14/11/2026, após a v2.7.0)
 
-Estado: **v2.6.1** (lote 1: bloco A + D1 + D4). O resto está em aberto. A lista junta a auditoria de 13/11, a verificação da v2.6.0 e a análise do `vicsaizo/Karaokiza`.
+Estado: **v2.7.0** (v2.6.1: lote 1, bloco A + D1 + D4; v2.7.0: B1+B2 e parte do B3). O resto está em aberto. A lista junta a auditoria de 13/11, a verificação da v2.6.0 e a análise do `vicsaizo/Karaokiza`.
 
 Legenda: esforço **P** (até 1 h), **M** (meio dia), **G** (mais de um dia). **[medir]** = mexe no alinhamento, só entra depois de medir no lote inteiro (`--seed-set`).
 
@@ -92,8 +92,8 @@ Base medida em 13/11 (51 músicas, 2.880 linhas, caches de 07/11): a flag atual 
 
 | ID | Item | Medido | Esforço |
 |---|---|---|---|
-| B1+B2 | **Feito em 13/11 (no `[Não lançado]`, sem release):** `ctc_align.words_on_silence`, `line_start_disagreement` e `reflag_lines`, ligados em `main._reflag_ctc_lines` depois do resgate e da arbitragem (que seguem pelo score). Palavra interpolada do Whisper não conta como discordância (sem essa guarda, Whisper colapsado pintava a música inteira) | flag 23,1% / 0,42 / 0,61 → 21,8% / 0,55 / 0,74; com Whisper em toda música: 23,3% / 0,58 / 0,84 | feito |
-| B3 | **Feito em 13/11 (parcial, sem release):** contador "Linhas suspeitas: N de M" e botão/atalho `L` "Próxima suspeita" na Revisão (`src/review/suspectLines.ts`). Falta o índice no fim da geração e a marca de linha "confirmada" (pede um `source` novo) | interface não exercitada visualmente | P |
+| B1+B2 | **Feito em 13/11, lançado na v2.7.0:** `ctc_align.words_on_silence`, `line_start_disagreement` e `reflag_lines`, ligados em `main._reflag_ctc_lines` depois do resgate e da arbitragem (que seguem pelo score). Palavra interpolada do Whisper não conta como discordância (sem essa guarda, Whisper colapsado pintava a música inteira) | flag 23,1% / 0,42 / 0,61 → 21,8% / 0,55 / 0,74; com Whisper em toda música: 23,3% / 0,58 / 0,84 | feito |
+| B3 | **Feito em 13/11 (parcial), lançado na v2.7.0:** contador "Linhas suspeitas: N de M" e botão/atalho `L` "Próxima suspeita" na Revisão (`src/review/suspectLines.ts`). Falta o índice no fim da geração e a marca de linha "confirmada" (pede um `source` novo) | interface não exercitada visualmente | P |
 
 ### C. Sincronia: errar menos
 
@@ -135,6 +135,13 @@ Já feito e fora da lista: arbitragem por música com Whisper guardado (`prefer_
 | F2 | Arquivos grandes: `App.tsx` (~2830 linhas), `ReviewScreen.tsx` (~2740), `main.rs` (~2310) | G |
 | F3 | macOS (issue #36) | G |
 | F4 | Lojas Linux pendentes (AUR, Snap), ver "Regras de Release e CI" | P cada, quando reabrirem |
+
+### G. Separação de voz (motores)
+
+| ID | Item | Evidência | Esforço |
+|---|---|---|---|
+| G1 | **Hipótese, não medida:** Mel-Band Roformer como separador principal ("Qualidade") ao lado do Demucs ("Velocidade"). O código já existe (`separate_vocals(..., backend="roformer")` em `pipeline/separate.py`), mas nada em `main.py`/`server.py`/UI passa o parâmetro | Ensaio de 13/11 (`eval/benchmark_roformer.py`, 1 trecho de 30 s) **não é comparável**: o tempo do Demucs inclui abrir o processo e carregar o modelo, o do Roformer não; VRAM do Demucs fica fora do processo medido; o script não calcula vazamento. **Atenção:** o modelo testado (`mel_band_roformer_karaoke_aufr33_viperx`) é o do resgate 4b: separa voz PRINCIPAL × resto e joga coro/harmonia no instrumental, então letra cantada pelo coro some do stem que o alinhador ouve (em 13/11 o lead isolado melhorou o CTC numa música, 21,6% → 18,8% de baixa confiança, e piorou noutra, 26,7% → 43,0%). Medir antes de expor: ver G2 | M |
+| G2 | Medir separadores pelo que importa (alinhamento e pitch), não tempo/dB: `eval/library_replay.py --separator {demucs,roformer} --roformer-model <ckpt>` nas 55 músicas do seed-set, comparando `w_1s`, onset e pitch contra o Demucs. Candidatos: o karaoke atual e um modelo de vocais completos (`vocals_mel_band_roformer`). Conferir licença dos pesos antes de expor na UI | — | M |
 
 ### Detalhes dos itens antigos (07/11/2026)
 
