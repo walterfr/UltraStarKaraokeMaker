@@ -21,7 +21,7 @@ jobs:
     steps:
       - name: Checkout
         if: env.HAS_AUR_KEY == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Update PKGBUILD version and sha256
         if: env.HAS_AUR_KEY == 'true'
@@ -35,7 +35,7 @@ jobs:
 
       - name: Deploy to AUR
         if: env.HAS_AUR_KEY == 'true'
-        uses: KSXGitHub/github-actions-deploy-aur@v4.0.0
+        uses: KSXGitHub/github-actions-deploy-aur@57967cab2d243303c73477c7f46ba36dbe8bd823 # v4.0.0
         with:
           pkgname: uskmaker-bin
           pkgbuild: ./packaging/linux/aur/PKGBUILD
@@ -52,7 +52,7 @@ jobs:
     steps:
       - name: Checkout
         if: env.HAS_SNAP_TOKEN == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Update snapcraft.yaml version
         if: env.HAS_SNAP_TOKEN == 'true'
@@ -64,14 +64,14 @@ jobs:
 
       - name: Build Snap
         if: env.HAS_SNAP_TOKEN == 'true'
-        uses: canonical/action-build@v1
+        uses: canonical/action-build@3bdaa03e1ba6bf59a65f84a751d943d549a54e79 # v1
         id: build
         with:
           path: packaging/linux/snap
 
       - name: Publish to Snap Store
         if: env.HAS_SNAP_TOKEN == 'true'
-        uses: canonical/action-publish@v1
+        uses: canonical/action-publish@214b86e5ca036ead1668c79afb81e550e6c54d40 # v1
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         with:

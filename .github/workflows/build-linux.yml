@@ -32,7 +32,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # Lista das dependências de sistema do Tauri v2 (tauri.app, "Linux
       # Prerequisites"), mais libdbus-1-dev para as notificações.
@@ -52,16 +52,16 @@ jobs:
             libdbus-1-dev
 
       - name: Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "20"
           cache: npm
 
       - name: Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
 
       - name: Cache das dependências Rust
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: "src-tauri -> target"
 
@@ -99,7 +99,7 @@ jobs:
           done
 
       - name: Publicar os pacotes como artefato
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: USKMaker-linux-packages
           path: |
@@ -151,7 +151,7 @@ jobs:
 
       - name: Anexar pacotes e manifesto OTA ao Release do GitHub
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           name: USKMaker ${{ github.ref_name }}
           body_path: release-notes.md
