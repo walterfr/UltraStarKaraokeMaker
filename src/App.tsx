@@ -255,6 +255,7 @@ interface PersistedSettings {
   ytCookiesBrowser: string;
   romanize: boolean;
   strictLrc?: boolean;
+  verifyAlignment?: boolean;
   audioFormat: "ogg" | "mp3";
   maxVideoResolution: number;
 }
@@ -447,6 +448,7 @@ function App() {
   const [fetchingInfo, setFetchingInfo] = useState(false);
   const [romanize, setRomanize] = useState(saved.romanize ?? false);
   const [strictLrc, setStrictLrc] = useState(saved.strictLrc ?? false);
+  const [verifyAlignment, setVerifyAlignment] = useState(saved.verifyAlignment ?? false);
   const [audioFormat, setAudioFormat] = useState<"ogg" | "mp3">(saved.audioFormat ?? "ogg");
   const [maxVideoResolution, setMaxVideoResolution] = useState(saved.maxVideoResolution ?? 1080);
   const [outDir, setOutDir] = useState(saved.outDir ?? "");
@@ -626,9 +628,9 @@ function App() {
 
   // ------------------------------------------------ persistência leve
   useEffect(() => {
-    const settings: PersistedSettings = { sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, keepHarmonies, yargExport, mp4Export, midiExport, whisperModel, ytCookiesBrowser, romanize, strictLrc, audioFormat, maxVideoResolution };
+    const settings: PersistedSettings = { sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, keepHarmonies, yargExport, mp4Export, midiExport, whisperModel, ytCookiesBrowser, romanize, strictLrc, verifyAlignment, audioFormat, maxVideoResolution };
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  }, [sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, keepHarmonies, yargExport, mp4Export, midiExport, whisperModel, ytCookiesBrowser, romanize, strictLrc, audioFormat, maxVideoResolution]);
+  }, [sourceMode, language, outDir, withVideo, bgVideo, cleanWork, cleanExtras, withStems, duet, backtrack, keepHarmonies, yargExport, mp4Export, midiExport, whisperModel, ytCookiesBrowser, romanize, strictLrc, verifyAlignment, audioFormat, maxVideoResolution]);
 
   useEffect(() => {
     try {
@@ -1229,6 +1231,7 @@ function App() {
       ytCookiesBrowser,
       romanize,
       strictLrc,
+      verifyAlignment,
       audioFormat,
       maxVideoResolution: sourceMode === "youtube" && withVideo ? maxVideoResolution : 0,
     };
@@ -2517,6 +2520,16 @@ function App() {
             disabled={isRunning}
           />
           {t("strictLrcLabel")}
+          <span className="tip-mark" aria-hidden="true">?</span>
+        </label>
+        <label className="checkbox-line" title={t("verifyAlignmentHint")}>
+          <input
+            type="checkbox"
+            checked={verifyAlignment}
+            onChange={(e) => setVerifyAlignment(e.target.checked)}
+            disabled={isRunning}
+          />
+          {t("verifyAlignmentLabel")}
           <span className="tip-mark" aria-hidden="true">?</span>
         </label>
         <label className="checkbox-line" title={t("withStemsHint")}>

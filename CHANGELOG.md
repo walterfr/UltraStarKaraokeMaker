@@ -4,6 +4,14 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [Não lançado]
+
+### Adicionado
+
+- **Modo Verificação (opcional, desligado por padrão):**
+  - Nova caixa "Modo verificação" nas opções (e `--verify-alignment` na CLI). Quando o CTC é mantido sem arbitragem, roda também um alinhamento simples do Whisper só para conferir o início de cada linha: a linha que discorda dele em mais de 1 s ganha a marca de suspeita. Os tempos das notas e a escolha do alinhador não mudam, só o aviso na Revisão; se o Whisper falhar, a geração segue com a marca de antes.
+  - Medido em 51 músicas com chart feito à mão: recall da marca de linha suspeita 0,74 → 0,84 (precisão 0,58). Custa cerca de 30 s a mais por música com GPU, bem mais sem GPU.
+
 ## [2.7.0] - 2026-11-14
 
 ### Adicionado

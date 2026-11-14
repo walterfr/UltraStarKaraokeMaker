@@ -152,6 +152,7 @@ def _run_one(job: dict) -> None:
                     app_version=job.get("app_version"),
                     creator=job.get("creator"),
                     strict_lrc=job.get("strict_lrc", False),
+                    verify_alignment=job.get("verify_alignment", False),
                 )
             status_path.write_text(json.dumps({"status": "ok"}), encoding="utf-8")
         except Exception as e:

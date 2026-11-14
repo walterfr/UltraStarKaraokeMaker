@@ -38,6 +38,7 @@ import argparse
 import os
 import shutil
 import sys
+import time
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -888,6 +889,85 @@ def _report_whisper_alignment(word_timings) -> None:
             debug_log(f"WORD-RECALL BAIXO: {100*wrecall:.0f}% (âncoras podem estar erradas)")
 
 
+def _verify_with_whisper(stems, lyrics_path: str, language: str, device: str, whisper_model: str,
+                         synced_lyrics_path: str | None, strict_lrc: bool = False):
+    """
+    Modo verificação (C7, opt-in): UM alinhamento Whisper simples - a 1ª
+    chamada do _align_with_whisper, sem os resgates 4b/4d/4c - só para dar o
+    sinal de discordância de início de linha ao _reflag_ctc_lines quando o CTC
+    é mantido sem arbitragem. Não troca o alinhador nem mexe em tempo de nota.
+    Medido (51 músicas): recall da marca de linha suspeita 0,74 -> 0,84 com
+    precisão 0,58, ~30 s de GPU por música. Falha NÃO-FATAL: devolve None e a
+    marca segue só com o sinal de silêncio.
+    """
+    console.print(t("main.verify_try"))
+    t0 = time.monotonic()
+    try:
+        whisper_device = resolve_whisper_device(device)
+        timings = align_lyrics_to_audio(
+            stems.vocals, Path(lyrics_path), language=language, device=device, whisper_device=whisper_device,
+            whisper_model_size=resolve_whisper_model(whisper_model, whisper_device),
+            synced_lyrics_path=Path(synced_lyrics_path) if synced_lyrics_path else None,
+            strict_lrc=strict_lrc,
+        )
+    except Exception as e:  # noqa: BLE001 - sinal de revisão, não-fatal
+        debug_log(f"ETAPA 4 - modo verificação falhou (não-fatal): {e!r}")
+        return None
+    debug_log(f"ETAPA 4 - modo verificação: Whisper em {time.monotonic() - t0:.1f}s, {len(timings)} palavras")
+    return timings
+
+
+def _align_stage_ctc(stems, source, work_path: Path, lyrics_path: str, language: str,
+                     device: str, duet: bool, whisper_model: str, synced_lyrics_path: str | None,
+                     strict_lrc: bool = False, verify_alignment: bool = False):
+    """
+    Etapa 4 com --aligner ctc: CTC global; com confiança baixa, arbitra com o
+    Whisper. verify_alignment só acrescenta o Whisper de verificação quando o
+    CTC fica SEM arbitragem (na arbitragem o Whisper já rodou). Devolve
+    (word_timings, stems).
+    """
+    from pipeline.ctc_align import (
+        low_confidence_frac,
+        prefer_whisper_over_ctc,
+        should_try_whisper_fallback,
+    )
+    ctc_timings, stems = _align_with_ctc(
+        stems, work_path, lyrics_path, language, device, duet, synced_lyrics_path,
+        strict_lrc=strict_lrc,
+    )
+    if ctc_timings is not None and not should_try_whisper_fallback(
+        ctc_timings, low_frac_threshold=CTC_RESCUE_LOW_FRAC,
+    ):
+        whi_timings = None
+        if verify_alignment:
+            whi_timings = _verify_with_whisper(
+                stems, lyrics_path, language, device, whisper_model, synced_lyrics_path,
+                strict_lrc=strict_lrc,
+            )
+        _reflag_ctc_lines(ctc_timings, stems.vocals, whi_timings)
+        _report_ctc_alignment(ctc_timings)
+        return ctc_timings, stems
+
+    if ctc_timings is not None:
+        low = low_confidence_frac(ctc_timings)
+        debug_log(f"ETAPA 4 - arbitrando CTC (low={100 * low:.1f}%) com Whisper")
+        console.print(t("main.ctc_fallback", pct=100 * low))
+    whi_timings, whi_stems = _align_with_whisper(
+        stems, source, work_path, lyrics_path, language, device, duet, whisper_model,
+        synced_lyrics_path,
+        strict_lrc=strict_lrc,
+    )
+    if ctc_timings is None or prefer_whisper_over_ctc(
+        ctc_timings, whi_timings, severe_low_frac=CTC_FALLBACK_LOW_FRAC,
+    ):
+        _report_whisper_alignment(whi_timings)
+        return whi_timings, whi_stems
+    debug_log("ETAPA 4 - arbitragem manteve CTC (Whisper com mais interpolacao ou menor confianca)")
+    _reflag_ctc_lines(ctc_timings, stems.vocals, whi_timings)
+    _report_ctc_alignment(ctc_timings)
+    return ctc_timings, stems
+
+
 
 def run_pipeline(
     url: str | None,
@@ -921,6 +1001,7 @@ def run_pipeline(
     creator: str | None = None,
     app_version: str | None = None,
     strict_lrc: bool = False,
+    verify_alignment: bool = False,
 ):
     global _debug_log_path
 
@@ -1056,41 +1137,10 @@ def run_pipeline(
 
     word_timings = None
     if aligner == "ctc":
-        from pipeline.ctc_align import (
-            low_confidence_frac,
-            prefer_whisper_over_ctc,
-            should_try_whisper_fallback,
+        word_timings, stems = _align_stage_ctc(
+            stems, source, work_path, lyrics_path, language, device, duet, whisper_model,
+            synced_lyrics_path, strict_lrc=strict_lrc, verify_alignment=verify_alignment,
         )
-        ctc_timings, stems = _align_with_ctc(
-            stems, work_path, lyrics_path, language, device, duet, synced_lyrics_path,
-            strict_lrc=strict_lrc,
-        )
-        if ctc_timings is not None and not should_try_whisper_fallback(
-            ctc_timings, low_frac_threshold=CTC_RESCUE_LOW_FRAC,
-        ):
-            word_timings = ctc_timings
-            _reflag_ctc_lines(word_timings, stems.vocals)
-            _report_ctc_alignment(word_timings)
-        else:
-            if ctc_timings is not None:
-                low = low_confidence_frac(ctc_timings)
-                debug_log(f"ETAPA 4 - arbitrando CTC (low={100 * low:.1f}%) com Whisper")
-                console.print(t("main.ctc_fallback", pct=100 * low))
-            whi_timings, whi_stems = _align_with_whisper(
-                stems, source, work_path, lyrics_path, language, device, duet, whisper_model,
-                synced_lyrics_path,
-                strict_lrc=strict_lrc,
-            )
-            if ctc_timings is None or prefer_whisper_over_ctc(
-                ctc_timings, whi_timings, severe_low_frac=CTC_FALLBACK_LOW_FRAC,
-            ):
-                word_timings, stems = whi_timings, whi_stems
-                _report_whisper_alignment(word_timings)
-            else:
-                debug_log("ETAPA 4 - arbitragem manteve CTC (Whisper com mais interpolacao ou menor confianca)")
-                word_timings = ctc_timings
-                _reflag_ctc_lines(word_timings, stems.vocals, whi_timings)
-                _report_ctc_alignment(word_timings)
     else:
         word_timings, stems = _align_with_whisper(
             stems, source, work_path, lyrics_path, language, device, duet, whisper_model,
@@ -1457,6 +1507,9 @@ if __name__ == "__main__":
     )
     parser.add_argument("--strict-lrc", action="store_true",
                         help="Força limites estritos de linha pelo .lrc (trava o alinhamento de versos; anti-colapso Rock/Metal)")
+    parser.add_argument("--verify-alignment", action="store_true",
+                        help="Modo verificação: roda também o Whisper quando o CTC é mantido, só para "
+                             "melhorar a marca de linhas suspeitas da revisão (não muda tempos; ~30 s a mais com GPU)")
     parser.add_argument("--audio-format", default="ogg", choices=["ogg", "mp3"],
                         help="Formato de saída de todos os áudios do pacote")
     parser.add_argument("--max-video-resolution", type=int, default=0,
@@ -1510,6 +1563,7 @@ if __name__ == "__main__":
             creator=args.creator,
             app_version=args.app_version,
             strict_lrc=args.strict_lrc,
+            verify_alignment=args.verify_alignment,
         )
     except Exception:
         debug_log("EXCEÇÃO NÃO TRATADA:\n" + traceback.format_exc())

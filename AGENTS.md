@@ -107,7 +107,7 @@ O erro vem em rajada (52% das palavras erradas em sequências de 20+, mediana 8,
 | C4 | Harness chamar a orquestração do `main.py` (hoje reimplementa) e ganhar modo com `.lrc`. | **parte feita em 13/11:** `eval/error_anatomy.py` mede os detectores no cache, sem GPU, chamando as funções de produção. Falta o harness fiel + `.lrc`, pré-requisito de C2/C3 | M |
 | C5 | Checagem de refrão: avisar antes de alinhar quando a transcrição mostra repetição cantada que falta na letra | ataca a causa das rajadas; não medido | G |
 | C6 | Âncora manual: usuário marca 2 ou 3 inícios de linha e o CTC realinha em blocos (reusa `lrc_blocks`) | não medido | G |
-| C7 | Modo verificação opcional: roda os dois alinhadores sempre | recall 0,86 com precisão 0,53, ao custo de tempo | M (depois de B2) |
+| C7 | **Feito em 14/11 (no `[Não lançado]`, sem release):** modo verificação opcional, **desligado por padrão** (caixa na interface, `--verify-alignment` na CLI, `verify_alignment` no job do servidor). Com o CTC mantido sem arbitragem, `main._verify_with_whisper` roda UM `align_lyrics_to_audio` simples (sem 4b/4d/4c) só para dar o sinal de discordância ao `_reflag_ctc_lines`; não troca alinhador nem tempo de nota, e falha do Whisper é não-fatal. Orquestração extraída para `main._align_stage_ctc` (testes em `tests/test_verify_alignment_logic.py`) | recall 0,74 → 0,84 com precisão 0,58 (51 músicas), ~30 s de GPU por música | feito |
 
 Já feito e fora da lista: arbitragem por música com Whisper guardado (`prefer_whisper_over_ctc`) e correção de melisma. Não reabrir: snap/ajuste acústico de onset e correção constante de viés (NO-GO medidos em 18/07).
 

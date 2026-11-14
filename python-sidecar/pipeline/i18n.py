@@ -309,6 +309,12 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": ("[yellow]—[/yellow] {pct:.0f}% of the words in low-confidence lines - "
                "the Whisper alignment is usually better in that case; using it."),
     },
+    "main.verify_try": {
+        "pt": ("[cyan]Modo verificação:[/cyan] conferindo o alinhamento linha a linha com o "
+               "Whisper (só melhora a marca de linhas suspeitas)..."),
+        "en": ("[cyan]Verification mode:[/cyan] checking the alignment line by line with "
+               "Whisper (only improves the suspicious-line marks)..."),
+    },
     "main.ctc_rescue_ok": {
         "pt": ("[green]OK[/green] Resgate melhorou: {before:.0f}% -> {after:.0f}% das palavras "
                "em linhas de confiança baixa."),
