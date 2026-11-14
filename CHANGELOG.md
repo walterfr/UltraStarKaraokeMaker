@@ -10,7 +10,21 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 - **Modo Verificação (opcional, desligado por padrão):**
   - Nova caixa "Modo verificação" nas opções (e `--verify-alignment` na CLI). Quando o CTC é mantido sem arbitragem, roda também um alinhamento simples do Whisper só para conferir o início de cada linha: a linha que discorda dele em mais de 1 s ganha a marca de suspeita. Os tempos das notas e a escolha do alinhador não mudam, só o aviso na Revisão; se o Whisper falhar, a geração segue com a marca de antes.
-  - Medido em 51 músicas com chart feito à mão: recall da marca de linha suspeita 0,74 → 0,84 (precisão 0,58). Custa cerca de 30 s a mais por música com GPU, bem mais sem GPU.
+  - Medido em 33 músicas com chart feito à mão (as do lote em que o CTC é mantido, com o Whisper large-v3 do app): a marca de linha suspeita encontra 80% das linhas erradas, contra 66% sem o modo, e a precisão sobe de 0,44 para 0,50. Linhas em que os dois alinhadores concordam (62% delas) têm só 2,6% de erro. Custa cerca de 20 s a mais por música com GPU, bem mais sem GPU.
+
+### Corrigido
+
+- **Capa, Fundo e Ano de Outra Música:** iTunes, Deezer, MusicBrainz e Discogs pegavam o primeiro resultado da busca sem conferir. Agora o resultado só é aceito quando artista e título batem com a busca (ignorando acento, pontuação, "The" inicial e participações como "feat."). Sem resultado parecido, o pacote segue sem aquela fonte: nenhuma capa é melhor que a capa de outra música. Ideia vinda do [Karaokiza](https://github.com/vicsaizo/Karaokiza) (MIT).
+- **Arquivos de Fila:** salvar e carregar fila só aceita arquivos `.json`, e a leitura recusa arquivos acima de 5 MB.
+
+### Segurança
+
+- **Content Security Policy na Janela do App:** a janela tinha a CSP desligada. Agora scripts e estilos só vêm do próprio app, imagens e mídia só pelo protocolo de arquivos locais do Tauri, e conexões só para o próprio app (a busca no LRCLIB passa pelo lado Rust).
+- **CI:** as actions do GitHub passam a ser fixadas pelo commit (o workflow de release assina as atualizações automáticas), e os testes do frontend (`npm test`) passam a rodar no build do Windows.
+
+### Nota
+
+- **Números da v2.7.0 Revistos:** a melhora da marca de linha suspeita publicada na v2.7.0 (precisão 0,42 → 0,55, recall 0,61 → 0,74) foi medida com o Whisper *medium*, que não é o que o app usa. Remedida com o large-v3 do app e o código atual: o recall sobe de 0,58 para 0,66, com precisão igual (0,45 → 0,44). O ganho é real, mas menor. Com o Whisper large-v3 o app também ficou melhor no geral do que os números antigos mostravam: na base de 55 músicas, `w_1s` médio 0,838 → 0,878, mediana 0,881 → 0,923, colapsos 3 → 1.
 
 ## [2.7.0] - 2026-11-14
 

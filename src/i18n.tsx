@@ -172,7 +172,7 @@ const STRINGS = {
     strictLrcLabel: "Limites de linha pelo .lrc (Anti-colapso Rock/Metal)",
     strictLrcHint: "Trava o alinhamento de cada verso rigorosamente dentro do intervalo de tempo marcado no .lrc. Impede que a IA agrupe versos inteiros em poucos segundos em músicas de Rock, Heavy Metal e vocais guturais/pesados.",
     verifyAlignmentLabel: "Modo verificação (marca linhas suspeitas com mais precisão)",
-    verifyAlignmentHint: "Roda também o Whisper em toda música para conferir o alinhamento linha a linha. Não muda os tempos das notas, só melhora a marca de linhas suspeitas na Revisão (encontra cerca de 84% das linhas erradas, contra 74% sem ela). Custa cerca de 30 s a mais por música com GPU, bem mais sem GPU.",
+    verifyAlignmentHint: "Roda também o Whisper em toda música para conferir o alinhamento linha a linha. Não muda os tempos das notas, só melhora a marca de linhas suspeitas na Revisão (encontra cerca de 80% das linhas erradas, contra 66% sem ela). Custa cerca de 20 s a mais por música com GPU, bem mais sem GPU.",
 
     // ---- validação ----
     valNeedYoutube: "Informe o link do YouTube.",
@@ -567,7 +567,7 @@ const STRINGS = {
     strictLrcLabel: "Strict .lrc line boundaries (Anti-collapse Rock/Metal)",
     strictLrcHint: "Strictly constrains each line's alignment within the time window marked in the .lrc. Prevents the AI from bunching entire lines into a few seconds in Rock, Heavy Metal, screamed and distorted vocals.",
     verifyAlignmentLabel: "Verification mode (marks suspicious lines more accurately)",
-    verifyAlignmentHint: "Also runs Whisper on every song to check the alignment line by line. It does not change the note timings, it only improves the suspicious-line marks in the Review (finds about 84% of the wrong lines, versus 74% without it). Costs about 30 s more per song with a GPU, much more without one.",
+    verifyAlignmentHint: "Also runs Whisper on every song to check the alignment line by line. It does not change the note timings, it only improves the suspicious-line marks in the Review (finds about 80% of the wrong lines, versus 66% without it). Costs about 20 s more per song with a GPU, much more without one.",
 
     valNeedYoutube: "Enter the YouTube link.",
     valNeedFile: "Select a local audio/video file.",

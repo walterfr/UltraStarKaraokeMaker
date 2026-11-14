@@ -896,8 +896,9 @@ def _verify_with_whisper(stems, lyrics_path: str, language: str, device: str, wh
     chamada do _align_with_whisper, sem os resgates 4b/4d/4c - só para dar o
     sinal de discordância de início de linha ao _reflag_ctc_lines quando o CTC
     é mantido sem arbitragem. Não troca o alinhador nem mexe em tempo de nota.
-    Medido (51 músicas): recall da marca de linha suspeita 0,74 -> 0,84 com
-    precisão 0,58, ~30 s de GPU por música. Falha NÃO-FATAL: devolve None e a
+    Medido em 14/11 (33 músicas, Whisper large-v3, eval/verify_whisper.py +
+    error_anatomy.py --whisper-json align_verify.json): recall da marca de linha
+    suspeita 0,66 -> 0,80, precisão 0,44 -> 0,50, ~20 s de GPU por música. Falha NÃO-FATAL: devolve None e a
     marca segue só com o sinal de silêncio.
     """
     console.print(t("main.verify_try"))
@@ -1509,7 +1510,7 @@ if __name__ == "__main__":
                         help="Força limites estritos de linha pelo .lrc (trava o alinhamento de versos; anti-colapso Rock/Metal)")
     parser.add_argument("--verify-alignment", action="store_true",
                         help="Modo verificação: roda também o Whisper quando o CTC é mantido, só para "
-                             "melhorar a marca de linhas suspeitas da revisão (não muda tempos; ~30 s a mais com GPU)")
+                             "melhorar a marca de linhas suspeitas da revisão (não muda tempos; ~20 s a mais com GPU)")
     parser.add_argument("--audio-format", default="ogg", choices=["ogg", "mp3"],
                         help="Formato de saída de todos os áudios do pacote")
     parser.add_argument("--max-video-resolution", type=int, default=0,

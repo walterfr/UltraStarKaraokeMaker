@@ -10,7 +10,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **Verification Mode (optional, off by default):**
   - New "Verification mode" checkbox in the options (and `--verify-alignment` in the CLI). When CTC is kept without arbitration, it also runs a plain Whisper alignment only to check where each line starts: a line that disagrees with it by more than 1 s gets the suspicious mark. Note timings and the aligner choice do not change, only the warning in the Review; if Whisper fails, generation goes on with the previous mark.
-  - Measured on 51 songs with hand-made charts: suspicious-line mark recall 0.74 → 0.84 (precision 0.58). Costs about 30 s more per song with a GPU, much more without one.
+  - Measured on 33 songs with hand-made charts (those where CTC is kept, with the app's Whisper large-v3): the suspicious-line mark finds 80% of the wrong lines, against 66% without the mode, and precision rises from 0.44 to 0.50. Lines where both aligners agree (62% of them) are wrong only 2.6% of the time. Costs about 20 s more per song with a GPU, much more without one.
+
+### Fixed
+
+- **Cover, Background and Year from Another Song:** iTunes, Deezer, MusicBrainz and Discogs took the first search result without checking it. A result is now accepted only when artist and title match the search (ignoring accents, punctuation, a leading "The" and credits such as "feat."). With no similar result the package goes on without that source: no cover is better than another song's cover. Idea from [Karaokiza](https://github.com/vicsaizo/Karaokiza) (MIT).
+- **Queue Files:** saving and loading a queue only accepts `.json` files, and loading refuses files over 5 MB.
+
+### Security
+
+- **Content Security Policy for the App Window:** the window had CSP turned off. Scripts and styles now come only from the app itself, images and media only through Tauri's local file protocol, and connections only to the app itself (the LRCLIB search goes through the Rust side).
+- **CI:** GitHub actions are now pinned by commit (the release workflow signs the automatic updates), and the frontend tests (`npm test`) now run in the Windows build.
+
+### Note
+
+- **v2.7.0 Numbers Revised:** the suspicious-line improvement published in v2.7.0 (precision 0.42 → 0.55, recall 0.61 → 0.74) was measured with Whisper *medium*, which is not what the app uses. Re-measured with the app's large-v3 and the current code: recall rises from 0.58 to 0.66 with the same precision (0.45 → 0.44). The gain is real, but smaller. With Whisper large-v3 the app was also better overall than the old numbers showed: on the 55-song baseline, mean `w_1s` 0.838 → 0.878, median 0.881 → 0.923, collapses 3 → 1.
 
 ## [2.7.0] - 2026-11-14
 
