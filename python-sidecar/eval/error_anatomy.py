@@ -42,7 +42,8 @@ def _reflagged(timings, bounds, silent, disagreement=None) -> list[bool]:
     return _low_lines(ts, bounds)
 
 
-def song_lines(cache: Path, song: dict, skipped: list[str]) -> tuple[list[dict], list[bool]] | None:
+def song_lines(cache: Path, song: dict, skipped: list[str],
+               whisper_json: str = "align.json") -> tuple[list[dict], list[bool]] | None:
     """Registros por linha + erro (> WRONG_S) por palavra casada, na ordem do chart."""
     import whisperx
 
@@ -67,7 +68,7 @@ def song_lines(cache: Path, song: dict, skipped: list[str]) -> tuple[list[dict],
     err = {j: h[j]["start"] - g[i]["start"] for i, j in pairs}
 
     silent = C.words_on_silence(timings, whisperx.load_audio(str(cache / "vocals.wav")))
-    wh = cache / "align.json"
+    wh = cache / whisper_json
     dis = C.line_start_disagreement(
         timings, json.loads(wh.read_text(encoding="utf-8"))["words"] if wh.exists() else [])
     has_w = bool(dis) and dis[0] is not None
@@ -92,6 +93,9 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--run-dir", type=Path, default=root / "eval_runs" / "replay-seedset")
     ap.add_argument("--manifest", type=Path, default=root / "eval_runs" / "library_manifest.json")
+    # align_verify.json = Whisper simples (sem resgates) em toda música, como o
+    # modo verificação (C7) roda; align.json = o Whisper da arbitragem do harness.
+    ap.add_argument("--whisper-json", default="align.json")
     args = ap.parse_args()
     ensure_ffmpeg_on_path()
 
@@ -107,7 +111,7 @@ def main() -> None:
         cache = args.run_dir / "cache" / lr.slugify(s["name"]) if s else None
         if not cache or not (cache / "align_ctc.json").exists():
             continue
-        res = song_lines(cache, s, skipped)
+        res = song_lines(cache, s, skipped, args.whisper_json)
         if not res or not res[0]:
             continue
         lines, wrong_words = res
