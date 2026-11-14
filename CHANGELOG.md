@@ -4,7 +4,7 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
-## [Não lançado]
+## [2.8.0] - 2026-11-14
 
 ### Adicionado
 
@@ -16,6 +16,7 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 - **Capa, Fundo e Ano de Outra Música:** iTunes, Deezer, MusicBrainz e Discogs pegavam o primeiro resultado da busca sem conferir. Agora o resultado só é aceito quando artista e título batem com a busca (ignorando acento, pontuação, "The" inicial e participações como "feat."). Sem resultado parecido, o pacote segue sem aquela fonte: nenhuma capa é melhor que a capa de outra música. Ideia vinda do [Karaokiza](https://github.com/vicsaizo/Karaokiza) (MIT).
 - **Arquivos de Fila:** salvar e carregar fila só aceita arquivos `.json`, e a leitura recusa arquivos acima de 5 MB.
+- **Log Certo no Erro "Sidecar Encerrou":** quando o sidecar morre logo ao iniciar, a mensagem apontava um `_process_output.log` que nem chegava a ser criado. Agora aponta o `_server_session.log` da pasta de dados, onde o erro fica registrado.
 
 ### Segurança
 

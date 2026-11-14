@@ -4,7 +4,7 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
-## [Unreleased]
+## [2.8.0] - 2026-11-14
 
 ### Added
 
@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **Cover, Background and Year from Another Song:** iTunes, Deezer, MusicBrainz and Discogs took the first search result without checking it. A result is now accepted only when artist and title match the search (ignoring accents, punctuation, a leading "The" and credits such as "feat."). With no similar result the package goes on without that source: no cover is better than another song's cover. Idea from [Karaokiza](https://github.com/vicsaizo/Karaokiza) (MIT).
 - **Queue Files:** saving and loading a queue only accepts `.json` files, and loading refuses files over 5 MB.
+- **Right Log in the "Sidecar Exited" Error:** when the sidecar dies right at startup, the message pointed to a `_process_output.log` that was never created. It now points to the `_server_session.log` in the data folder, where the error is recorded.
 
 ### Security
 

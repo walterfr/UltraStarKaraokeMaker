@@ -72,9 +72,9 @@
 - `python python-sidecar/server.py`: Servidor persistente de jobs via stdin.
 - `python python-sidecar/main.py --help`: CLI direta do pipeline.
 
-## Próximos passos (atualizado em 14/11/2026, após a v2.7.0)
+## Próximos passos (atualizado em 14/11/2026, após a v2.8.0)
 
-Estado: **v2.7.0** (v2.6.1: lote 1, bloco A + D1 + D4; v2.7.0: B1+B2 e parte do B3). O resto está em aberto. A lista junta a auditoria de 13/11, a verificação da v2.6.0 e a análise do `vicsaizo/Karaokiza`.
+Estado: **v2.8.0** (v2.6.1: lote 1, bloco A + D1 + D4; v2.7.0: B1+B2 e parte do B3; v2.8.0: C7, D2, E1-E3; CSP conferida à mão no app compilado em 14/11). O resto está em aberto. A lista junta a auditoria de 13/11, a verificação da v2.6.0 e a análise do `vicsaizo/Karaokiza`.
 
 Legenda: esforço **P** (até 1 h), **M** (meio dia), **G** (mais de um dia). **[medir]** = mexe no alinhamento, só entra depois de medir no lote inteiro (`--seed-set`).
 
@@ -107,7 +107,7 @@ O erro vem em rajada (52% das palavras erradas em sequências de 20+, mediana 8,
 | C4 | Harness chamar a orquestração do `main.py` (hoje reimplementa) e ganhar modo com `.lrc`. | **parte feita em 13/11:** `eval/error_anatomy.py` mede os detectores no cache, sem GPU, chamando as funções de produção. Falta o harness fiel + `.lrc`, pré-requisito de C2/C3 | M |
 | C5 | Checagem de refrão: avisar antes de alinhar quando a transcrição mostra repetição cantada que falta na letra | ataca a causa das rajadas; não medido | G |
 | C6 | Âncora manual: usuário marca 2 ou 3 inícios de linha e o CTC realinha em blocos (reusa `lrc_blocks`) | não medido | G |
-| C7 | **Feito em 14/11 (no `[Não lançado]`, sem release):** modo verificação opcional, **desligado por padrão** (caixa na interface, `--verify-alignment` na CLI, `verify_alignment` no job do servidor). Com o CTC mantido sem arbitragem, `main._verify_with_whisper` roda UM `align_lyrics_to_audio` simples (sem 4b/4d/4c) só para dar o sinal de discordância ao `_reflag_ctc_lines`; não troca alinhador nem tempo de nota, e falha do Whisper é não-fatal. Orquestração extraída para `main._align_stage_ctc` (testes em `tests/test_verify_alignment_logic.py`) | Remedido em 14/11 (código atual, large-v3, 33 músicas): marca 24,2% / precisão 0,50 / recall 0,80, contra 22,3% / 0,44 / 0,66 sem o modo; ~20 s por música | feito |
+| C7 | **Feito em 14/11, lançado na v2.8.0:** modo verificação opcional, **desligado por padrão** (caixa na interface, `--verify-alignment` na CLI, `verify_alignment` no job do servidor). Com o CTC mantido sem arbitragem, `main._verify_with_whisper` roda UM `align_lyrics_to_audio` simples (sem 4b/4d/4c) só para dar o sinal de discordância ao `_reflag_ctc_lines`; não troca alinhador nem tempo de nota, e falha do Whisper é não-fatal. Orquestração extraída para `main._align_stage_ctc` (testes em `tests/test_verify_alignment_logic.py`) | Remedido em 14/11 (código atual, large-v3, 33 músicas): marca 24,2% / precisão 0,50 / recall 0,80, contra 22,3% / 0,44 / 0,66 sem o modo; ~20 s por música | feito |
 
 Já feito e fora da lista: arbitragem por música com Whisper guardado (`prefer_whisper_over_ctc`) e correção de melisma. Não reabrir: snap/ajuste acústico de onset e correção constante de viés (NO-GO medidos em 18/07).
 
@@ -115,16 +115,16 @@ Já feito e fora da lista: arbitragem por música com Whisper guardado (`prefer_
 
 | ID | Item | Evidência | Esforço |
 |---|---|---|---|
-| D2 | Aceitar resultado de metadados só se artista **e** título parecem com a busca (`difflib`, sem dependência nova) | `_pick_itunes_result` e `_mb_find_artist_mbid` pegam o 1º resultado | M |
+| D2 | **Feito em 14/11, lançado na v2.8.0.** Aceitar resultado de metadados só se artista **e** título parecem com a busca (`difflib`, sem dependência nova) | `_pick_itunes_result` e `_mb_find_artist_mbid` pegam o 1º resultado | M |
 | D3 | Idioma por votação nas 5 janelas de 30 s com mais voz, só no caminho sem letra | `transcribe_lyrics` usa o idioma da interface | M |
 
 ### E. Robustez, segurança e CI
 
 | ID | Item | Esforço |
 |---|---|---|
-| E1 | Definir CSP e restringir `assetProtocol.scope` (hoje `csp: null` e `**`); validar caminho em `save_queue_file` / `load_queue_file` | M |
-| E2 | Fixar as actions de terceiros por SHA (0 de 22 hoje; o release assina o updater) | P |
-| E3 | Rodar `npm test` no CI e pytest também no Linux | P |
+| E1 | **Feito em 14/11, lançado na v2.8.0** (CSP + fila só `.json`; `assetProtocol.scope` segue `**`, a Revisão abre pacote de qualquer pasta). Definir CSP e restringir `assetProtocol.scope` (hoje `csp: null` e `**`); validar caminho em `save_queue_file` / `load_queue_file` | M |
+| E2 | **Feito em 14/11, lançado na v2.8.0.** Fixar as actions de terceiros por SHA (0 de 22 hoje; o release assina o updater) | P |
+| E3 | **Feito em 14/11, lançado na v2.8.0** (`npm test` no build do Windows, Node 22; pytest já rodava em ubuntu). Rodar `npm test` no CI e pytest também no Linux | P |
 | E4 | Tirar de `ctc_align.py` o código só usado por `eval/ab_align.py` (`hard_anchor_runs`, `plan_blocks`, `align_lyrics_ctc`, `snap_line_starts`, `align_file`) | P |
 
 ### F. Pendências antigas
