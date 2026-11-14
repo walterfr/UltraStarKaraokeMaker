@@ -10,7 +10,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from pipeline.metadata import _pick_itunes_result, _pick_release_mbid  # noqa: E402
+from pipeline import metadata  # noqa: E402
+from pipeline.metadata import (  # noqa: E402
+    _matches, _norm, _pick_itunes_result, _pick_release_mbid, _similar, _title_similar,
+)
 
 
 def _rel(mbid, date, title, primary="Album", secondary=None, artist="Oskar Linnros",
@@ -91,18 +94,110 @@ def test_no_releases():
     assert _pick_release_mbid([{"releases": [{"title": "sem id"}]}]) is None
 
 
+def _it(collection, artist="Banda Inventada", track="Cancao Teste", various=False):
+    r = {"collectionName": collection, "artistName": artist, "trackName": track}
+    if various:
+        r["collectionArtistName"] = "Various Artists"
+    return r
+
+
 def test_itunes_skips_various_artists_collections():
-    results = [
-        {"collectionName": "Strictly CAZZETTE (Mixed Version)", "collectionArtistName": "Various Artists"},
-        {"collectionName": "Levels - Single"},
-    ]
-    assert _pick_itunes_result(results)["collectionName"] == "Levels - Single"
+    results = [_it("Coletanea Mixada", various=True), _it("Cancao Teste - Single")]
+    assert _pick_itunes_result(results, "Banda Inventada", "Cancao Teste")["collectionName"] == "Cancao Teste - Single"
 
 
-def test_itunes_only_compilations_falls_back_to_first():
-    results = [{"collectionName": "X", "collectionArtistName": "Various Artists"}]
-    assert _pick_itunes_result(results)["collectionName"] == "X"
-    assert _pick_itunes_result([]) is None
+def test_itunes_only_compilations_falls_back_to_first_matching():
+    results = [_it("Outra", artist="Outra Banda", various=True), _it("X", various=True)]
+    assert _pick_itunes_result(results, "Banda Inventada", "Cancao Teste")["collectionName"] == "X"
+    assert _pick_itunes_result([], "Banda Inventada", "Cancao Teste") is None
+
+
+def test_itunes_skips_unrelated_first_result():
+    results = [_it("Errado", artist="Grupo Diferente", track="Outra Musica"), _it("Certo")]
+    assert _pick_itunes_result(results, "Banda Inventada", "Cancao Teste")["collectionName"] == "Certo"
+
+
+def test_itunes_only_unrelated_gives_none():
+    results = [_it("A", artist="Grupo Diferente"), _it("B", track="Outra Musica Qualquer")]
+    assert _pick_itunes_result(results, "Banda Inventada", "Cancao Teste") is None
+
+
+# --- conferência do resultado (D2) ---
+
+def test_norm_and_similarity_basics():
+    assert _norm("  Cancao,   Teste!! ") == "cancao teste"
+    assert _similar("Banda Inventada", "banda inventada") == 1.0
+    assert _similar("Banda Inventada", "Grupo Diferente") < 0.5
+    assert _similar("", "Banda") == 0.0
+
+
+def test_accents_and_leading_the_are_ignored():
+    assert _similar("Cancao", "Canção") == 1.0
+    assert _similar("The Banda", "Banda") == 1.0
+
+
+def test_title_containment_boost():
+    long_title = "Cancao Teste Versao Estendida Remasterizada"
+    assert _similar(long_title, "Cancao Teste") < 0.6
+    assert _title_similar(long_title, "Cancao Teste") >= 0.9
+    # contenção só de palavra inteira e com >= 4 letras
+    assert _title_similar("Amor", "Amorzinho Inventado") < 0.6
+    assert _title_similar("Ai", "Ai Ai Ai Cancao Inventada") < 0.6
+
+
+def test_feat_collaborations():
+    assert _matches("Banda Inventada feat. Fulano", "Cancao Teste", "Banda Inventada", "Cancao Teste")
+    assert _matches("Banda Inventada", "Cancao Teste", "Banda Inventada ft. Fulano", "Cancao Teste")
+    assert _matches("Banda Inventada & Fulano", None, "Banda Inventada", None)
+    assert not _matches("Fulano feat. Banda Inventada", None, "Banda Inventada", None)
+    assert not _matches("Banda Inventada", "Outra Musica", "Banda Inventada", "Cancao Teste")
+
+
+class _Resp:
+    def __init__(self, data):
+        self._data = data
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self._data
+
+
+def _mock_get(monkeypatch, data):
+    monkeypatch.setattr(metadata, "_respect_mb_rate_limit", lambda: None)
+    monkeypatch.setattr(metadata.requests, "get", lambda *a, **k: _Resp(data))
+
+
+def test_mb_artist_skips_unrelated_first(monkeypatch):
+    _mock_get(monkeypatch, {"artists": [
+        {"id": "errado", "name": "Grupo Diferente"},
+        {"id": "certo", "name": "The Banda Inventada"},
+    ]})
+    assert metadata._mb_find_artist_mbid("Banda Inventada") == "certo"
+
+
+def test_mb_artist_alias_counts(monkeypatch):
+    _mock_get(monkeypatch, {"artists": [
+        {"id": "nativo", "name": "Банда", "aliases": [{"name": "Banda Inventada"}]},
+    ]})
+    assert metadata._mb_find_artist_mbid("Banda Inventada") == "nativo"
+
+
+def test_mb_artist_none_when_nothing_matches(monkeypatch):
+    _mock_get(monkeypatch, {"artists": [{"id": "x", "name": "Grupo Diferente"}]})
+    assert metadata._mb_find_artist_mbid("Banda Inventada") is None
+
+
+def test_mb_release_ignores_unrelated_recordings(monkeypatch):
+    _mock_get(monkeypatch, {"recordings": [
+        {"title": "Outra Musica", "artist-credit": [{"name": "Grupo Diferente"}],
+         "releases": [_rel("errado", "1990-01-01", "Velho")]},
+        {"title": "Cancao Teste", "artist-credit": [{"name": "Banda Inventada", "joinphrase": " feat. "},
+                                                    {"name": "Fulano"}],
+         "releases": [_rel("certo", "2005-01-01", "Disco")]},
+    ]})
+    assert metadata._mb_find_release_mbid("Banda Inventada", "Cancao Teste") == "certo"
 
 
 def test_extract_embedded_cover_ogg_vorbis():

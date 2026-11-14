@@ -43,6 +43,7 @@ REGRAS DO MUSICBRAINZ (respeitadas aqui, senão eles bloqueiam o IP):
 
 from __future__ import annotations
 
+import difflib
 import io
 import os
 import re
@@ -54,6 +55,7 @@ import requests
 from mutagen import File as MutagenFile
 from PIL import Image
 
+from .align import _fold_accents, _normalize_line
 from .i18n import t
 
 # User-Agent honesto e identificável, como o MusicBrainz exige. Inclui uma
@@ -200,6 +202,52 @@ def _extract_embedded_cover_bytes(mutagen_file) -> bytes | None:
 
 
 # ---------------------------------------------------------------------------
+# Conferência do resultado (D2): a busca devolve o mais parecido que achou,
+# não necessariamente a música pedida - sem conferir, capa/ano/fundo de outra
+# música ou artista entrava no pacote. Limiares e bônus de contenção vêm do
+# Karaokiza (vicsaizo/Karaokiza, MIT).
+# ---------------------------------------------------------------------------
+
+# separa colaborações: "A feat. B", "A ft B", "A & B", "A and B", "A, B"
+_COLLAB_RE = re.compile(r"\s+(?:feat\.?|ft\.?|featuring|&|and)\s+|\s*,\s*", re.IGNORECASE)
+
+
+def _norm(s: str | None) -> str:
+    """Minúsculas, sem acento, sem pontuação, espaços colapsados, sem "the " inicial."""
+    s = _normalize_line(_fold_accents(s or ""))
+    return s[4:] if s.startswith("the ") else s
+
+
+def _similar(a: str | None, b: str | None) -> float:
+    a, b = _norm(a), _norm(b)
+    return difflib.SequenceMatcher(None, a, b).ratio() if a and b else 0.0
+
+
+def _title_similar(a: str | None, b: str | None) -> float:
+    """_similar com bônus: um título contém o outro (palavras inteiras, >= 4
+    letras) vale >= 0.9 - cobre "Cancao (Ao Vivo)", "Cancao - Remastered"."""
+    r = _similar(a, b)
+    short, long_ = sorted((_norm(a), _norm(b)), key=len)
+    if len(short) >= 4 and f" {short} " in f" {long_} ":
+        r = max(r, 0.9)
+    return r
+
+
+def _artist_names(s: str | None) -> list[str]:
+    """O nome inteiro e o 1º creditado ("A feat. B" -> ["A feat. B", "A"])."""
+    return [s or "", _COLLAB_RE.split(s or "")[0]]
+
+
+def _matches(artist_found, title_found, artist, title, min_artist=0.85, min_title=0.6) -> bool:
+    """O resultado é a música pedida? Artista casa pelo nome inteiro ou pelo
+    1º creditado (dos dois lados); title=None confere só o artista."""
+    if not any(_similar(f, a) >= min_artist
+               for f in _artist_names(artist_found) for a in _artist_names(artist)):
+        return False
+    return title is None or _title_similar(title_found, title) >= min_title
+
+
+# ---------------------------------------------------------------------------
 # Fonte 2: MusicBrainz + Cover Art Archive
 # ---------------------------------------------------------------------------
 
@@ -247,7 +295,14 @@ def _mb_find_release_mbid(artist: str, title: str) -> str | None:
         print(t("metadata.mb_search_failed", err=e))
         return None
 
-    return _pick_release_mbid(data.get("recordings", []))
+    # a busca é por texto: só ranqueia gravações que são mesmo a pedida (D2)
+    recordings = [
+        rec for rec in data.get("recordings", [])
+        if _matches("".join((c.get("name") or "") + (c.get("joinphrase") or "")
+                            for c in rec.get("artist-credit") or []),
+                    rec.get("title"), artist, title)
+    ]
+    return _pick_release_mbid(recordings)
 
 
 # Tipos secundários de release-group que não são lançamento do artista: a
@@ -374,20 +429,24 @@ def _itunes_search(artist: str, title: str) -> dict | None:
             timeout=_HTTP_TIMEOUT,
         )
         resp.raise_for_status()
-        return _pick_itunes_result(resp.json().get("results") or [])
+        return _pick_itunes_result(resp.json().get("results") or [], artist, title)
     except Exception as e:
         print(t("metadata.itunes_failed", err=e))
         return None
 
 
-def _pick_itunes_result(results: list[dict]) -> dict | None:
-    """O primeiro resultado que não é de coletânea (o iTunes marca a faixa de
-    coletânea com collectionArtistName "Various Artists"); se só houver
-    coletânea, o primeiro mesmo - a capa errada ainda é melhor que nenhuma."""
-    for r in results:
+def _pick_itunes_result(results: list[dict], artist: str, title: str) -> dict | None:
+    """O primeiro resultado que é a música pedida (_matches) e não é de
+    coletânea (o iTunes marca a faixa de coletânea com collectionArtistName
+    "Various Artists"); se ela só aparece em coletânea, a 1ª coletânea - a
+    capa da coletânea ainda é melhor que nenhuma. Nada casa: None (antes vinha
+    o 1º resultado, mesmo sendo outra música)."""
+    matching = [r for r in results
+                if _matches(r.get("artistName"), r.get("trackName"), artist, title)]
+    for r in matching:
         if (r.get("collectionArtistName") or "").strip().lower() != "various artists":
             return r
-    return results[0] if results else None
+    return matching[0] if matching else None
 
 
 def _itunes_fill(meta: SongMetadata, artist: str, title: str, out_cover_path: Path) -> bool:
@@ -448,9 +507,12 @@ def _deezer_fetch_cover(artist: str, title: str, out_cover_path: Path) -> tuple[
         )
         resp.raise_for_status()
         results = resp.json().get("data") or []
-        if not results:
+        # a 1ª faixa que é a pedida (D2), não simplesmente a 1ª
+        hit = next((r for r in results
+                    if _matches((r.get("artist") or {}).get("name"), r.get("title"), artist, title)), None)
+        if not hit:
             return None
-        album = results[0].get("album") or {}
+        album = hit.get("album") or {}
         cover_url = album.get("cover_xl") or album.get("cover_big")
         if not cover_url:
             return None
@@ -488,8 +550,12 @@ def _mb_find_artist_mbid(artist: str) -> str | None:
     except Exception as e:
         print(t("metadata.mb_artist_failed", err=e))
         return None
-    # o 1º resultado é o de maior score de correspondência
-    return artists[0].get("id") if artists else None
+    # o 1º é o de maior score, mas nem sempre é o artista pedido (D2): vale o
+    # 1º cujo nome (ou um alias - grafia transliterada) casa
+    return next((a.get("id") for a in artists
+                 if any(_matches(n, None, artist, None)
+                        for n in [a.get("name"), *(al.get("name") for al in a.get("aliases") or [])])),
+                None)
 
 
 def _fanarttv_fetch_background(artist_mbid: str, out_bg_path: Path) -> Path | None:
@@ -658,6 +724,12 @@ def _discogs_fetch_cover(artist: str, title: str, out_cover_path: Path) -> tuple
                 continue
             found_any = True
             for result in results:
+                # o título vem "Artista - Release" (release = disco, não a
+                # faixa): só o artista dá para conferir (D2); " (2)" é a
+                # desambiguação de homônimos do Discogs
+                found_artist = re.sub(r"\s*\(\d+\)", "", (result.get("title") or "").split(" - ")[0])
+                if not _matches(found_artist, None, artist, None):
+                    continue
                 cover_url = result.get("cover_image")
                 # o Discogs devolve um placeholder "spacer.gif" quando não há imagem
                 if not cover_url or cover_url.endswith(".gif"):
