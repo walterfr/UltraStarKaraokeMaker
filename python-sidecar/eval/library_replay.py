@@ -547,6 +547,17 @@ def _timings_to_dicts(timings) -> list[dict]:
              "source": t.source, "score": t.score} for t in timings]
 
 
+def _whisper_kwargs(device: str) -> dict:
+    """Mesmo Whisper que o app usa (main.resolve_whisper_*, pedido "auto").
+    Sem isto o harness caía no padrão "medium" do align_lyrics_to_audio, que
+    não é o modelo do app (na RTX 4060 o app usa large-v3) - e cujo download
+    travou duas vezes nesta máquina (07/11 e 14/11, .incomplete do hf_xet)."""
+    from main import resolve_whisper_device, resolve_whisper_model
+    whisper_device = resolve_whisper_device(device)
+    return {"whisper_device": whisper_device,
+            "whisper_model_size": resolve_whisper_model("auto", whisper_device)}
+
+
 def _cached_alignment(stem: Path, cache: Path, gwords: list[dict],
                       language: str, device: str, aligner: str = "ctc") -> dict:
     """align.align_lyrics_to_audio on the cached stem, mirroring main.py's
@@ -633,7 +644,7 @@ def _cached_alignment(stem: Path, cache: Path, gwords: list[dict],
 
     log(f"  align (whisperx, lang={language})...")
     timings = align_lyrics_to_audio(stem, lyrics_path, language=language,
-                                    device=device)
+                                    device=device, **_whisper_kwargs(device))
     interp = alignment_stats(timings)["by_source"]["interpolated"]
     interp_frac = interp / max(len(timings), 1)
 
@@ -647,7 +658,7 @@ def _cached_alignment(stem: Path, cache: Path, gwords: list[dict],
             if not lead.exists():
                 lead = isolate_lead_vocal(stem, cache)
             retry = align_lyrics_to_audio(lead, lyrics_path, language=language,
-                                          device=device)
+                                          device=device, **_whisper_kwargs(device))
             retry_interp = alignment_stats(retry)["by_source"]["interpolated"]
             rescue["lead_interp_frac"] = round(retry_interp / max(len(retry), 1), 3)
             if retry_interp < interp:
