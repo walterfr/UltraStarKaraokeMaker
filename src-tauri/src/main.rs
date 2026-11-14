@@ -768,7 +768,16 @@ async fn run_pipeline(
                 if state.cancel_requested.load(Ordering::SeqCst) {
                     return Err(CANCELLED_MSG.to_string());
                 }
-                return Err(tr(lang, "server_died").replace("{log}", &log_path.display().to_string()));
+                // Morreu antes de abrir o log do job (ex.: import quebrado no
+                // server.py): o único registro é o log de sessão do spawn.
+                let shown = if log_path.exists() {
+                    log_path.clone()
+                } else {
+                    platform::data_dir()
+                        .map(|d| d.join("_server_session.log"))
+                        .unwrap_or_else(|| log_path.clone())
+                };
+                return Err(tr(lang, "server_died").replace("{log}", &shown.display().to_string()));
             }
         }
         sleep(Duration::from_millis(150)).await;
