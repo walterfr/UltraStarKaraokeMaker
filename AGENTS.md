@@ -84,7 +84,7 @@ Legenda: esforço **P** (até 1 h), **M** (meio dia), **G** (mais de um dia). **
 
 | ID | Item | Onde | Esforço |
 |---|---|---|---|
-| A8 | Mesmo gatilho morto (`release: published` não dispara com `GITHUB_TOKEN`) em `publish-linux-repos.yml` (AUR/Snap) e no `winget.yml` avulso. O winget já está coberto pelo job encadeado; AUR/Snap não vão disparar sozinhos quando as lojas reabrirem. Encadear como o itch | `.github/workflows/` | P |
+| A8 | **Feito em 18/11 (local, sem release):** `publish-linux-repos.yml` virou `workflow_call`, chamado pelo job `publish-linux-repos` do `build-linux.yml` depois de anexar o .deb. Só será exercitado quando o AUR/Snap tiverem os secrets. Mesmo gatilho morto (`release: published` não dispara com `GITHUB_TOKEN`) em `publish-linux-repos.yml` (AUR/Snap) e no `winget.yml` avulso. O winget já está coberto pelo job encadeado; AUR/Snap não vão disparar sozinhos quando as lojas reabrirem. Encadear como o itch | `.github/workflows/` | P |
 
 ### B. Sincronia: avisar melhor o que está errado (revisão)
 

@@ -161,3 +161,18 @@ jobs:
             src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/release/bundle/appimage/*.AppImage.sig
             latest.json
+
+  # AUR e Snap DEPOIS do .deb estar no Release (os dois baixam o .deb de lá).
+  # Encadeado porque o `release: published` não dispara com o GITHUB_TOKEN.
+  publish-linux-repos:
+    name: Publish to Linux repositories
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+    uses: ./.github/workflows/publish-linux-repos.yml
+    secrets:
+      AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+      AUR_USERNAME: ${{ secrets.AUR_USERNAME }}
+      AUR_EMAIL: ${{ secrets.AUR_EMAIL }}
+      SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}

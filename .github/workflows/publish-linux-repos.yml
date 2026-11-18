@@ -6,11 +6,27 @@ name: Publish to Linux Repositories (AUR & Snap)
 # - SNAPCRAFT_STORE_CREDENTIALS
 # Enquanto não estiverem configurados (cadastro suspenso/pendente), os jobs
 # pulam silenciosamente sem quebrar a pipeline.
+#
+# ENCADEADO (workflow_call), não `on: release`: o Release é criado com o
+# GITHUB_TOKEN, e eventos desse token não disparam outros workflows - com
+# `release: published` isto nunca rodaria sozinho (mesmo caso do itch.io, ver
+# publish-itch.yml). O build-linux.yml o chama depois de anexar o .deb ao
+# Release; os passos leem a versão de GITHUB_REF_NAME, que no workflow_call é
+# a tag de quem chamou. Para republicar à mão: rode pela aba Actions a partir
+# da TAG (não da main), senão GITHUB_REF_NAME vira "main".
 
 on:
+  workflow_call:
+    secrets:
+      AUR_SSH_PRIVATE_KEY:
+        required: false
+      AUR_USERNAME:
+        required: false
+      AUR_EMAIL:
+        required: false
+      SNAPCRAFT_STORE_CREDENTIALS:
+        required: false
   workflow_dispatch:
-  release:
-    types: [published]
 
 jobs:
   publish-aur:
