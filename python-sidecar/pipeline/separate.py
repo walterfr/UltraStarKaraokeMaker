@@ -60,7 +60,9 @@ def _separate_with_roformer(
     separator.load_model(model_filename=model)
     output_files = separator.separate(
         str(input_wav),
-        custom_output_names={"Vocals": "vocals", "Instrumental": "no_vocals"},
+        # "Other" = nome do stem de acompanhamento em modelos só-vocais
+        # (ex.: vocals_mel_band_roformer.ckpt).
+        custom_output_names={"Vocals": "vocals", "Instrumental": "no_vocals", "Other": "no_vocals"},
     )
     vocals = target_dir / "vocals.wav"
     instrumental = target_dir / "no_vocals.wav"
@@ -68,10 +70,11 @@ def _separate_with_roformer(
         for f in output_files:
             fp = target_dir / f
             fl = f.lower()
-            if "vocals" in fl and not vocals.exists():
-                fp.rename(vocals)
-            elif ("instrumental" in fl or "no_vocals" in fl) and not instrumental.exists():
+            # Acompanhamento primeiro: "no_vocals" e "(other)_vocals_..." também contêm "vocals".
+            if any(k in fl for k in ("instrumental", "no_vocals", "(other)")) and not instrumental.exists():
                 fp.rename(instrumental)
+            elif "vocals" in fl and not vocals.exists():
+                fp.rename(vocals)
     if not vocals.exists() or not instrumental.exists():
         raise RuntimeError(t("separate.no_stems", path=target_dir))
     return Stems(vocals=vocals, instrumental=instrumental)
