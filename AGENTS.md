@@ -206,7 +206,7 @@ Já feito e fora da lista: arbitragem por música com Whisper guardado (`prefer_
 | E1 | **Feito em 14/11, lançado na v2.8.0** (CSP + fila só `.json`; `assetProtocol.scope` segue `**`, a Revisão abre pacote de qualquer pasta). Definir CSP e restringir `assetProtocol.scope` (hoje `csp: null` e `**`); validar caminho em `save_queue_file` / `load_queue_file` | M |
 | E2 | **Feito em 14/11, lançado na v2.8.0.** Fixar as actions de terceiros por SHA (0 de 22 hoje; o release assina o updater) | P |
 | E3 | **Feito em 14/11, lançado na v2.8.0** (`npm test` no build do Windows, Node 22; pytest já rodava em ubuntu). Rodar `npm test` no CI e pytest também no Linux | P |
-| E4 | Tirar de `ctc_align.py` o código só usado por `eval/ab_align.py` (`hard_anchor_runs`, `plan_blocks`, `align_lyrics_ctc`, `snap_line_starts`, `align_file`) | P |
+| E4 | **Feito em 20/11:** `hard_anchor_runs`, `plan_blocks`, `align_lyrics_ctc` e `snap_line_starts` foram para `eval/ab_align.py` (testes seguem em `test_ctc_align_logic.py`); `align_file` apagado (sem chamador). Pedido original: tirar de `ctc_align.py` o código só usado por `eval/ab_align.py` (`hard_anchor_runs`, `plan_blocks`, `align_lyrics_ctc`, `snap_line_starts`, `align_file`) | P |
 
 ### F. Pendências antigas
 

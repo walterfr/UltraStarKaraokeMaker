@@ -12,16 +12,17 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "eval"))
 
 from pipeline.align import SOURCE_ANCHOR, SOURCE_FUZZY
 from pipeline.ctc_align import (
     build_targets,
     fill_missing,
-    hard_anchor_runs,
-    plan_blocks,
     spans_to_word_times,
     tokenize_words,
 )
+# Variantes experimentais (hibrido com ancoras duras, snap): moram no eval/ab_align.py.
+from ab_align import hard_anchor_runs, plan_blocks, snap_line_starts  # noqa: E402
 
 DICT = {"-": 0, "a": 1, "b": 2, "o": 3, "s": 4, "'": 5, "*": 6, "c": 7, "e": 8,
         "f": 9, "i": 10, "l": 11, "n": 12, "r": 13, "t": 14, "u": 15, "v": 16,
@@ -186,7 +187,6 @@ def test_forced_align_synthetic():
 
 def test_snap_line_starts_only_moves_line_first_words_within_reach():
     import numpy as np
-    from pipeline.ctc_align import snap_line_starts
 
     starts = [1.00, 1.50, 3.00, 6.00]
     ends = [1.40, 2.00, 3.50, 6.50]

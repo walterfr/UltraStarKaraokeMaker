@@ -32,15 +32,178 @@ import library_replay as lr  # noqa: E402
 import usdx_parse  # noqa: E402
 
 
-from pipeline.ctc_align import LANG_CTC_MODELS  # noqa: E402
+import numpy as np  # noqa: E402
+
+from pipeline.ctc_align import (  # noqa: E402
+    LANG_CTC_MODELS, MAX_UNMAPPED_FRAC, SAMPLE_RATE, SEP_KEY, STAR_LOGP,
+    align_blocks, compute_emissions, fill_missing, get_ctc_model, tokenize_words,
+)
 
 KB_SV_MODEL = LANG_CTC_MODELS["sv"]
+
+
+# --- Variantes experimentais do CTC (só este script usa) ---
+# Vieram de pipeline/ctc_align.py (item E4 do AGENTS.md): o CTC híbrido com
+# âncoras duras do Whisper e o snap de início de linha perderam para o CTC
+# global de produção, mas seguem aqui para o A/B.
+
+def _occurrences(seq: list[str], hay: list[str]) -> int:
+    n = len(seq)
+    return sum(1 for i in range(len(hay) - n + 1) if hay[i:i + n] == seq)
+
+
+def hard_anchor_runs(
+    anchors: list, words: list[str] | None = None,
+    min_run: int = 3, unambiguous_run: int = 8,
+) -> list[tuple[int, int]]:
+    """
+    Faixas [i, j) de palavras com âncora EXATA do Whisper em sequência de pelo
+    menos `min_run` palavras seguidas, com inícios crescentes, e em ordem
+    temporal entre si. Uma âncora exata sozinha pode ser a ocorrência errada
+    de uma palavra comum; três seguidas casando letra e transcrição quase
+    nunca são - é o que torna a faixa segura como limite duro pro CTC.
+
+    Com `words` (a letra), uma faixa curta só vale se a SEQUÊNCIA de palavras
+    dela aparece UMA vez na letra: em linha repetida (refrão), o difflib pode
+    ter casado a transcrição com a repetição errada, e a faixa inteira vira um
+    limite duro no lugar errado (medido em "Nothing Else Matters": "what they
+    do" casou 26 s depois do gold). Faixa de `unambiguous_run`+ palavras é
+    aceita mesmo repetida.
+
+    `anchors` é a saída de align.compute_anchors: (start, end, score, source)
+    ou None por palavra.
+    """
+    from pipeline.align import SOURCE_ANCHOR, _normalize_word
+
+    norm = [_normalize_word(w) for w in words] if words is not None else None
+
+    runs: list[tuple[int, int]] = []
+    n = len(anchors)
+    k = 0
+    while k < n:
+        a = anchors[k]
+        if a is None or a[3] != SOURCE_ANCHOR:
+            k += 1
+            continue
+        j = k + 1
+        while (j < n and anchors[j] is not None and anchors[j][3] == SOURCE_ANCHOR
+               and anchors[j][0] >= anchors[j - 1][0]):
+            j += 1
+        ambiguous = (norm is not None and j - k < unambiguous_run
+                     and _occurrences(norm[k:j], norm) > 1)
+        if j - k >= min_run and not ambiguous:
+            # descarta faixa que volta no tempo em relação à anterior aceita
+            if not runs or anchors[k][0] >= anchors[runs[-1][1] - 1][1] - 0.05:
+                runs.append((k, j))
+        k = j
+    return runs
+
+
+def plan_blocks(
+    n_words: int,
+    runs: list[tuple[int, int]],
+    anchors: list,
+    audio_dur: float,
+    pad: float = 0.25,
+) -> list[tuple[int, int, float, float]]:
+    """
+    Parte a letra em blocos (i0, i1, t0, t1) que cobrem todas as palavras em
+    ordem: cada faixa de âncoras duras vira um bloco com janela = o trecho que
+    o Whisper mediu (+ `pad`), e cada vão entre faixas vira um bloco com
+    janela = do fim da faixa anterior ao início da seguinte (ou borda do
+    áudio). Cada bloco é alinhado sozinho, então um erro não atravessa uma
+    faixa dura.
+    """
+    blocks: list[tuple[int, int, float, float]] = []
+    prev_i, prev_t = 0, 0.0
+    for i, j in runs:
+        run_t0 = max(0.0, anchors[i][0] - pad)
+        run_t1 = min(audio_dur, anchors[j - 1][1] + pad)
+        if i > prev_i:
+            blocks.append((prev_i, i, prev_t, max(prev_t, anchors[i][0])))
+        blocks.append((i, j, run_t0, run_t1))
+        prev_i, prev_t = j, anchors[j - 1][1]
+    if prev_i < n_words:
+        blocks.append((prev_i, n_words, prev_t, audio_dur))
+    return blocks
+
+
+def align_lyrics_ctc(
+    audio: np.ndarray,
+    words: list[str],
+    line_ends: list[bool],
+    language: str,
+    device: str = "cuda",
+    use_star: bool = True,
+    anchors: list | None = None,
+    emissions=None,
+    star_logp: float = STAR_LOGP,
+    model_name: str | None = None,
+    use_sep: bool = True,
+) -> list[tuple[float, float, float, bool]] | None:
+    """
+    Alinha `words` (a letra inteira, na ordem) ao áudio vocal. Devolve um
+    (start_s, end_s, score, medido) por palavra, ou None se a letra não cabe
+    no vocabulário do modelo (outro alfabeto).
+
+    Sem `anchors`: um único Viterbi global. Com `anchors` (saída de
+    align.compute_anchors sobre a transcrição do Whisper): híbrido - faixas de
+    âncoras exatas confiáveis viram limites duros e o CTC alinha bloco a bloco
+    (ver plan_blocks). `emissions` = (tensor, frame_s) já calculado, pra
+    reusar entre variantes - do MESMO modelo que `model_name` escolhe
+    (get_ctc_model). `use_sep` só vale para modelo com separador de palavras.
+    """
+    model, dictionary = get_ctc_model(device, model_name)
+    word_tokens, unmapped = tokenize_words(words, dictionary, language)
+    if unmapped > MAX_UNMAPPED_FRAC:
+        return None
+    star_id = dictionary.get("*") if use_star else None
+
+    em, frame_s = emissions if emissions is not None else compute_emissions(model, audio, device)
+    if star_id is not None:
+        em = em.clone()
+        em[:, star_id] = star_logp
+    audio_dur = len(audio) / SAMPLE_RATE
+    runs = hard_anchor_runs(anchors, words) if anchors is not None else []
+    blocks = plan_blocks(len(words), runs, anchors or [], audio_dur)
+    sep_id = dictionary.get(SEP_KEY) if use_sep else None
+    times = align_blocks(em, frame_s, blocks, word_tokens, line_ends, star_id, dictionary["-"],
+                         sep_id=sep_id)
+    if all(t is None for t in times):
+        return None
+    return fill_missing(times)
+
+
+def snap_line_starts(
+    starts: list[float], ends: list[float], line_ends: list[bool],
+    onsets: np.ndarray, max_shift: float = 0.15,
+) -> int:
+    """
+    Puxa o início da 1ª palavra de cada linha para o ataque vocal (voz depois
+    de pausa, align.vocal_onsets) mais próximo, se estiver a <= `max_shift`.
+    Só a 1ª palavra: dentro da frase cantada em legato não há pausa que marque
+    a palavra. Muta `starts` (e `ends` se o início passar do fim). Devolve
+    quantas palavras mudaram.
+    """
+    if len(onsets) == 0:
+        return 0
+    moved = 0
+    for k in range(len(starts)):
+        if k > 0 and not line_ends[k - 1]:
+            continue
+        i = int(np.searchsorted(onsets, starts[k]))
+        cands = [onsets[j] for j in (i - 1, i) if 0 <= j < len(onsets)]
+        best = min(cands, key=lambda o: abs(o - starts[k]))
+        if abs(best - starts[k]) <= max_shift and (k == 0 or best >= ends[k - 1]):
+            starts[k] = float(best)
+            ends[k] = max(ends[k], starts[k] + 0.02)
+            moved += 1
+    return moved
 
 
 def _emissions(cache: Path, audio, device: str, stem_tag: str = "", model_name: str | None = None):
     """CTC emissions over the whole stem, cached (deterministic per stem)."""
     import torch
-    from pipeline.ctc_align import compute_emissions, get_ctc_model
     tag = "kbsv" if model_name == KB_SV_MODEL else "mms"
     p = cache / f"emissions_{tag}{stem_tag}.pt"
     if p.exists():
@@ -94,7 +257,7 @@ def _whisper_path(audio, words, language, device, cache):
 def _run_variant(variant: str, cache: Path, lyrics: Path, language: str, device: str):
     import whisperx
     from pipeline.align import _load_lyrics_words_with_line_ends, compute_anchors
-    from pipeline.ctc_align import align_lyrics_ctc, to_word_timings
+    from pipeline.ctc_align import to_word_timings
 
     # "...+snap" = pós-processo: início de linha puxado pro ataque vocal
     snap = variant.endswith("+snap")
@@ -143,7 +306,6 @@ def _run_variant(variant: str, cache: Path, lyrics: Path, language: str, device:
         return None
     if snap:
         from pipeline.align import vocal_onsets
-        from pipeline.ctc_align import snap_line_starts
         starts, ends = [r[0] for r in res], [r[1] for r in res]
         snap_line_starts(starts, ends, line_ends, vocal_onsets(audio))
         res = [(s, e, sc, m) for s, e, (_, _, sc, m) in zip(starts, ends, res)]
