@@ -121,6 +121,7 @@ Esta seção junta o que estava só na memória privada do Claude Code, para qua
 
 ### Decisões travadas por medida — NÃO refazer sem dado novo
 
+- **`STAR_LOGP = 0.0` (curinga grátis) fica** (20/11, C2): custo constante, sem curinga ou custo só onde há voz pioram o CTC cru (0,831 → 0,793–0,806 em `w_1s`, nenhuma música melhora). O curinga grátis não atrasa a letra.
 - **Roformer como separador principal: não** (19/11, G1/G2 acima). Karaoke piora a sincronia; o de vocais ganha +0,011 em `w_1s`, que não paga 913 MB e o tempo.
 - **`#BPM` na faixa `[200, 400)`**: o `#BPM` é a unidade da grade (`beat = 60/(BPM·4)`), não o andamento. Andamento real dava 35,1 ms/nota de erro e 59% das notas no piso de 1 beat; hoje 16,7 ms e 17%. **BPM manual é literal** (decisão do Walter).
 - **Não expandir número em `compute_anchors`**: derruba âncoras exatas de 166 para 100 e joga 109/181 palavras +43,8 s. Números só no realinhamento (`f8c40a1`).
@@ -183,7 +184,7 @@ O erro vem em rajada (52% das palavras erradas em sequências de 20+, mediana 8,
 | ID | Item | Medido | Esforço |
 |---|---|---|---|
 | C1 | Fusão segura por linha: discorda em mais de 1 s **e** CTC em silêncio, usa a linha do Whisper (respeitando monotonicidade) | 48 trocas boas, 2 ruins; 0,839 para 0,855 | M **[medir]** |
-| C2 | Cachear emissões no harness (`.npy`) e varrer `STAR_LOGP` / curinga que custa onde há energia vocal, só com Viterbi em CPU | hipótese, não medida | M **[medir]** |
+| C2 | **Medido em 20/11: NO-GO, `STAR_LOGP = 0.0` fica.** `eval/star_sweep.py` (CTC cru, bloco global, emissões em `cache/<música>/emissions_ctc.pt`): curinga grátis 0,831/0,888 (média/mediana `w_1s`), 3 colapsos; custo constante −1 a −5 ou sem curinga 0,793/0,855, 5 colapsos, 0 melhoram × 9 pioram; grátis só no silêncio e com custo onde há voz (e1–e3) 0,806, 4 colapsos, 0 × 6. Viés igual (−22 × −21 ms): a hipótese "curinga grátis engole voz e atrasa a letra" está refutada; o curinga é o que segura o alinhamento (Weezer: 0,82 → 0,36 sem ele) | 55 músicas, `replay-seedset-2_6_1` | M |
 | C3 | `lrc_blocks` com pad e restrição sequencial em vez de partição dura no timestamp do `.lrc` | não medido (o harness não passa `.lrc`) | M **[medir]** |
 | C4 | Harness chamar a orquestração do `main.py` (hoje reimplementa) e ganhar modo com `.lrc`. | **parte feita em 13/11:** `eval/error_anatomy.py` mede os detectores no cache, sem GPU, chamando as funções de produção. Falta o harness fiel + `.lrc`, pré-requisito de C2/C3 | M |
 | C5 | Checagem de refrão: avisar antes de alinhar quando a transcrição mostra repetição cantada que falta na letra | ataca a causa das rajadas; não medido | G |
