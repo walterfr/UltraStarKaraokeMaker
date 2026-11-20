@@ -1498,3 +1498,9 @@ body { overflow: hidden; }
   margin: 0;
   word-break: break-all;
 }
+
+/* Índice de linhas suspeitas no resultado da geração (B3). */
+.suspect-index {
+  margin: 4px 0;
+  padding-left: 18px;
+}

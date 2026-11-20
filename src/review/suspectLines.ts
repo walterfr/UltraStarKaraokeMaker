@@ -42,6 +42,19 @@ export function suspectLines<T>(
   );
 }
 
+// Linha que contém a nota `noteIndex` (null = índice fora das notas).
+export function lineOf(
+  notesLength: number,
+  phraseBreaksAfterIndex: number[],
+  noteIndex: number
+): LineRange | null {
+  return (
+    lineRanges(notesLength, phraseBreaksAfterIndex).find(
+      (l) => l.start <= noteIndex && noteIndex <= l.end
+    ) ?? null
+  );
+}
+
 // Índice (em `lines`) da primeira linha suspeita que começa DEPOIS da nota
 // `afterNoteIndex`, dando a volta pra primeira no fim. null = não há nenhuma.
 export function nextSuspectLine(lines: LineRange[], afterNoteIndex: number): number | null {

@@ -4,6 +4,17 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [Não lançado]
+
+### Adicionado
+
+- **Índice de linhas para revisar no fim da geração:** o resultado lista as linhas com nota suspeita (estimada ou de confiança baixa), com o minuto de cada uma, até 8, e quantas são no total.
+- **Confirmar linha na Revisão:** botão "Confirmar linha" (atalho `K`) marca a linha da nota selecionada como conferida. Ela fica verde, sai da contagem de "Linhas suspeitas" (gravado no `song_data.json` ao salvar; `Ctrl+Z` desfaz).
+
+### Alterado
+
+- **CI:** a publicação no AUR e na Snap Store passa a ser chamada pelo build do Linux depois de anexar o `.deb` ao release (o gatilho antigo, `release: published`, nunca disparava).
+
 ## [2.8.0] - 2026-11-14
 
 ### Adicionado

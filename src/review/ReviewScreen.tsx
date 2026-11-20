@@ -3,7 +3,7 @@ import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { PitchDetector } from "pitchy";
 import { MIC_GAP_S, pushMicSample, type MicSample } from "./micPitch";
-import { countLines, nextSuspectLine, suspectLines, type LineRange } from "./suspectLines";
+import { countLines, lineOf, nextSuspectLine, suspectLines, type LineRange } from "./suspectLines";
 import { useI18n } from "../i18n";
 import LyricTimingPanel from "./LyricTimingPanel";
 import { BufferPlayer, ReviewAudio } from "./bufferPlayer";
@@ -63,6 +63,7 @@ const SOURCE_COLORS: Record<string, string> = {
   lrc: "#c05a9e", // semi-medido: início de linha da letra sincronizada (LRCLIB)
   interpolated: "#d6802f", // ESTIMADO: interpolação entre vizinhas - revisar!
   ctc: "#3d6fd6", // medido: letra inteira alinhada de uma vez (ctc_align.py)
+  confirmed: "#3fa34d", // conferida pelo usuário na revisão (tecla K): deixa de ser suspeita
   // "ctc_low" não tem cor própria: é o vermelho de LOW_CONFIDENCE_COLOR (ver
   // isLowConfidenceAnchor) - mesma falha, "medido mas suspeito".
 };
@@ -83,7 +84,7 @@ const LOW_SCORE_ANCHOR_THRESHOLD = 0.15;
 
 function isLowConfidenceAnchor(n: USNote): boolean {
   if (n.note_type === "F") return false; // já sinalizado por outro caminho (freestyle)
-  if (n.source == null || n.source === "interpolated") return false; // já coberto pela cor "interpolated"
+  if (n.source == null || n.source === "interpolated" || n.source === "confirmed") return false; // "interpolated" já tem cor; "confirmed" o usuário conferiu
   // Alinhamento CTC: a confiança é julgada por LINHA no sidecar (ctc_align.
   // LOW_LINE_SCORE) - o score por palavra dele não é o score fonético do
   // whisperx, e o limiar acima marcaria nota boa demais.
@@ -1541,6 +1542,23 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     seekTo(sec);
   }, [seekTo]);
 
+  // Marca a linha da nota selecionada como conferida (B3): as notas dela
+  // viram source "confirmed" e saem da contagem de suspeitas. Desfaz com
+  // Ctrl+Z; vai para o song_data.json ao salvar.
+  const confirmSelectedLine = useCallback(() => {
+    const s = songRef.current;
+    const sel = selectedRef.current;
+    if (!s || sel === null) return;
+    const line = lineOf(s.notes.length, s.phrase_breaks_after_index, sel);
+    if (!line) return;
+    mutate((d) => {
+      for (let i = line.start; i <= line.end; i++) {
+        if (d.notes[i].note_type !== "F") d.notes[i].source = "confirmed";
+      }
+    });
+    draw();
+  }, [mutate, draw]);
+
   // Usado pela tabela de tempos: posiciona e TOCA a partir de um segundo
   // qualquer (o seekTo só posiciona). Limpa o playUntil pra não herdar a
   // parada automática do "tocar só esta nota".
@@ -1918,6 +1936,11 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
         jumpToNextSuspectLine();
         return;
       }
+      if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        confirmSelectedLine();
+        return;
+      }
 
       const sel = selectedRef.current;
       const s = songRef.current;
@@ -2040,7 +2063,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [togglePlay, undo, redo, mutate, playNote, draw, toggleMic, jumpToNextSuspectLine]);
+  }, [togglePlay, undo, redo, mutate, playNote, draw, toggleMic, jumpToNextSuspectLine, confirmSelectedLine]);
 
   // ------------------------------------------------------ ações pontuais
   // Generalização de deleteNote pra várias notas de uma vez (issue #11):
@@ -2367,6 +2390,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     interpolated: t("revSourceInterp"),
     ctc: t("revSourceCtc"),
     ctc_low: t("revSourceCtcLow"),
+    confirmed: t("revSourceConfirmed"),
   };
 
   return (
@@ -2545,6 +2569,14 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
             >
               {t("revNextSuspectLine")}
             </button>
+            <button
+              className="jump-interpolated"
+              onClick={confirmSelectedLine}
+              disabled={selected === null}
+              title={t("revConfirmLineTitle")}
+            >
+              {t("revConfirmLine")}
+            </button>
           </>
         )}
       </div>
@@ -2625,7 +2657,9 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
           <span className="legend-chip" style={{ background: SOURCE_COLORS.lrc }} />{" "}
           {t("revLegendLrc")}{" "}
           <span className="legend-chip" style={{ background: SOURCE_COLORS.interpolated }} />{" "}
-          {t("revLegendInterp")} · <span className="legend-chip" style={{ background: LOW_CONFIDENCE_COLOR }} />{" "}
+          {t("revLegendInterp")}{" "}
+          <span className="legend-chip" style={{ background: SOURCE_COLORS.confirmed }} />{" "}
+          {t("revLegendConfirmed")} · <span className="legend-chip" style={{ background: LOW_CONFIDENCE_COLOR }} />{" "}
           {t("revLegendLowScore")} · <span className="legend-chip" style={{ background: "#c9a227" }} />{" "}
           {t("revLegendGolden")} · <span className="legend-chip" style={{ background: "#4a4a58" }} />{" "}
           {t("revLegendFreestyle")}

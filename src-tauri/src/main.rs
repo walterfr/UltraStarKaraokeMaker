@@ -339,6 +339,64 @@ struct PipelineResult {
     notes_ctc: usize,
     /// Notas do CTC numa linha de confiança baixa ("ctc_low").
     notes_ctc_low: usize,
+    /// Índice das linhas a revisar (B3): início e texto de cada linha com
+    /// nota suspeita, mesmo critério da tela de revisão. `lines_total` = linhas.
+    suspect_lines: Vec<SuspectLine>,
+    lines_total: usize,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct SuspectLine {
+    start_s: f64,
+    text: String,
+}
+
+/// Mesmo critério de `isSuspectNote` em src/review/ReviewScreen.tsx: nota
+/// estimada, linha CTC de confiança baixa, ou âncora do Whisper com score
+/// < 0,15. Freestyle e linha confirmada pelo usuário não contam.
+fn is_suspect_note(n: &uskmaker_core::Note) -> bool {
+    if n.note_type == "F" {
+        return false;
+    }
+    match n.source.as_deref() {
+        None | Some("ctc") | Some("confirmed") => false,
+        Some("interpolated") | Some("ctc_low") => true,
+        Some(_) => n.score.is_some_and(|s| s < 0.15),
+    }
+}
+
+/// Linhas (delimitadas por `phrase_breaks_after_index`, como em
+/// src/review/suspectLines.ts) com ao menos uma nota suspeita, e o total.
+fn suspect_lines(song: &Song) -> (Vec<SuspectLine>, usize) {
+    let n = song.notes.len();
+    if n == 0 {
+        return (Vec::new(), 0);
+    }
+    let mut ends: Vec<usize> = song
+        .phrase_breaks_after_index
+        .iter()
+        .copied()
+        .filter(|&b| b + 1 < n)
+        .collect();
+    ends.sort_unstable();
+    ends.dedup();
+    ends.push(n - 1);
+    let beat_s = 60.0 / (song.bpm * 4.0);
+    let mut out = Vec::new();
+    let mut start = 0;
+    for &end in &ends {
+        let line = &song.notes[start..=end];
+        if line.iter().any(is_suspect_note) {
+            let text: String = line.iter().map(|x| x.text.as_str()).collect();
+            out.push(SuspectLine {
+                start_s: song.gap_ms as f64 / 1000.0 + line[0].start_beat as f64 * beat_s,
+                text: text.replace('~', "").trim().to_string(),
+            });
+        }
+        start = end + 1;
+    }
+    (out, ends.len())
 }
 
 /// Caminho do ffmpeg EMBUTIDO do USKMaker (`<pasta de dados>/bin/ffmpeg[.exe]`,
@@ -871,6 +929,7 @@ async fn run_pipeline(
         .iter()
         .filter(|n| n.source.as_deref() == Some("ctc_low"))
         .count();
+    let (suspect_lines, lines_total) = suspect_lines(&song);
 
     Ok(PipelineResult {
         txt_path: txt_path.to_string_lossy().to_string(),
@@ -884,6 +943,8 @@ async fn run_pipeline(
         notes_whisper_anchored,
         notes_ctc,
         notes_ctc_low,
+        suspect_lines,
+        lines_total,
     })
 }
 
@@ -2274,6 +2335,45 @@ fn load_queue_file(path: String) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::amd_name_from_lspci;
+
+    #[test]
+    fn linhas_suspeitas_seguem_o_criterio_da_revisao() {
+        let note = |beat: i64, text: &str, source: Option<&str>, score: Option<f64>, kind: &str| {
+            uskmaker_core::Note {
+                start_beat: beat,
+                duration_beats: 2,
+                pitch: 0,
+                text: text.to_string(),
+                note_type: kind.to_string(),
+                source: source.map(str::to_string),
+                score,
+                singer: 0,
+            }
+        };
+        let mut song: super::Song = serde_json::from_str(
+            r#"{"title":"t","artist":"a","mp3_filename":"x.ogg","bpm":300.0,"gap_ms":1000,"notes":[],"phrase_breaks_after_index":[]}"#,
+        )
+        .unwrap();
+        song.notes = vec![
+            note(0, "Lá ", Some("ctc"), Some(0.01), ":"),       // linha 1: CTC ok
+            note(4, "vai~", Some("ctc"), None, ":"),
+            note(20, "um ", Some("interpolated"), None, ":"),   // linha 2: estimada
+            note(24, "dois", Some("ctc"), None, ":"),
+            note(40, "tres", Some("anchor"), Some(0.10), ":"),  // linha 3: âncora fraca
+            note(60, "quatro", Some("confirmed"), None, ":"),   // linha 4: confirmada
+            note(80, "cinco", Some("interpolated"), None, "F"), // linha 5: freestyle
+        ];
+        song.phrase_breaks_after_index = vec![1, 3, 4, 5, 5, 99];
+        let (lines, total) = super::suspect_lines(&song);
+        assert_eq!(total, 5);
+        assert_eq!(
+            lines,
+            vec![
+                super::SuspectLine { start_s: 1.0 + 20.0 * 0.05, text: "um dois".into() },
+                super::SuspectLine { start_s: 1.0 + 40.0 * 0.05, text: "tres".into() },
+            ]
+        );
+    }
 
     #[test]
     fn nome_amd_vem_dos_colchetes_do_lspci() {

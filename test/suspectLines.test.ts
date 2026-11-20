@@ -2,11 +2,18 @@
 // com `npm test`. Notas são booleanos: true = suspeita.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { countLines, nextSuspectLine, suspectLines } from "../src/review/suspectLines.ts";
+import { countLines, lineOf, nextSuspectLine, suspectLines } from "../src/review/suspectLines.ts";
 
 const isSuspect = (n: boolean) => n;
 const T = true;
 const F = false;
+
+test("lineOf acha a linha da nota", () => {
+  // linhas: 0-1 | 2-4 | 5-6
+  assert.deepEqual(lineOf(7, [4, 1], 3), { start: 2, end: 4 });
+  assert.deepEqual(lineOf(7, [1, 4], 6), { start: 5, end: 6 });
+  assert.equal(lineOf(7, [1, 4], 7), null);
+});
 
 test("sem quebras: a música inteira é uma linha", () => {
   assert.equal(countLines(3, []), 1);

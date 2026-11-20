@@ -174,7 +174,7 @@ Base medida em 13/11 (51 músicas, 2.880 linhas, caches de 07/11): a flag atual 
 | ID | Item | Medido | Esforço |
 |---|---|---|---|
 | B1+B2 | **Feito em 13/11, lançado na v2.7.0:** `ctc_align.words_on_silence`, `line_start_disagreement` e `reflag_lines`, ligados em `main._reflag_ctc_lines` depois do resgate e da arbitragem (que seguem pelo score). Palavra interpolada do Whisper não conta como discordância (sem essa guarda, Whisper colapsado pintava a música inteira) | Medido com Whisper **medium** (julho): 23,1% / 0,42 / 0,61 → 21,8% / 0,55 / 0,74. **Remedido em 14/11 com o código atual e o large-v3 do app** (33 músicas em que o CTC fica): 19,4% / 0,45 / 0,58 → 22,3% / 0,44 / 0,66 | feito |
-| B3 | **Feito em 13/11 (parcial), lançado na v2.7.0:** contador "Linhas suspeitas: N de M" e botão/atalho `L` "Próxima suspeita" na Revisão (`src/review/suspectLines.ts`). Falta o índice no fim da geração e a marca de linha "confirmada" (pede um `source` novo) | interface não exercitada visualmente | P |
+| B3 | **Feito em 13/11 (parcial), lançado na v2.7.0:** contador "Linhas suspeitas: N de M" e botão/atalho `L` "Próxima suspeita" na Revisão (`src/review/suspectLines.ts`). **Resto feito em 20/11 (local, sem release):** índice de linhas suspeitas no resultado da geração (Rust `suspect_lines`, mesmo critério do `isSuspectNote`; até 8 com minuto) e botão/atalho `K` "Confirmar linha" (`source = "confirmed"`, verde, sai das suspeitas) | resultado conferido no navegador (`?uiState=result`); o botão da Revisão só no app, falta exercitar | P |
 
 ### C. Sincronia: errar menos
 

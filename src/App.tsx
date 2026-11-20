@@ -84,7 +84,13 @@ interface PipelineResult {
   // Alinhamento CTC global (ctc_align.py). Ausentes em executável antigo.
   notesCtc?: number;
   notesCtcLow?: number;
+  // Índice das linhas a revisar (B3). Ausentes em executável antigo.
+  suspectLines?: { startS: number; text: string }[];
+  linesTotal?: number;
 }
+
+// Quantas linhas suspeitas o resumo do fim da geração lista (o resto fica na Revisão).
+const SUSPECT_INDEX_MAX = 8;
 
 // Análise de assets de um pacote na tela de revisão (comando Rust analyze_package).
 interface PackageAnalysis {
@@ -665,6 +671,12 @@ function App() {
         notesTotal: 408,
         notesEstimated: 5,
         notesWhisperAnchored: 380,
+        // texto inventado (nunca letra real)
+        suspectLines: Array.from({ length: 10 }, (_, i) => ({
+          startS: 12.4 + i * 17.3,
+          text: `linha de teste número ${i + 1}`,
+        })),
+        linesTotal: 46,
       });
     } else if (s === "assets") {
       setAnalysis({
@@ -2762,6 +2774,20 @@ function App() {
                   })}
                 </div>
               )}
+            {!!result.suspectLines?.length && (
+              <div className="field-hint warn">
+                {t("resultSuspectLines", { n: result.suspectLines.length, m: result.linesTotal ?? 0 })}
+                <ul className="suspect-index">
+                  {result.suspectLines.slice(0, SUSPECT_INDEX_MAX).map((l) => (
+                    <li key={l.startS}>
+                      {Math.floor(l.startS / 60)}:{String(Math.floor(l.startS % 60)).padStart(2, "0")} — {l.text}
+                    </li>
+                  ))}
+                </ul>
+                {result.suspectLines.length > SUSPECT_INDEX_MAX &&
+                  t("resultSuspectMore", { n: result.suspectLines.length - SUSPECT_INDEX_MAX })}
+              </div>
+            )}
             <p className="result-paths">
               <span className="path-line" title={result.txtPath}>{result.txtPath}</span>
               <span className="path-line" title={result.audioPath}>{result.audioPath}</span>
