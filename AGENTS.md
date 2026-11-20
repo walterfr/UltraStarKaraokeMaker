@@ -72,6 +72,87 @@
 - `python python-sidecar/server.py`: Servidor persistente de jobs via stdin.
 - `python python-sidecar/main.py --help`: CLI direta do pipeline.
 
+## Conhecimento acumulado (migrado das notas do agente em 20/11/2026)
+
+Esta seção junta o que estava só na memória privada do Claude Code, para qualquer agente (Claude Code, Antigravity, Codex...) continuar daqui. O `CLAUDE.md` só importa este arquivo; **o AGENTS.md é a fonte única**.
+
+### Como trabalhar com o mantenedor (Walter)
+
+- **Idioma**: responder em português, direto e curto; código, commits e termos técnicos como são.
+- **Registrar tudo**: achado, medição, decisão e beco sem saída viram commit, issue ou este arquivo, nunca só o chat. Medição vai com número ("35,1 ms → 16,7 ms", não "melhorou"). Decisão contraintuitiva ganha teste que a trava, com o porquê no texto do teste. Hipótese refutada também se registra (evita refazer). Achado do tipo "não mexa nisto" vira issue (a #5 é o modelo).
+- **Commits**: Conventional Commits v1.0.0, tipo em inglês e descrição em português (`fix(sidecar): detecta CPU quando não há GPU NVIDIA`). Escopos comuns: `sidecar`, `review`, `align`, `eval`, `tauri`, `ui`, `release`, `ci`. O corpo explica o PORQUÊ e traz a evidência. Não reescrever histórico antigo.
+- **Pedir antes**: push, tag, release, comentário público, fechar PR/issue, baixar arquivo (dizer nome, origem e tamanho) e instalar pacote no venv. Commit local pode.
+- **GPU (RTX 4060, 8 GB)**: não rodar medição pesada (lote do harness, separação) enquanto o Walter usa o app. Em 14/11 uma medição minha ocupou a VRAM e derrubou uma geração dele no resgate 4b. Perguntar antes ou checar `nvidia-smi`.
+- **Dados pessoais**: não colocar e-mail ou dado pessoal de ninguém em código, notas ou requisições externas. Tokens só em variável de ambiente (o Walter tem `DISCOGS_TOKEN` e `FANARTTV_API_KEY` definidos; Last.fm em standby por escolha dele).
+- **Medir antes de mudar o pipeline**, sempre no lote inteiro (`--seed-set`, 55 músicas). **Nunca concluir com n=3**: em 27/07 o `initial_prompt` deu +12,8 pp em 3 músicas e +0,1 pp em 51; o `large-v3` pareceu muito pior em 3 e empatou em 51.
+
+### Arquitetura em uma tela
+
+- **Tauri v2 + React 19/TS 7** (frontend em `src/`, tela de revisão em `src/review/ReviewScreen.tsx`, canvas imperativo com estado em refs) **+ Rust** (`src-tauri/src/main.rs`; núcleo `.txt`/MIDI em `rust-core/`, crate `uskmaker-core`) **+ sidecar Python** (`python-sidecar/`).
+- `server.py` fica vivo lendo jobs JSON por stdin (Whisper/MMS em cache de módulo; 2º job pula ~85 s de carga). Conclusão sinalizada por `_job_status.json`; log por job lido por tail. Cancelar mata a árvore e respawna frio; fechar o app mata o servidor.
+- **Pipeline** (`main.py`): download/conversão → separação Demucs (subprocesso) → alinhamento CTC global MMS_FA com curinga (`STAR_LOGP = 0.0`) → resgates (4b voz principal via MelBand Roformer karaoke, 4d, 4c) e arbitragem com Whisper (`prefer_whisper_over_ctc`) → re-flag de linhas (B1/B2) → pitch SwiftF0 → grade de BPM → `.txt` UltraStar. Modo verificação (C7, `--verify-alignment`, desligado por padrão) roda um Whisper simples quando o CTC fica sem arbitragem.
+- `WordTiming.source` (anchor/fuzzy/realign/interpolated/lrc/ctc/ctc_low) atravessa Note → `song_data.json` → cores na revisão.
+- Metadados em cascata: tags → MusicBrainz/CAA → iTunes → Deezer → Last.fm (`LASTFM_API_KEY`) → Discogs (`DISCOGS_TOKEN`), com validação de artista/título (D2). Letra: LRCLIB (allowlist só `lrclib.net/api`), `.lrc` vira âncora de linha.
+- Auto-setup: `setup-sidecar.ps1 -Unattended` com **uv** (baixa uv + ffmpeg para `%LOCALAPPDATA%\USKMaker\bin`, `uv venv --python 3.12`, torch cu126/cpu por `nvidia-smi`). Manutenção do venv: `& "$env:LOCALAPPDATA\USKMaker\bin\uv.exe" pip install --python <python do venv> <pacote>`.
+
+### Gotchas (cada um já custou um bug)
+
+- **Caminho `\\?\` + PowerShell 5.1**: `resource_dir()` do Tauri devolve `\\?\C:\...`; o app chama `powershell.exe` (5.1), onde `Split-Path`/`Join-Path` perdem o drive. PS7 tolera, então só quebra no app instalado. Todo `.ps1` disparado pelo app normaliza o prefixo no topo (ver `setup-sidecar.ps1`, commit d5c4a9b).
+- **Todo `.py` novo do sidecar entra em `tauri.conf.json > bundle.resources`**, senão some no app instalado.
+- **Pins do torch em DOIS lugares** (`setup-sidecar.ps1` e comentário do `requirements.txt`), alinhados ao `requires_dist` do whisperx. Divergiu uma vez e o usuário perdeu a GPU em silêncio (`d508650`). A UI tem chip âmbar quando o torch caiu para CPU.
+- **`audio-separator` precisa do extra `[gpu]` ou `[cpu]`**: sem ele falta `onnxruntime`, o try/except engole e o resgate de voz nunca roda. Puxa `onnx-weekly` (alvo móvel).
+- **`numpy<2.5`** por causa do `numba`. Reinstalar `ctc-segmentation` (só dev) exige `pip install ctc-segmentation "numpy<2.5" --no-build-isolation` de dentro do `vcvarsall.bat`.
+- **Log do Python em cp1252** quebrava o tail UTF-8 do Rust: spawn com `PYTHONUTF8=1` e leitura com `from_utf8_lossy`.
+- **CSP do Tauri só vale no app compilado**, não no `tauri dev`. Conferir à mão no build (capa, áudio da revisão, LRCLIB, Sobre).
+- **Build local (`target/release`) usa o venv do repo** (`python-sidecar/venv`, via `CARGO_MANIFEST_DIR`), não o do usuário. Esse venv não tem `yt_dlp` (link do YouTube falha só no teste local); `certifi` foi instalado em 14/11.
+- **GitHub Actions**: evento criado com `GITHUB_TOKEN` (ex.: release publicado pelo `action-gh-release`) não dispara outro workflow. Por isso itch.io, winget e AUR/Snap são `workflow_call` chamados pelos jobs de build. Actions fixadas por SHA.
+- **Computer use nesta máquina**: `screenshot` pode falhar (`empty capture (0x0)`); o processo do app chama-se `uskmaker.exe` (nome exato no pedido de acesso). Alternativa: `npm run tauri dev` e abrir `http://localhost:1423` no navegador (o `invoke` não funciona lá).
+- **Máquina limpa sem VM**: `uv venv --python 3.12 --python-preference only-managed <dir>` ignora o Python do sistema. Foi assim que o bug do torch apareceu. Não cobre NSIS, VC++ redist nem máquina sem GPU.
+
+### Harness de avaliação (`python-sidecar/eval/`)
+
+- **Gold**: `K:\Ultrastar Songs` (~1900 charts; mantida pelo `usdb_syncer`, banco em `%LOCALAPPDATA%\bohning\usdb_syncer\usdb_syncer.db`). Seed set do @Alejololer em `K:\Ultrastar Seed` (issue #2).
+- **Lote padrão**: `--seed-set python-sidecar\eval_runs\seed_jul59.json` (55 músicas medíveis). Comando base em "Dados locais de avaliação" abaixo.
+- **Scripts**: `library_replay.py` (lote; `--aligner ctc`, `--separator {demucs,roformer}`, `--roformer-model`, `--tag` muda a pasta do run), `prep_stems.py` (separa cada música num processo novo, antes do alinhamento; necessário para o Roformer, que dentro do lote disputava VRAM e morria), `error_anatomy.py` (relatório das flags de linha, sem GPU, ~22 s; `--whisper-json`), `verify_whisper.py` (gera `align_verify.json` para medir o C7), `ab_align.py`, `evaluate.py`, `usdx_parse.py`.
+- **Run dirs atuais em `eval_runs/`**: `replay-seedset-2_6_1` (baseline do código atual, Demucs, Whisper large-v3), `replay-seedset-roformer-karaoke`, `replay-seedset-roformer-vocals_mel_band_roformer` (G2).
+- **O Whisper do harness tem de ser o do app** (`main.resolve_whisper_model("auto")` → large-v3 na RTX 4060). Até 14/11 o harness usava `medium`; todas as comparações CTC × Whisper antigas (julho, B2) eram com medium e foram remedidas.
+- **Métricas**: `w_1s` (fração de palavras com onset a menos de 1 s do gold) super-reporta falha: cruzar com `onset_med_ms` separa erro localizado de música quebrada. `offset_data_mismatch` marca como `UnmeasurableSong` o áudio deslocado em relação ao gold (reta `h ≈ a·g + b`), para não contar como falha nossa.
+- Letra usada no harness é a do próprio gold (caso otimista; o usuário real cola letra da web).
+
+### Decisões travadas por medida — NÃO refazer sem dado novo
+
+- **Roformer como separador principal: não** (19/11, G1/G2 acima). Karaoke piora a sincronia; o de vocais ganha +0,011 em `w_1s`, que não paga 913 MB e o tempo.
+- **`#BPM` na faixa `[200, 400)`**: o `#BPM` é a unidade da grade (`beat = 60/(BPM·4)`), não o andamento. Andamento real dava 35,1 ms/nota de erro e 59% das notas no piso de 1 beat; hoje 16,7 ms e 17%. **BPM manual é literal** (decisão do Walter).
+- **Não expandir número em `compute_anchors`**: derruba âncoras exatas de 166 para 100 e joga 109/181 palavras +43,8 s. Números só no realinhamento (`f8c40a1`).
+- **Notas com `~` estão corretas** (o editor oficial grava assim, `TScreenEditSub.DivideNote`; issue #5). **`#VERSION:1.0.0` fica** (a v2 da spec não foi publicada).
+- **Melisma calibrado** contra 1444 charts: `MELISMA_PITCH_TOLERANCE_ST=2.0`, `MIN_SYLLABLE_S=0.45`, `MIN_EXTENSION_S=0.25` (6,5% contra 5,0% dos charts humanos, p90 casando). A causa era deriva de pitch, não vibrato.
+- **Separar ajuda o pitch só quando o lead não domina** (Maneater: 32× melhor com lead isolado; Sangue Latino/Dancing Queen: 0 st). Produção em camadas é rara (2% no n=60): não vale pitch por nota agora (issue #7).
+- **`suppress_silence` (stable-ts) no onset: NO-GO** (melhor caso −3,3 ms, `w_1s` não muda). O erro de onset é variância, não viés (viés mediano −15,6 ms): não há conserto global barato.
+- **PT alinha ~2× melhor que EN** (onset 45,9 × 84,5 ms, julho, caminho Whisper). Refutadas: redução vocálica, tamanho do wav2vec2 (LARGE piorou), WPM. Pista não provada: fidelidade da transcrição do Whisper.
+- **Levers de transcrição (27/07), todos NO-GO no lote**: anchoring fonético (38% das âncoras novas erradas), `initial_prompt` com a letra (só condiciona os primeiros ~30 s), `large-v3` na transcrição (empate). 79% das palavras não ancoradas eram falha de transcrição.
+- **Forced alignment global alternativo**: bloco único, blocos por palavra/voicing e `ctc-segmentation` (196 ms mediano contra 77 ms) perderam. MFA, NeMo, gentle, aeneas bloqueados (sem wheel Windows ou AGPL). Depois disso veio o CTC global com curinga, que é o de produção.
+- **Downbeat/`allin1`: NO-GO** (grade uniforme não tem onde usar downbeat; `corr(bpm_dev, onset) ≈ 0`; `natten` sem wheel Windows).
+- **Loudness normalization (EBU R128) antes do Whisper: não muda a transcrição** (caso Supergrass, 17/07).
+- **Seletor CTC × Whisper por música bateu no teto** (+0,036 do oráculo). O ganho que sobra está no nível de linha e em avisar a linha certa (B1/B2/C7).
+- **Auditoria de 13/11 (anatomia do erro, n=51)**: 14% das palavras erram mais de 1 s, em rajadas (52% em sequências de 20+ palavras, mediana 8,6 s, 76% atrasadas: deslocamento de seção, não jitter). Refrão repetido erra 19,7% contra 8,2%. Viés nas palavras certas −32 ms: não mexer.
+
+### Colaborador externo
+
+- **@Alejololer**: PR #3 (timing por energia vozeada, melisma, resgate de voz principal "tenta e fica com o melhor") e PR #4 (o harness `eval/`). Tratar como par; canal ativo é a issue #2.
+- O projeto paralelo dele, `usdx-autochart`, **não tem licença**: só ideias, nunca código. O que veio de lá veio por PR dele, sob MIT.
+- Ideias dele não feitas: split de dueto P1/P2 por diarização e aviso de poucas palavras/min.
+
+### Repositórios vizinhos já analisados (não reanalisar)
+
+- **Renderam**: `rakuri255/UltraSinger` (números da letra, `#GAP` em 10 ms, motivação do melisma), `UltraStar-Deluxe/format` (`#AUDIO`, `#VOCALS`/`#INSTRUMENTAL`, pitch módulo 12), `UltraStar-Deluxe/USDX` (prova do `~`), `bohning/usdb_syncer` (sanitização de nome, `[VOC]`/`[INSTR]`, `BPM_THRESHOLD=200`), `linto-ai/whisper-timestamped` (issue #8, dígito virando âncora falsa), `vicsaizo/Karaokiza` (emoji, avc1, itch.io, títulos PT/ES, validação de metadados; falta `detect_language_by_vote` = item D3).
+- **Positivos guardados**: `stemdeckapp/stemdeck` (Apache-2.0, mesma stack; referência de empacotamento macOS arm64), `retotito/UltrastarCreatorTool` (sem licença; mesma premissa de letra fornecida; tem curva de pitch atrás das notas e sing-along), `thewh1teagle/vibe` e `cjpais/Handy` (Tauri + whisper.cpp sem Python: direção de longo prazo, não tarefa; Handy sugere download manual de modelo como plano B para rede que bloqueia o Hugging Face).
+- **Descartados**: `nomadkaraoke/karaoke-gen` (API paga; mas a issue #792 deles pede exatamente a nossa premissa), `zh-plus/openlrc`, `BBleae/whisper-lrc`, `dotslashgabut/lyricflow`, `AIXerum/faster-whisper`, Nightingale, UVR, pikaraoke, cog-musicgen-remixer, OmniVoice (AGPL), `nschmidtdev/USDB-Importer` (GPL), `sc0ty/subsync`, Voxtral, `marl/crepe` (SwiftF0 é mais leve e já em PyTorch), stable-ts (arquivado), aeneas, MFA, NeMo, gentle, karlyriceditor (GPL; ideia de tap-to-time).
+- **Padrão**: todo vizinho transcreve do zero; nenhum parte da letra fornecida. Esse é o diferencial do USKMaker.
+
+### Modernização da UI (parada por escolha do Walter)
+
+Proposta de redesign WinUI 3 recusada (reescrita de stack; o app é gerador batch + revisão, e a revisão já é ~80% do "editor" proposto). Se retomar, nesta ordem: (1) trocar as cores hex de `src/index.css` por variáveis CSS (hoje zero variáveis); (2) polish (raio 8, `:focus-visible`, tooltips com atalho); (3) curva de pitch de referência atrás das notas na revisão; (4) tap-sync com `Espaço`; tecla `G` para golden.
+
 ## Próximos passos (atualizado em 14/11/2026, após a v2.8.0)
 
 Estado: **v2.8.0** (v2.6.1: lote 1, bloco A + D1 + D4; v2.7.0: B1+B2 e parte do B3; v2.8.0: C7, D2, E1-E3; CSP conferida à mão no app compilado em 14/11). O resto está em aberto. A lista junta a auditoria de 13/11, a verificação da v2.6.0 e a análise do `vicsaizo/Karaokiza`.
@@ -181,7 +262,7 @@ Tudo em `python-sidecar/eval_runs/` (ignorado pelo git; só existe nesta máquin
 - `replay-n60-seed1-jul/`: baseline de julho, caminho Whisper (`results.csv`).
 - `replay-seedset/`: medição do CTC de 07/11 (`results.csv`). Em `cache/<música>/` ficam `align_ctc.json` (CTC atual, palavras com `source` e `score`) e `align.json` (Whisper de julho), mais os stems fixos.
 - Medir de novo: `python-sidecar\venv\Scripts\python.exe python-sidecar\eval\library_replay.py --lib "K:\Ultrastar Songs" --seed-set python-sidecar\eval_runs\seed_jul59.json --aligner ctc --device cuda`
-  - Com `--seed-set` o harness grava **sempre** em `replay-seedset/` e **pula** música que já tem resultado. Para medir uma mudança de código, renomeie antes a pasta atual (ex.: `replay-seedset-2.1.0`) e recrie `replay-seedset/` com os stems em hard link (`vocals.wav`, `no_vocals.wav`, `lead_vocals.wav` de cada `cache/<música>/`). Assim a separação do Demucs, que não é determinística, fica fixa e a comparação vale.
+  - Com `--seed-set` o harness grava em `replay-seedset/` (ou `replay-seedset-<separador>-<modelo>`/`-<tag>` com `--separator`/`--tag`) e **pula** música que já tem resultado. Para medir uma mudança de código, renomeie antes a pasta atual (ex.: `replay-seedset-2.1.0`) e recrie `replay-seedset/` com os stems em hard link (`vocals.wav`, `no_vocals.wav`, `lead_vocals.wav` de cada `cache/<música>/`). Assim a separação do Demucs, que não é determinística, fica fixa e a comparação vale.
   - O cache também é reaproveitado só pela existência do arquivo (`align_ctc.json`/`align.json`): se não apagar esses arquivos, a mudança no alinhador nem roda.
 
 ## Ideias Futuras (Backlog)
