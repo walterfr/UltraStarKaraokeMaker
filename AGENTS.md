@@ -154,9 +154,9 @@ Esta seção junta o que estava só na memória privada do Claude Code, para qua
 
 Proposta de redesign WinUI 3 recusada (reescrita de stack; o app é gerador batch + revisão, e a revisão já é ~80% do "editor" proposto). Se retomar, nesta ordem: (1) trocar as cores hex de `src/index.css` por variáveis CSS (hoje zero variáveis); (2) polish (raio 8, `:focus-visible`, tooltips com atalho); (3) curva de pitch de referência atrás das notas na revisão; (4) tap-sync com `Espaço`; tecla `G` para golden.
 
-## Próximos passos (atualizado em 14/11/2026, após a v2.8.0)
+## Próximos passos (atualizado em 20/11/2026, após a v2.9.0)
 
-Estado: **v2.8.0** (v2.6.1: lote 1, bloco A + D1 + D4; v2.7.0: B1+B2 e parte do B3; v2.8.0: C7, D2, E1-E3; CSP conferida à mão no app compilado em 14/11). O resto está em aberto. A lista junta a auditoria de 13/11, a verificação da v2.6.0 e a análise do `vicsaizo/Karaokiza`.
+Estado: **v2.9.0** (v2.6.1: lote 1, bloco A + D1 + D4; v2.7.0: B1+B2 e parte do B3; v2.8.0: C7, D2, E1-E3; v2.9.0: A8, resto do B3, E4; G1/G2 e C2 medidos e descartados; CSP conferida à mão no app compilado em 14/11). O resto está em aberto. A lista junta a auditoria de 13/11, a verificação da v2.6.0 e a análise do `vicsaizo/Karaokiza`.
 
 Legenda: esforço **P** (até 1 h), **M** (meio dia), **G** (mais de um dia). **[medir]** = mexe no alinhamento, só entra depois de medir no lote inteiro (`--seed-set`).
 
@@ -166,7 +166,7 @@ Legenda: esforço **P** (até 1 h), **M** (meio dia), **G** (mais de um dia). **
 
 | ID | Item | Onde | Esforço |
 |---|---|---|---|
-| A8 | **Feito em 18/11 (local, sem release):** `publish-linux-repos.yml` virou `workflow_call`, chamado pelo job `publish-linux-repos` do `build-linux.yml` depois de anexar o .deb. Só será exercitado quando o AUR/Snap tiverem os secrets. Mesmo gatilho morto (`release: published` não dispara com `GITHUB_TOKEN`) em `publish-linux-repos.yml` (AUR/Snap) e no `winget.yml` avulso. O winget já está coberto pelo job encadeado; AUR/Snap não vão disparar sozinhos quando as lojas reabrirem. Encadear como o itch | `.github/workflows/` | P |
+| A8 | **Feito em 18/11, lançado na v2.9.0:** `publish-linux-repos.yml` virou `workflow_call`, chamado pelo job `publish-linux-repos` do `build-linux.yml` depois de anexar o .deb. Só será exercitado quando o AUR/Snap tiverem os secrets. Mesmo gatilho morto (`release: published` não dispara com `GITHUB_TOKEN`) em `publish-linux-repos.yml` (AUR/Snap) e no `winget.yml` avulso. O winget já está coberto pelo job encadeado; AUR/Snap não vão disparar sozinhos quando as lojas reabrirem. Encadear como o itch | `.github/workflows/` | P |
 
 ### B. Sincronia: avisar melhor o que está errado (revisão)
 
@@ -175,7 +175,7 @@ Base medida em 13/11 (51 músicas, 2.880 linhas, caches de 07/11): a flag atual 
 | ID | Item | Medido | Esforço |
 |---|---|---|---|
 | B1+B2 | **Feito em 13/11, lançado na v2.7.0:** `ctc_align.words_on_silence`, `line_start_disagreement` e `reflag_lines`, ligados em `main._reflag_ctc_lines` depois do resgate e da arbitragem (que seguem pelo score). Palavra interpolada do Whisper não conta como discordância (sem essa guarda, Whisper colapsado pintava a música inteira) | Medido com Whisper **medium** (julho): 23,1% / 0,42 / 0,61 → 21,8% / 0,55 / 0,74. **Remedido em 14/11 com o código atual e o large-v3 do app** (33 músicas em que o CTC fica): 19,4% / 0,45 / 0,58 → 22,3% / 0,44 / 0,66 | feito |
-| B3 | **Feito em 13/11 (parcial), lançado na v2.7.0:** contador "Linhas suspeitas: N de M" e botão/atalho `L` "Próxima suspeita" na Revisão (`src/review/suspectLines.ts`). **Resto feito em 20/11 (local, sem release):** índice de linhas suspeitas no resultado da geração (Rust `suspect_lines`, mesmo critério do `isSuspectNote`; até 8 com minuto) e botão/atalho `K` "Confirmar linha" (`source = "confirmed"`, verde, sai das suspeitas) | resultado conferido no navegador (`?uiState=result`); o botão da Revisão só no app, falta exercitar | P |
+| B3 | **Feito em 13/11 (parcial), lançado na v2.7.0:** contador "Linhas suspeitas: N de M" e botão/atalho `L` "Próxima suspeita" na Revisão (`src/review/suspectLines.ts`). **Resto feito em 20/11, lançado na v2.9.0:** índice de linhas suspeitas no resultado da geração (Rust `suspect_lines`, mesmo critério do `isSuspectNote`; até 8 com minuto) e botão/atalho `K` "Confirmar linha" (`source = "confirmed"`, verde, sai das suspeitas) | resultado conferido no navegador (`?uiState=result`); o botão da Revisão só no app, falta exercitar | P |
 
 ### C. Sincronia: errar menos
 
@@ -207,7 +207,7 @@ Já feito e fora da lista: arbitragem por música com Whisper guardado (`prefer_
 | E1 | **Feito em 14/11, lançado na v2.8.0** (CSP + fila só `.json`; `assetProtocol.scope` segue `**`, a Revisão abre pacote de qualquer pasta). Definir CSP e restringir `assetProtocol.scope` (hoje `csp: null` e `**`); validar caminho em `save_queue_file` / `load_queue_file` | M |
 | E2 | **Feito em 14/11, lançado na v2.8.0.** Fixar as actions de terceiros por SHA (0 de 22 hoje; o release assina o updater) | P |
 | E3 | **Feito em 14/11, lançado na v2.8.0** (`npm test` no build do Windows, Node 22; pytest já rodava em ubuntu). Rodar `npm test` no CI e pytest também no Linux | P |
-| E4 | **Feito em 20/11:** `hard_anchor_runs`, `plan_blocks`, `align_lyrics_ctc` e `snap_line_starts` foram para `eval/ab_align.py` (testes seguem em `test_ctc_align_logic.py`); `align_file` apagado (sem chamador). Pedido original: tirar de `ctc_align.py` o código só usado por `eval/ab_align.py` (`hard_anchor_runs`, `plan_blocks`, `align_lyrics_ctc`, `snap_line_starts`, `align_file`) | P |
+| E4 | **Feito em 20/11, lançado na v2.9.0:** `hard_anchor_runs`, `plan_blocks`, `align_lyrics_ctc` e `snap_line_starts` foram para `eval/ab_align.py` (testes seguem em `test_ctc_align_logic.py`); `align_file` apagado (sem chamador). Pedido original: tirar de `ctc_align.py` o código só usado por `eval/ab_align.py` (`hard_anchor_runs`, `plan_blocks`, `align_lyrics_ctc`, `snap_line_starts`, `align_file`) | P |
 
 ### F. Pendências antigas
 
