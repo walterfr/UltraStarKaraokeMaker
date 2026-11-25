@@ -9,10 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - **MIDI keyboard in the Review:**
-  - New "🎹 MIDI keyboard" button connects every MIDI input (Web MIDI; keyboards plugged in later are picked up too). The held key lights up on the piano strip and shows as a band at its pitch across the notes, to compare it with the note under the playhead.
-  - "🔊 Hear keys" plays the keys through the synth over the song, to find the melody by ear.
-  - "⏺ Record" (shortcut `R`): while the song plays, each note takes the pitch of the key held during it. The key held longest within the note wins, so a press a little early or late, or a sloppy legato, does not move the neighbour's pitch. Timing does not change, only pitch; freestyle notes are skipped; each recording pass is a single `Ctrl+Z`.
-- **Metronome click in the Review** ("🥁 Click", shortcut `C`, off by default): a click on each beat during playback, at the `#BPM` tempo (folded into 70-180 per minute) and lined up with the song's attacks, measured from the decoded audio, since `#GAP` is where the first note starts, not a downbeat.
+  - New "🎹 MIDI keyboard" button connects every MIDI input (keyboards plugged in later are picked up too). On Windows input is read natively (`midir` crate), because WebView2 only offers the SysEx permission and Web MIDI would stay blocked; other systems use Web MIDI. The held key lights up on the piano strip and shows as a band at its pitch across the notes, to compare it with the note under the playhead.
+  - On Windows the keyboard connects by itself when the Review opens; turned off with the button, it stays off next time.
+  - "🔊 Keys" volume control (0 = mute, remembered between sessions): the keys play through a synth over the song, to find the melody by ear.
+  - Horizontal piano below the editor (C2-C7, each white key named like the side strip): lights up the keys pressed on the MIDI keyboard or with the mouse. Clicking plays the note, dragging plays a glissando, and the mouse records just like the MIDI keyboard, so "⏺ Record" works with no keyboard at all.
+  - "⏺ Record" (shortcut `R`): while the song plays, each note takes the pitch of the key held during it, on the MIDI keyboard or the on-screen piano. The key held longest within the note wins, so a press a little early or late, or a sloppy legato, does not move the neighbour's pitch. Timing does not change, only pitch; freestyle notes are skipped; each recording pass is a single `Ctrl+Z`.
+- **Metronome click in the Review** ("🥁 Click" volume control, 0 = off, which is the default; shortcut `T` turns it on and off without losing the volume): a click on each beat during playback, at the `#BPM` tempo (folded into 70-180 per minute) and lined up with the song's attacks, measured from the decoded audio, since `#GAP` is where the first note starts, not a downbeat.
 
 ## [2.9.0] - 2026-11-20
 

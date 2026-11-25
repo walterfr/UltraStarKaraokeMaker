@@ -238,8 +238,23 @@ export function clickTimesBetween(t0: number, t1: number, period: number, phase:
 // ------------------------------------------------------------ som (Web Audio)
 
 /** Sintetizador polifônico simples para ouvir as teclas (mesmo timbre triangular da prévia de nota). */
+/**
+ * Posição do controle de volume (0-100) para ganho (0-1). Curva quadrática:
+ * o ouvido percebe volume de forma logarítmica, e com ganho linear a metade
+ * de cima do controle quase não muda nada.
+ */
+export function volumeGain(percent: number): number {
+  if (!isFinite(percent)) return 0;
+  const p = Math.min(100, Math.max(0, percent)) / 100;
+  return p * p;
+}
+
 export class KeySynth {
   private voices = new Map<number, { osc: OscillatorNode; gain: GainNode }>();
+  // saída comum das vozes: o controle de volume mexe só nela, inclusive com
+  // tecla segurada
+  private master: GainNode | null = null;
+  private level = 1;
   // campo explícito, não "parameter property": o `npm test` roda com
   // --experimental-strip-types, que não aceita essa sintaxe
   private readonly getContext: () => AudioContext | null;
@@ -248,7 +263,24 @@ export class KeySynth {
     this.getContext = getContext;
   }
 
+  /** Volume geral (ganho 0-1, ver volumeGain). Com 0 as teclas não soam. */
+  setLevel(gain: number): void {
+    this.level = gain;
+    if (this.master) this.master.gain.setTargetAtTime(gain, this.master.context.currentTime, 0.02);
+    if (gain <= 0) this.allOff();
+  }
+
+  private output(ctx: AudioContext): GainNode {
+    if (!this.master || this.master.context !== ctx) {
+      this.master = ctx.createGain();
+      this.master.gain.value = this.level;
+      this.master.connect(ctx.destination);
+    }
+    return this.master;
+  }
+
   noteOn(note: number, velocity: number): void {
+    if (this.level <= 0) return;
     const ctx = this.getContext();
     if (!ctx) return;
     if (ctx.state === "suspended") void ctx.resume();
@@ -261,7 +293,7 @@ export class KeySynth {
     gain.gain.setValueAtTime(0.0001, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(peak, ctx.currentTime + 0.008);
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(this.output(ctx));
     osc.start();
     this.voices.set(note, { osc, gain });
   }
@@ -281,14 +313,15 @@ export class KeySynth {
   }
 }
 
-/** Um clique curto (seno de 1,5 kHz, 25 ms) no instante `when` do contexto. */
-export function scheduleClick(ctx: AudioContext, when: number): OscillatorNode {
+/** Um clique curto (seno de 1,5 kHz, 25 ms) no instante `when` do contexto; `level` = ganho 0-1 (volumeGain). */
+export function scheduleClick(ctx: AudioContext, when: number, level = 1): OscillatorNode {
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   osc.type = "sine";
   osc.frequency.value = 1500;
   gain.gain.setValueAtTime(0.0001, when);
-  gain.gain.exponentialRampToValueAtTime(0.35, when + 0.002);
+  // rampa exponencial não aceita 0: o mínimo é praticamente mudo
+  gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, 0.35 * level), when + 0.002);
   gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.025);
   osc.connect(gain);
   gain.connect(ctx.destination);
@@ -299,16 +332,74 @@ export function scheduleClick(ctx: AudioContext, when: number): OscillatorNode {
 
 // ------------------------------------------------------------ Web MIDI
 
+/** App Tauri no Windows: o teclado é lido pelo Rust (src-tauri/src/midi.rs). */
+export function nativeMidiAvailable(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    "__TAURI_INTERNALS__" in window &&
+    typeof navigator !== "undefined" &&
+    /Windows/i.test(navigator.userAgent)
+  );
+}
+
 export function midiSupported(): boolean {
-  return typeof navigator !== "undefined" && typeof navigator.requestMIDIAccess === "function";
+  return (
+    nativeMidiAvailable() ||
+    (typeof navigator !== "undefined" && typeof navigator.requestMIDIAccess === "function")
+  );
 }
 
 /**
- * Abre a Web MIDI e escuta TODAS as entradas (inclusive as plugadas depois).
- * Devolve uma função que desliga tudo. `onDevices` recebe os nomes das
- * entradas conectadas sempre que a lista muda.
+ * Abre o teclado MIDI e escuta TODAS as entradas (inclusive as plugadas
+ * depois). Devolve uma função que desliga tudo. `onDevices` recebe os nomes
+ * das entradas conectadas sempre que a lista muda.
+ *
+ * No Windows vai primeiro pelo Rust: desde o Chromium 124 toda a Web MIDI
+ * pede permissão, e o WebView2 só tem tipo de permissão para MIDI com SysEx -
+ * o pedido comum pode ser negado sem prompt. Se o caminho nativo falhar, tenta
+ * a Web MIDI mesmo assim.
  */
 export async function openMidiInputs(
+  onEvent: (e: MidiEvent) => void,
+  onDevices: (names: string[]) => void
+): Promise<() => void> {
+  if (nativeMidiAvailable()) {
+    try {
+      return await openNativeMidi(onEvent, onDevices);
+    } catch (err) {
+      console.warn("MIDI nativo falhou, tentando a Web MIDI:", err);
+    }
+  }
+  return openWebMidi(onEvent, onDevices);
+}
+
+async function openNativeMidi(
+  onEvent: (e: MidiEvent) => void,
+  onDevices: (names: string[]) => void
+): Promise<() => void> {
+  // import dinâmico: os testes (node) importam este módulo sem o runtime do Tauri
+  const { invoke } = await import("@tauri-apps/api/core");
+  const { listen } = await import("@tauri-apps/api/event");
+  const unlistenMsg = await listen<number[]>("midi-message", (e) => {
+    const ev = parseMidiMessage(e.payload);
+    if (ev) onEvent(ev);
+  });
+  const unlistenDev = await listen<string[]>("midi-devices", (e) => onDevices(e.payload));
+  try {
+    onDevices(await invoke<string[]>("midi_start"));
+  } catch (err) {
+    unlistenMsg();
+    unlistenDev();
+    throw err;
+  }
+  return () => {
+    unlistenMsg();
+    unlistenDev();
+    void invoke("midi_stop").catch(() => {});
+  };
+}
+
+async function openWebMidi(
   onEvent: (e: MidiEvent) => void,
   onDevices: (names: string[]) => void
 ): Promise<() => void> {

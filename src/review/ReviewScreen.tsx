@@ -11,15 +11,18 @@ import {
   clickTimesBetween,
   estimateBeatPhase,
   midiSupported,
+  nativeMidiAvailable,
   midiToPitch,
   onsetEnvelope,
   openMidiInputs,
   scheduleClick,
+  volumeGain,
   type MidiEvent,
 } from "./midiKeyboard";
 import { countLines, lineOf, nextSuspectLine, suspectLines, type LineRange } from "./suspectLines";
 import { useI18n } from "../i18n";
 import LyricTimingPanel from "./LyricTimingPanel";
+import PianoKeyboard from "./PianoKeyboard";
 import { BufferPlayer, ReviewAudio } from "./bufferPlayer";
 import {
   approvedSettledForRows,
@@ -407,6 +410,92 @@ type DragMode =
   // Retângulo de seleção (Shift+arraste no fundo do piano roll).
   | { kind: "rubberband"; startX: number; startY: number; curX: number; curY: number };
 
+// Volumes da Revisão (0-100), lembrados entre sessões. localStorage pode
+// faltar ou falhar (WebView restrito): aí vale o padrão.
+const KEYS_VOLUME_KEY = "uskmaker-review-keys-volume";
+// conexão automática do teclado MIDI (Windows): ligada até o usuário desligar no botão
+const MIDI_AUTO_KEY = "uskmaker-review-midi-auto";
+function readMidiAuto(): boolean {
+  try {
+    return localStorage.getItem(MIDI_AUTO_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+function storeMidiAuto(on: boolean): void {
+  try {
+    localStorage.setItem(MIDI_AUTO_KEY, on ? "1" : "0");
+  } catch {
+    /* sem armazenamento: só não lembra */
+  }
+}
+const CLICK_VOLUME_KEY = "uskmaker-review-click-volume";
+function readStoredVolume(key: string, fallback: number): number {
+  try {
+    const v = Number(localStorage.getItem(key));
+    return localStorage.getItem(key) !== null && isFinite(v) ? Math.min(100, Math.max(0, v)) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function storeVolume(key: string, v: number): void {
+  try {
+    localStorage.setItem(key, String(v));
+  } catch {
+    /* sem armazenamento: só não lembra */
+  }
+}
+
+/**
+ * Controle de volume da barra: ícone (clique = mudo / volta ao volume
+ * anterior), nome e slider. 0 = desligado. Solta o foco ao largar o slider,
+ * senão Espaço e os atalhos ficariam presos nele (o teclado ignora INPUT).
+ */
+function VolumeControl(props: {
+  label: string;
+  icon: string;
+  title: string;
+  muteTitle: string;
+  value: number;
+  onChange: (v: number) => void;
+  onToggle?: () => void;
+  accent: string;
+}) {
+  const { label, icon, title, muteTitle, value, onChange, onToggle, accent } = props;
+  const lastRef = useRef(value > 0 ? value : 70);
+  if (value > 0) lastRef.current = value;
+  const on = value > 0;
+  return (
+    <span
+      className={`vol-control${on ? " on" : ""}`}
+      title={title}
+      style={{ "--vol-accent": accent } as React.CSSProperties}
+    >
+      <button
+        type="button"
+        className="vol-mute"
+        title={muteTitle}
+        aria-pressed={on}
+        onClick={() => (onToggle ? onToggle() : onChange(on ? 0 : lastRef.current))}
+      >
+        {on ? icon : "🔇"}
+      </button>
+      <span className="vol-label">{label}</span>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        step={5}
+        value={value}
+        aria-label={label}
+        onChange={(e) => onChange(Number(e.target.value))}
+        onPointerUp={(e) => e.currentTarget.blur()}
+      />
+      <span className="vol-value">{value}</span>
+    </span>
+  );
+}
+
 /** MIME do áudio do pacote, para a blob: URL do player (ogg/mp3/wav/m4a). */
 function audioMimeType(path: string): string {
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
@@ -507,20 +596,26 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   const [midiEnabled, setMidiEnabled] = useState(false);
   const [midiDevices, setMidiDevices] = useState<string[]>([]);
   const [midiError, setMidiError] = useState<string | null>(null);
-  const [hearKeys, setHearKeys] = useState(true);
-  const hearKeysRef = useRef(true);
+  // volumes (0-100, 0 = mudo), lembrados entre sessões
+  const [keysVolume, setKeysVolumeState] = useState(() => readStoredVolume(KEYS_VOLUME_KEY, 70));
+  const keysVolumeRef = useRef(keysVolume);
   const [recording, setRecording] = useState(false);
   const recordingRef = useRef(false);
   const [heldLabel, setHeldLabel] = useState<string | null>(null);
+  // teclas acesas no teclado horizontal (MIDI + mouse)
+  const [pressedKeys, setPressedKeys] = useState<readonly number[]>([]);
   const heldKeysRef = useRef(new HeldKeys());
   const keySynthRef = useRef<KeySynth | null>(null);
   const recorderRef = useRef(new PitchRecorder());
   // um undo por passe de gravação (play -> pausa), não um por nota
   const recordUndoTakenRef = useRef(false);
   const midiCleanupRef = useRef<(() => void) | null>(null);
+  const midiMountedRef = useRef(true);
   // Clique do metrônomo: agendado no relógio do BufferPlayer, um pouco à frente
-  const [clickEnabled, setClickEnabled] = useState(false);
-  const clickEnabledRef = useRef(false);
+  const [clickVolume, setClickVolumeState] = useState(() => readStoredVolume(CLICK_VOLUME_KEY, 0));
+  const clickVolumeRef = useRef(clickVolume);
+  // o T liga/desliga o clique: volta para o último volume usado
+  const lastClickVolumeRef = useRef(clickVolume > 0 ? clickVolume : 60);
   const decodedRef = useRef<AudioBuffer | null>(null);
   const clickGridRef = useRef<{ bpm: number; period: number; phase: number } | null>(null);
   const clickScheduledUntilRef = useRef<number | null>(null);
@@ -552,9 +647,9 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   multiSelectedRef.current = multiSelected;
   micEnabledRef.current = micEnabled;
   synthEnabledRef.current = synthEnabled;
-  hearKeysRef.current = hearKeys;
+  keysVolumeRef.current = keysVolume;
   recordingRef.current = recording;
-  clickEnabledRef.current = clickEnabled;
+  clickVolumeRef.current = clickVolume;
 
   // Busca a versão aprovada assim que artista/título são conhecidos. Não
   // achar é o caso normal (a maioria das músicas nunca foi conferida), então
@@ -1622,7 +1717,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
         // Clique do metrônomo: agenda no relógio do BufferPlayer os cliques
         // dos próximos 150 ms. Salto de playhead (seek) descarta o agendado.
         const player = playerRef.current;
-        if (clickEnabledRef.current && s && player && audioRef.current === player) {
+        if (clickVolumeRef.current > 0 && s && player && audioRef.current === player) {
           const grid = clickGridFor(s);
           const now = audio.currentTime;
           const lastFrame = clickLastFrameRef.current;
@@ -1637,7 +1732,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
               // `now` já é a posição OUVIDA; o clique também sai com a latência de saída
               const when = ctx.currentTime + (c - now) - latency;
               if (when < ctx.currentTime) continue;
-              const osc = scheduleClick(ctx, when);
+              const osc = scheduleClick(ctx, when, volumeGain(clickVolumeRef.current));
               scheduledClicksRef.current.push(osc);
               osc.onended = () => {
                 scheduledClicksRef.current = scheduledClicksRef.current.filter((o) => o !== osc);
@@ -1683,28 +1778,71 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     [draw]
   );
 
-  // Tecla do teclado MIDI: segura/solta, toca no sintetizador se "ouvir
-  // teclas" estiver ligado e atualiza o realce. A gravação em si acontece no
-  // loop de animação, que lê heldKeysRef a cada quadro.
+  // sintetizador das teclas (MIDI e piano da tela), no volume do controle
+  const keySynth = useCallback((): KeySynth => {
+    if (!keySynthRef.current) {
+      keySynthRef.current = new KeySynth(ensurePianoAudio);
+      keySynthRef.current.setLevel(volumeGain(keysVolumeRef.current));
+    }
+    return keySynthRef.current;
+  }, [ensurePianoAudio]);
+
+  // Tecla do teclado MIDI ou do piano da tela: segura/solta, toca no
+  // sintetizador (no volume de "Teclas"; 0 = mudo) e atualiza o realce. A
+  // gravação em si acontece no loop de animação, que lê heldKeysRef.
   const onMidiEvent = useCallback(
     (ev: MidiEvent) => {
       const keys = heldKeysRef.current;
       if (ev.kind === "on") {
         keys.press(ev.note);
-        if (hearKeysRef.current) keySynthRef.current?.noteOn(ev.note, ev.velocity);
+        keySynth().noteOn(ev.note, ev.velocity);
       } else {
         keys.release(ev.note);
         keySynthRef.current?.noteOff(ev.note);
       }
       const active = keys.active;
       setHeldLabel(active === null ? null : pitchName(midiToPitch(active)));
+      setPressedKeys([...keys.all]);
       draw();
     },
-    [draw]
+    [draw, keySynth]
   );
   // os listeners da Web MIDI são presos uma vez; chamam sempre o atual
   const onMidiEventRef = useRef(onMidiEvent);
   onMidiEventRef.current = onMidiEvent;
+
+  // teclado horizontal: o mouse entra pelo mesmo caminho das teclas MIDI, então
+  // acende, soa e grava (com ⏺ Gravar ligado) do mesmo jeito
+  const onScreenKeyPress = useCallback((note: number) => {
+    onMidiEventRef.current({ kind: "on", note, velocity: 100 });
+  }, []);
+  const onScreenKeyRelease = useCallback((note: number) => {
+    onMidiEventRef.current({ kind: "off", note, velocity: 0 });
+  }, []);
+  const pressedKeySet = useMemo(() => new Set(pressedKeys), [pressedKeys]);
+
+  // `auto`: conexão automática ao abrir a tela - falha calada (sem aviso
+  // vermelho); o botão continua lá para tentar de novo.
+  const connectMidi = useCallback(
+    async (auto: boolean) => {
+      setMidiError(null);
+      try {
+        keySynth();
+        const cleanup = await openMidiInputs((ev) => onMidiEventRef.current(ev), setMidiDevices);
+        // a tela pode ter fechado enquanto as entradas abriam
+        if (!midiMountedRef.current) {
+          cleanup();
+          return;
+        }
+        midiCleanupRef.current = cleanup;
+        setMidiEnabled(true);
+      } catch (e) {
+        if (!auto) setMidiError(t("midiPermissionDenied"));
+        console.error("abrir o MIDI falhou:", e);
+      }
+    },
+    [keySynth, t]
+  );
 
   const toggleMidi = useCallback(async () => {
     if (!midiAvailable) return;
@@ -1714,49 +1852,64 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
       keySynthRef.current?.allOff();
       heldKeysRef.current.clear();
       setHeldLabel(null);
-      setRecording(false);
-      recordingRef.current = false;
+      setPressedKeys([]);
       setMidiDevices([]);
       setMidiEnabled(false);
+      storeMidiAuto(false); // desligou no botão: não conecta sozinho da próxima vez
       draw();
       return;
     }
-    setMidiError(null);
-    try {
-      if (!keySynthRef.current) keySynthRef.current = new KeySynth(ensurePianoAudio);
-      midiCleanupRef.current = await openMidiInputs((ev) => onMidiEventRef.current(ev), setMidiDevices);
-      setMidiEnabled(true);
-    } catch (e) {
-      setMidiError(t("midiPermissionDenied"));
-      console.error("requestMIDIAccess falhou:", e);
-    }
-  }, [midiAvailable, midiEnabled, draw, ensurePianoAudio, t]);
+    storeMidiAuto(true);
+    await connectMidi(false);
+  }, [midiAvailable, midiEnabled, draw, connectMidi]);
 
+  // No Windows o teclado MIDI conecta sozinho ao abrir a Revisão: a leitura é
+  // nativa (sem pedido de permissão) e um teclado plugado depois entra em até
+  // 2 s. Quem desligar no botão fica desligado nas próximas vezes. Fora do
+  // Windows (Web MIDI) continua só pelo botão, porque lá conectar pode abrir
+  // um pedido de permissão do sistema.
+  const connectMidiRef = useRef(connectMidi);
+  connectMidiRef.current = connectMidi;
+  useEffect(() => {
+    midiMountedRef.current = true;
+    if (nativeMidiAvailable() && readMidiAuto()) void connectMidiRef.current(true);
+    return () => {
+      midiMountedRef.current = false;
+    };
+  }, []);
+
+  // Gravar vale para o teclado MIDI e para o teclado da tela
   const toggleRecording = useCallback(() => {
-    if (!midiEnabled) return;
     recorderRef.current.reset();
     recordUndoTakenRef.current = false;
     setRecording((prev) => {
       recordingRef.current = !prev;
       return !prev;
     });
-  }, [midiEnabled]);
-
-  const toggleHearKeys = useCallback(() => {
-    setHearKeys((prev) => {
-      if (prev) keySynthRef.current?.allOff();
-      hearKeysRef.current = !prev;
-      return !prev;
-    });
   }, []);
 
+  const setKeysVolume = useCallback((v: number) => {
+    keysVolumeRef.current = v;
+    setKeysVolumeState(v);
+    keySynthRef.current?.setLevel(volumeGain(v));
+    storeVolume(KEYS_VOLUME_KEY, v);
+  }, []);
+
+  const setClickVolume = useCallback(
+    (v: number) => {
+      if (v > 0) lastClickVolumeRef.current = v;
+      else cancelClicks();
+      clickVolumeRef.current = v;
+      setClickVolumeState(v);
+      storeVolume(CLICK_VOLUME_KEY, v);
+    },
+    [cancelClicks]
+  );
+
+  // atalho T: liga/desliga o clique sem perder o volume escolhido
   const toggleClick = useCallback(() => {
-    setClickEnabled((prev) => {
-      if (prev) cancelClicks();
-      clickEnabledRef.current = !prev;
-      return !prev;
-    });
-  }, [cancelClicks]);
+    setClickVolume(clickVolumeRef.current > 0 ? 0 : lastClickVolumeRef.current);
+  }, [setClickVolume]);
 
   // Pula pra próxima linha suspeita depois da nota selecionada (sem seleção,
   // depois da nota sob o marcador de tempo): seleciona a 1ª nota da linha,
@@ -2176,12 +2329,13 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
         toggleSynth();
         return;
       }
-      if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === "r" && midiEnabled) {
+      if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === "r") {
         e.preventDefault();
         toggleRecording();
         return;
       }
-      if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === "c") {
+      // T, não C: com nota selecionada, C-B já dão o pitch da nota
+      if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === "t") {
         e.preventDefault();
         toggleClick();
         return;
@@ -2318,7 +2472,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [togglePlay, undo, redo, mutate, playNote, draw, toggleMic, jumpToNextSuspectLine, confirmSelectedLine, midiEnabled, toggleRecording, toggleClick]);
+  }, [togglePlay, undo, redo, mutate, playNote, draw, toggleMic, jumpToNextSuspectLine, confirmSelectedLine, toggleRecording, toggleClick]);
 
   // ------------------------------------------------------ ações pontuais
   // Generalização de deleteNote pra várias notas de uma vez (issue #11):
@@ -2744,16 +2898,15 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
             {t("midiToggleLabel")}
           </button>
         )}
-        {midiEnabled && (
-          <>
-            <button
-              className={hearKeys ? "midi-on" : undefined}
-              onClick={toggleHearKeys}
-              title={t("midiHearHint")}
-              aria-pressed={hearKeys}
-            >
-              {t("midiHearLabel")}
-            </button>
+        <VolumeControl
+          label={t("keysVolumeLabel")}
+          icon="🔊"
+          title={t("keysVolumeHint")}
+          muteTitle={t("volumeMuteHint")}
+          value={keysVolume}
+          onChange={setKeysVolume}
+          accent="#3ddc84"
+        />
             <button
               className={recording ? "rec-on" : undefined}
               onClick={toggleRecording}
@@ -2762,23 +2915,25 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
             >
               {recording ? t("midiRecordOn") : t("midiRecordLabel")}
             </button>
-            <span className="field-hint" title={midiDevices.join("\n")}>
-              {heldLabel
-                ? t("midiHeld", { note: heldLabel })
-                : midiDevices.length > 0
-                  ? t("midiConnected", { n: midiDevices.length })
-                  : t("midiNoDevice")}
-            </span>
-          </>
+        {(midiEnabled || heldLabel) && (
+          <span className="field-hint" title={midiDevices.join("\n")}>
+            {heldLabel
+              ? t("midiHeld", { note: heldLabel })
+              : midiDevices.length > 0
+                ? t("midiConnected", { n: midiDevices.length })
+                : t("midiNoDevice")}
+          </span>
         )}
-        <button
-          className={clickEnabled ? "click-on" : undefined}
-          onClick={toggleClick}
+        <VolumeControl
+          label={t("clickLabel")}
+          icon="🥁"
           title={t("clickHint")}
-          aria-pressed={clickEnabled}
-        >
-          {t("clickLabel")}
-        </button>
+          muteTitle={t("volumeMuteHint")}
+          value={clickVolume}
+          onChange={setClickVolume}
+          onToggle={toggleClick}
+          accent="#f0b573"
+        />
         {micError && <span className="field-hint">{micError}</span>}
         {midiError && <span className="field-hint">{midiError}</span>}
         <span className="toolbar-sep" />
@@ -2941,6 +3096,15 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
           />
         </div>
       </div>
+
+      <PianoKeyboard
+        low={36}
+        high={96}
+        pressed={pressedKeySet}
+        onPress={onScreenKeyPress}
+        onRelease={onScreenKeyRelease}
+        title={t("pianoKeyboardHint")}
+      />
 
       <p className="review-hints">{t("revHints")}</p>
 

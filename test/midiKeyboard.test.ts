@@ -10,6 +10,7 @@ import {
   clickTimesBetween,
   estimateBeatPhase,
   midiToPitch,
+  volumeGain,
   noteIndexAt,
   onsetEnvelope,
   parseMidiMessage,
@@ -141,4 +142,13 @@ test("clickTimesBetween lista os cliques da janela", () => {
   assert.deepEqual(c.map((x) => Math.round(x * 100) / 100), [1.2, 1.7]);
   assert.deepEqual(clickTimesBetween(0, 0.3, 0.5, 0.2), [0.2]);
   assert.deepEqual(clickTimesBetween(2, 1, 0.5, 0), []);
+});
+
+test("volumeGain: 0 é mudo, 100 é cheio, curva quadrática no meio, fora da faixa é cortado", () => {
+  assert.equal(volumeGain(0), 0);
+  assert.equal(volumeGain(100), 1);
+  assert.equal(volumeGain(50), 0.25);
+  assert.equal(volumeGain(-10), 0);
+  assert.equal(volumeGain(150), 1);
+  assert.equal(volumeGain(NaN), 0);
 });
