@@ -4,6 +4,18 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [Não lançado]
+
+### Adicionado
+
+- **Teclado MIDI na Revisão:**
+  - Novo botão "🎹 Teclado MIDI" conecta todas as entradas MIDI (teclado plugado depois também entra). No Windows a leitura é nativa (crate `midir`), porque o WebView2 só oferece a permissão de SysEx e o Web MIDI ficaria bloqueado; nos outros sistemas usa Web MIDI. A tecla segurada acende no piano e vira uma faixa na altura dela por cima das notas, para comparar com a nota sob o playhead.
+  - No Windows o teclado conecta sozinho ao abrir a Revisão; desligado no botão, fica desligado nas próximas vezes.
+  - Controle de volume "🔊 Teclas" (0 = mudo, lembrado entre sessões): as teclas tocam num sintetizador por cima da música, para achar a melodia de ouvido.
+  - Piano horizontal embaixo do editor (C2-C7, com o nome de cada tecla branca, como o piano lateral): acende as teclas apertadas no teclado MIDI ou com o mouse. Clicar toca a nota, arrastar faz glissando, e o mouse grava igual ao teclado MIDI, então dá para usar o "⏺ Gravar" sem teclado nenhum.
+  - "⏺ Gravar" (atalho `R`): com a música tocando, cada nota fica com o pitch da tecla segurada durante ela, no teclado MIDI ou no piano da tela. Ganha a tecla que mais durou dentro da nota, então apertar um pouco antes ou depois, ou um legato desleixado, não muda o pitch da vizinha. O timing não muda, só o pitch; notas freestyle ficam de fora; cada passe de gravação é um único `Ctrl+Z`.
+- **Clique de metrônomo na Revisão** (controle de volume "🥁 Clique", 0 = desligado, que é o padrão; atalho `T` liga e desliga sem perder o volume): um clique a cada tempo durante o playback, no andamento do `#BPM` (dobrado/dividido para 70-180 por minuto) e alinhado aos ataques da música, medidos no áudio decodificado, já que o `#GAP` é onde a 1ª nota começa, não um tempo forte.
+
 ## [2.9.0] - 2026-11-20
 
 ### Adicionado

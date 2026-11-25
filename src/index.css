@@ -272,6 +272,98 @@ button.secondary {
   border-color: #38bdf8;
   background: rgba(56, 189, 248, 0.15);
 }
+.review-toolbar button.midi-on {
+  border-color: #3ddc84;
+  background: rgba(61, 220, 132, 0.15);
+}
+.review-toolbar button.rec-on {
+  border-color: #e8554d;
+  background: rgba(232, 85, 77, 0.25);
+  color: #ffb3ad;
+}
+/* controle de volume (teclas, clique): ícone = mudo, slider 0-100 */
+.vol-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: #1b1b24;
+  border: 1px solid #33333f;
+  border-radius: 6px;
+  padding: 0.15rem 0.5rem 0.15rem 0.25rem;
+  font-size: 0.85rem;
+  color: #9a9aa8;
+}
+.vol-control.on {
+  border-color: var(--vol-accent);
+  color: #e8e8ec;
+}
+.review-toolbar .vol-control button.vol-mute {
+  background: none;
+  border: none;
+  padding: 0.1rem 0.2rem;
+}
+.vol-control input[type="range"] {
+  width: 80px;
+  accent-color: var(--vol-accent);
+  margin: 0;
+}
+.vol-control .vol-value {
+  min-width: 2ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.75rem;
+}
+/* teclado horizontal da Revisão (PianoKeyboard.tsx) */
+.h-piano {
+  position: relative;
+  height: 96px;
+  margin: 6px 0 2px;
+  background: #111118;
+  border-radius: 4px;
+  overflow: hidden;
+  user-select: none;
+  touch-action: none;
+  cursor: pointer;
+}
+.h-piano-key {
+  position: absolute;
+  top: 0;
+  box-sizing: border-box;
+}
+.h-piano-key.white {
+  height: 100%;
+  background: #fff;
+  border: 1px solid #777;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.h-piano-key.white span {
+  font: 600 11px system-ui, sans-serif;
+  color: #666;
+  padding-bottom: 4px;
+  pointer-events: none;
+}
+.h-piano-key.white.c span {
+  color: #d46b55;
+  font-weight: 800;
+}
+.h-piano-key.black {
+  background: #000;
+  border-radius: 0 0 3px 3px;
+  z-index: 2;
+}
+.h-piano-key.white.lit {
+  background: #3ddc84;
+}
+.h-piano-key.black.lit {
+  background: #1f8a4c;
+}
+.h-piano-key.lit span {
+  color: #0b2b18;
+}
 .toolbar-sep {
   width: 1px;
   height: 22px;

@@ -145,6 +145,7 @@ The resulting package contains the UltraStar `.txt`, the `.ogg`/`.mp3` audio, th
    - Drag notes across time and pitch, split syllables, adjust phrase breaks and shift global GAP.
    - Handy pitch reference via the interactive **piano roll** and bulk note-type changes (Normal, Golden, Freestyle, Rap).
    - **🎤 Sing along:** turn on your microphone (shortcut `M`) to draw your live vocal pitch over the notes in real time.
+   - **🎹 MIDI keyboard and on-screen piano:** play the melody over the song on a MIDI keyboard or on the piano below the editor (click or drag). With **⏺ Record** (shortcut `R`) each note takes the pitch of the key held during it; **🥁 Click** (shortcut `T`) turns on a metronome.
    - Safe saving: edits are never lost on error, and generating again keeps automatic `.bak` backups.
 
 ### Tips for other languages (Japanese, Chinese, etc.)
