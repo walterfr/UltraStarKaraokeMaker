@@ -7,7 +7,8 @@
 #
 # What it does (Python does NOT need to be installed - uv handles that):
 #   1. Downloads uv (Astral's Python/package manager) into bin
-#   2. Detects an NVIDIA GPU (via nvidia-smi) to choose the torch build
+#   2. Detects the GPU to choose the torch build: NVIDIA (nvidia-smi) -> CUDA,
+#      AMD Radeon RX 6000/7000/9000 (Win32_VideoController) -> ROCm, else CPU
 #   3. Creates the venv in %LOCALAPPDATA%\USKMaker\venv with Python 3.12 (uv
 #      downloads a managed Python if 3.12 is not on the machine)
 #   4. Downloads a bundled ffmpeg (with libvorbis) into %LOCALAPPDATA%\USKMaker\bin
@@ -140,13 +141,58 @@ if (Test-Path $uvExe) {
 # The rule is DELIBERATELY CONSERVATIVE: only 12.0 and above switches to cu128.
 # An older card follows exactly the same path as before, so this fix cannot
 # regress anyone who was already working.
-Write-Step "Detecting the NVIDIA GPU"
+Write-Step "Detecting the GPU"
 
 $hasNvidia = $false
 try {
     $null = & nvidia-smi 2>$null
     if ($LASTEXITCODE -eq 0) { $hasNvidia = $true }
 } catch { }
+
+# ---------------------------------------------------------------------------
+# 3b. No NVIDIA: an AMD Radeon gets torch with ROCm (AMD's Windows builds)
+# ---------------------------------------------------------------------------
+# The ROCm build of torch presents the AMD card to the code as "cuda" (as on
+# Linux: torch.cuda.is_available() is True), so resolve_device in main.py
+# needs nothing AMD-specific to put Demucs, the alignment and the lead-vocal
+# rescue on the GPU. What it needs is the RIGHT wheel: AMD publishes Windows
+# PyTorch builds PER GPU FAMILY ("TheRock" nightlies, rocm.nightlies.amd.com).
+# AMD's official Windows release covers only RDNA3/RDNA4 and does not even see
+# an RX 6000; the gfx103X-dgpu build does.
+#
+# MEASURED (2026-11-25, RX 6800 XT, same 5-min song, CPU torch vs this build):
+#   Demucs 2 min 36 s -> 26 s; CTC alignment 1 min 33 s -> 9 s; lead-vocal
+#   rescue (MelBand Roformer) 40+ min (estimated) -> 1 min 32 s; Whisper on 90 s of
+#   audio 112 s -> 12.4 s (with the CTranslate2 ROCm build, step 6c).
+#
+# The family comes from the MARKETING NAME: RX 6xxx = RDNA2 (gfx1030-1034),
+# RX 7xxx = RDNA3 (gfx1100-1102), RX 9xxx = RDNA4 (gfx1200/1201). Windows has
+# no rocminfo before ROCm exists, and for these three series the name is
+# unambiguous. Integrated Radeon graphics ("AMD Radeon(TM) Graphics", 780M)
+# stay on the CPU path, as before. USKMAKER_ROCM_FAMILY=<family> forces a
+# family (e.g. gfx1151 for Strix Halo); USKMAKER_ROCM_FAMILY=cpu forces CPU.
+function Get-RocmFamily([string]$gpuName) {
+    if ($gpuName -match 'Radeon RX 6\d{3}') { return 'gfx103X-dgpu' }
+    if ($gpuName -match 'Radeon (RX 7\d{3}|PRO W7\d{3})') { return 'gfx110X-all' }
+    if ($gpuName -match 'Radeon (RX 9\d{3}|AI PRO R9\d{3})') { return 'gfx120X-all' }
+    return $null
+}
+
+$rocmIndexBase = "https://rocm.nightlies.amd.com/v2-staging"
+$amdGpuName = $null
+$rocmFamily = $null
+if (-not $hasNvidia) {
+    try {
+        $amdGpuName = Get-CimInstance Win32_VideoController -ErrorAction Stop |
+            Where-Object { $_.PNPDeviceID -like 'PCI\VEN_1002*' -and $_.Name -match 'Radeon (RX|PRO|AI PRO) ' } |
+            Select-Object -ExpandProperty Name -First 1
+    } catch { }
+    if ($amdGpuName) { $rocmFamily = Get-RocmFamily $amdGpuName }
+    if ($env:USKMAKER_ROCM_FAMILY) {
+        $rocmFamily = if ($env:USKMAKER_ROCM_FAMILY -eq 'cpu') { $null } else { $env:USKMAKER_ROCM_FAMILY }
+    }
+}
+$isAmd = [bool]$rocmFamily
 
 if ($hasNvidia) {
     # The card's capability. An old driver may not know the compute_cap field;
@@ -175,7 +221,19 @@ if ($hasNvidia) {
         Write-Warn2 "NVIDIA GPU detected, but the compute capability could not be read - using cu126 (default)."
         $torchIndex = "https://download.pytorch.org/whl/cu126"
     }
+} elseif ($isAmd) {
+    $gpuLabel = if ($amdGpuName) { $amdGpuName } else { "AMD GPU" }
+    Write-Ok "$gpuLabel detected - torch with ROCm ($rocmFamily, AMD nightly build)."
+    $torchIndex = "$rocmIndexBase/$rocmFamily"
+    # torch ROCm (libomp140) and the CTranslate2 ROCm build (libiomp5md) each
+    # bring an OpenMP runtime, and Intel's aborts when it finds the other one
+    # ("OMP: Error #15"). The pipeline sets this itself (main.py); this is
+    # for the python processes THIS script starts (step 6c and validation).
+    $env:KMP_DUPLICATE_LIB_OK = "TRUE"
 } else {
+    if ($amdGpuName) {
+        Write-Warn2 "$amdGpuName detected, but there is no ROCm torch for it on Windows yet - CPU torch."
+    }
     Write-Warn2 "No NVIDIA GPU detected - CPU torch (it works, but ~10 min per song)."
     $torchIndex = "https://download.pytorch.org/whl/cpu"
 }
@@ -185,8 +243,8 @@ if ($hasNvidia) {
 # cu128 on a Blackwell card - only the label was wrong, the download was
 # already correct, but it made the RTX 50 fix look like it had not taken hold.
 # Deriving it here means the message and reality cannot disagree.
-$torchChannel = ($torchIndex -split '/')[-1]   # cu128 | cu126 | cpu
-$torchLabel = if ($torchChannel -eq 'cpu') { 'CPU' } else { "CUDA $torchChannel" }
+$torchChannel = ($torchIndex -split '/')[-1]   # cu128 | cu126 | cpu | gfx103X-dgpu...
+$torchLabel = if ($isAmd) { "ROCm $rocmFamily" } elseif ($torchChannel -eq 'cpu') { 'CPU' } else { "CUDA $torchChannel" }
 
 # ---------------------------------------------------------------------------
 # 4. Create the venv with Python 3.12 (uv downloads Python if needed)
@@ -368,8 +426,28 @@ if (Test-Path $denoExe) {
 # If they drift apart, the same silent damage comes back.
 $torchPin = @("torch~=2.8.0", "torchaudio~=2.8.0", "torchvision~=0.23.0")
 
+# AMD IS THE ONE EXCEPTION TO THAT PIN. AMD publishes no torch 2.8 for Windows:
+# its gfx103X/gfx110X/gfx120X builds start at 2.9. So the AMD path pins one
+# exact nightly - the same set exists for all three families (checked
+# 2026-11-25 on v2-staging) - and step 6 OVERRIDES whisperx's torch~=2.8.0 with
+# it (uv --overrides), on the AMD path only. MEASURED on an RX 6800 XT:
+# whisperx 3.8.7rc1, pyannote, Demucs and the whole pipeline run on 2.9.1.
+# Pinned, not "the latest nightly": a moving nightly would change under the
+# user between two runs of this setup.
+# WHEN UPGRADING: keep these three, the override in step 6 and the note in
+# requirements.txt together.
+$rocmTag = "rocm7.13.0a20260421"
+$rocmTorchPin = @("torch==2.9.1+$rocmTag", "torchaudio==2.9.0+$rocmTag", "torchvision==0.24.0+$rocmTag")
+
 Write-Step "Installing torch ($torchLabel) - this may take several minutes"
-& $uvExe pip install --python "$venvPython" @torchPin --index-url $torchIndex
+if ($isAmd) {
+    # The family index carries torch and AMD's runtime packages (rocm-sdk-*);
+    # the plain dependencies (sympy, networkx...) come from PyPI.
+    & $uvExe pip install --python "$venvPython" @rocmTorchPin --index-url $torchIndex `
+        --extra-index-url https://pypi.org/simple --index-strategy unsafe-best-match
+} else {
+    & $uvExe pip install --python "$venvPython" @torchPin --index-url $torchIndex
+}
 if ($LASTEXITCODE -ne 0) { Fail "Failed to install torch." }
 
 # ---------------------------------------------------------------------------
@@ -504,10 +582,84 @@ Write-Step "Installing/updating the pipeline dependencies (audio-separator extra
 # Windows machine without an NVIDIA card failed the setup at this step. The
 # NVIDIA path never saw it: its two-item array stays an array.
 $extraPkgs = @(if ($hasNvidia) { @("audio-separator[gpu]>=0.44.0", "onnxruntime-gpu<1.21.0") } else { @("audio-separator[cpu]>=0.44.0") })
-& $uvExe pip install --python "$venvPython" @upgradeArgs -r "$reqFile" @extraPkgs
-if ($LASTEXITCODE -ne 0) { Fail "Failed to install the dependencies (requirements.txt + audio-separator[$sepExtra])." }
+
+# AMD: whisperx asks for torch~=2.8.0 (see step 6), so the ROCm torch goes in
+# as an OVERRIDE, together with the torchcodec built for torch 2.9 (0.8.x; the
+# 0.7 that comes with 2.8 is for a different torch ABI). Even 0.8.1 from PyPI
+# does NOT load against AMD's torch: MEASURED 2026-11-25, libtorchcodec_core7
+# fails with WinError 127 (a torch symbol AMD's build does not export), so the
+# validation prints its "torchcodec does not load - harmless" warning, the
+# same state as any machine where torchcodec fails (the pipeline decodes with
+# whisperx.load_audio, i.e. the ffmpeg executable). The AMD index stays
+# reachable here too, for the same reason as in setup-sidecar.sh: the frozen
+# "torch==2.9.1+rocm..." only exists there, and with --upgrade uv must find it.
+# The override file is passed by its RELATIVE name from inside its folder (the
+# same trick as the .sh), so a user folder with a space cannot break it.
+$amdArgs = @()
+$amdOverridesName = "uskmaker-amd-overrides.txt"
+if ($isAmd) {
+    Set-Content -Path (Join-Path $env:TEMP $amdOverridesName) -Value ($rocmTorchPin + "torchcodec>=0.8,<0.9") -Encoding ASCII
+    $amdArgs = @("--overrides", $amdOverridesName, "--extra-index-url", $torchIndex, "--index-strategy", "unsafe-best-match")
+    Push-Location $env:TEMP
+}
+& $uvExe pip install --python "$venvPython" @upgradeArgs @amdArgs -r "$reqFile" @extraPkgs
+$depsExit = $LASTEXITCODE
+if ($isAmd) {
+    Pop-Location
+    Remove-Item (Join-Path $env:TEMP $amdOverridesName) -Force -ErrorAction SilentlyContinue
+}
+if ($depsExit -ne 0) { Fail "Failed to install the dependencies (requirements.txt + audio-separator[$sepExtra])." }
 
 Remove-Item $constraintsFile -Force -ErrorAction SilentlyContinue
+
+# ---------------------------------------------------------------------------
+# 6c. AMD: Whisper on the GPU too (CTranslate2 ROCm build)
+# ---------------------------------------------------------------------------
+# Whisper runs on CTranslate2, not torch, and the CTranslate2 on PyPI only
+# knows CUDA - on AMD the transcription stays on the CPU (resolve_whisper_device
+# in main.py checks this by itself). CTranslate2 publishes official ROCm wheels
+# for Windows with each release (rocm-python-wheels-Windows.zip); they link the
+# same amdhip64_7.dll / hipblas.dll that the ROCm torch ships. MEASURED on an
+# RX 6800 XT: Whisper medium on 90 s of audio, 112 s on the CPU -> 12.4 s,
+# same words. NON-FATAL by design: if anything fails, Whisper keeps the CPU.
+# Skipped when CTranslate2 already sees the GPU (re-runs/updates of the setup).
+if ($isAmd) {
+    Write-Step "Setting up Whisper on the AMD GPU (CTranslate2 ROCm build)"
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $ct2Gpus = (& $venvPython -c "import torch, ctranslate2; print(ctranslate2.get_cuda_device_count())" 2>$null | Select-Object -Last 1)
+    if ("$ct2Gpus".Trim() -match '^[1-9]') {
+        Write-Ok "CTranslate2 already uses the GPU."
+    } else {
+        $ct2Dir = Join-Path $env:TEMP "uskmaker-ct2-rocm"
+        $ct2Zip = Join-Path $env:TEMP "uskmaker-ct2-rocm.zip"
+        try {
+            $ct2Ver = "$(& $venvPython -c "import importlib.metadata as m; print(m.version('ctranslate2'))" 2>$null | Select-Object -Last 1)".Trim()
+            $pyTag = "$(& $venvPython -c "import sys; print('cp%d%d' % sys.version_info[:2])" 2>$null | Select-Object -Last 1)".Trim()
+            if ($ct2Ver -notmatch '^\d+\.\d+\.\d+$') { throw "could not read the installed ctranslate2 version" }
+            $ct2Url = "https://github.com/OpenNMT/CTranslate2/releases/download/v$ct2Ver/rocm-python-wheels-Windows.zip"
+            Write-Host "    Downloading the CTranslate2 $ct2Ver ROCm wheels (~185 MB)..."
+            Invoke-WebRequest -Uri $ct2Url -OutFile $ct2Zip -UseBasicParsing
+            if (Test-Path $ct2Dir) { Remove-Item -Recurse -Force $ct2Dir }
+            Expand-Archive -Path $ct2Zip -DestinationPath $ct2Dir -Force
+            $ct2Whl = Get-ChildItem $ct2Dir -Recurse -Filter "ctranslate2-$ct2Ver-$pyTag-$pyTag-win_amd64.whl" | Select-Object -First 1
+            if (-not $ct2Whl) { throw "the release has no $pyTag wheel" }
+            # relative name from inside the folder: a path with a space would not survive
+            Push-Location $ct2Whl.DirectoryName
+            & $uvExe pip install --python "$venvPython" --no-deps --reinstall ".\$($ct2Whl.Name)"
+            $ct2Exit = $LASTEXITCODE
+            Pop-Location
+            if ($ct2Exit -ne 0) { throw "uv could not install $($ct2Whl.Name)" }
+            Write-Ok "CTranslate2 $ct2Ver (ROCm) installed - Whisper on the GPU."
+        } catch {
+            Write-Warn2 "Could not set up Whisper on the GPU: $($_.Exception.Message)"
+            Write-Warn2 "  Not fatal - Whisper runs on the CPU; separation and alignment stay on the GPU."
+        }
+        Remove-Item $ct2Zip -Force -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force $ct2Dir -ErrorAction SilentlyContinue
+    }
+    $ErrorActionPreference = $prevEAP
+}
 
 # ---------------------------------------------------------------------------
 # 7. Final validation
@@ -537,6 +689,24 @@ if ($hasNvidia -and $cudaCheck -ne "True") {
     Write-Warn2 "  Suspects, in this order: (1) a CPU torch was installed"
     Write-Warn2 "  (run this script again with the GPU visible to nvidia-smi);"
     Write-Warn2 "  (2) the CUDA build does not cover the card's generation; (3) the driver."
+} elseif ($isAmd -and $cudaCheck -ne "True") {
+    # Suspects in the order they tend to happen on Windows + AMD.
+    Write-Warn2 "AMD GPU detected but torch (ROCm $rocmFamily) is not seeing it - running on the CPU."
+    Write-Warn2 "  Suspects, in this order: (1) an old AMD Adrenalin driver (update it);"
+    Write-Warn2 "  (2) the card is not in the $rocmFamily build (USKMAKER_ROCM_FAMILY=<family> picks another);"
+    Write-Warn2 "  (3) an integrated Radeon is device 0 (set HIP_VISIBLE_DEVICES to the dedicated card)."
+} elseif ($isAmd) {
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $amdOut = & $venvPython -c "import torch, ctranslate2; print(torch.cuda.get_device_name(0)); print(ctranslate2.get_cuda_device_count())" 2>$null | ForEach-Object { "$_" }
+    $ErrorActionPreference = $prevEAP
+    $amdName = ($amdOut | Select-Object -First 1)
+    Write-Ok "torch installed (ROCm $rocmFamily, GPU: $amdName)"
+    if ("$($amdOut | Select-Object -Last 1)".Trim() -match '^[1-9]') {
+        Write-Ok "Whisper (CTranslate2) on the GPU"
+    } else {
+        Write-Warn2 "Whisper (CTranslate2) on the CPU - separation and alignment are on the GPU."
+    }
 } else {
     Write-Ok "torch installed (CUDA available: $cudaCheck)"
 }

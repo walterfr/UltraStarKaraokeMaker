@@ -6,6 +6,13 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 ## [Unreleased]
 
+### Adicionado
+
+- **GPU AMD no Windows (ROCm):** sem NVIDIA, o "Configurar ambiente de IA" agora reconhece uma Radeon RX 6000, RX 7000 ou RX 9000 e instala o PyTorch com ROCm dos builds noturnos da AMD para a família da placa (antes uma Radeon ficava sempre na CPU). O Whisper também vai para a GPU, pelo build ROCm oficial do CTranslate2 (se ele falhar, só o Whisper fica na CPU). O chip de ambiente passa a mostrar a placa AMD. `USKMAKER_ROCM_FAMILY=<família>` força outra família (ou `cpu`).
+  - Medido numa RX 6800 XT, mesma música de 5 min, CPU (Ryzen 9 3900X) contra GPU: Demucs 2 min 36 s → 26 s; alinhamento CTC 1 min 33 s → 9 s; resgate da voz principal (MelBand Roformer) mais de 40 min (estimado pelo progresso) → 1 min 32 s; Whisper medium em 90 s de áudio 112 s → 12,4 s.
+  - O whisperx pede torch 2.8, que a AMD não publica para Windows: no caminho AMD o setup instala o torch 2.9.1 fixo (ROCm 7.13) por cima do pin, só ali. NVIDIA e CPU não mudam.
+  - No Windows com ROCm o pipeline desliga o MIOpen (o build da AMD não compila os kernels de instance_norm/LSTM que o VAD do pyannote usa) e libera os dois runtimes de OpenMP do torch e do CTranslate2 no mesmo processo.
+
 ### Corrigido
 
 - **Configurar Ambiente de IA sem NVIDIA no Windows:** desde a v2.2.0 a etapa das dependências falhava em toda máquina sem placa NVIDIA (`Failed to parse: '-'`): o PowerShell entregava o pacote `audio-separator[cpu]` ao uv uma letra por argumento. Com NVIDIA não acontecia.

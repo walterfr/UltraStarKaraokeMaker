@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **AMD GPU on Windows (ROCm):** with no NVIDIA card, "Set up AI environment" now recognizes a Radeon RX 6000, RX 7000 or RX 9000 and installs PyTorch with ROCm from AMD's nightly builds for the card's family (a Radeon used to stay on the CPU). Whisper moves to the GPU too, through CTranslate2's official ROCm build (if that fails, only Whisper stays on the CPU). The environment chip now shows the AMD card. `USKMAKER_ROCM_FAMILY=<family>` forces another family (or `cpu`).
+  - Measured on an RX 6800 XT, same 5-min song, CPU (Ryzen 9 3900X) vs GPU: Demucs 2 min 36 s → 26 s; CTC alignment 1 min 33 s → 9 s; lead-vocal rescue (MelBand Roformer) 40+ min (estimated from its progress) → 1 min 32 s; Whisper medium on 90 s of audio 112 s → 12.4 s.
+  - whisperx asks for torch 2.8, which AMD does not publish for Windows: on the AMD path the setup installs a pinned torch 2.9.1 (ROCm 7.13) over that pin, there only. NVIDIA and CPU do not change.
+  - On Windows with ROCm the pipeline turns MIOpen off (AMD's build cannot compile the instance_norm/LSTM kernels that pyannote's VAD uses) and lets the two OpenMP runtimes of torch and CTranslate2 share the process.
+
 ### Fixed
 
 - **AI Environment Setup Without NVIDIA on Windows:** since v2.2.0 the dependencies step failed on every machine without an NVIDIA card (`Failed to parse: '-'`): PowerShell handed the `audio-separator[cpu]` package to uv one letter per argument. NVIDIA machines were not affected.

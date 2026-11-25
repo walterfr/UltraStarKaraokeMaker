@@ -57,7 +57,7 @@ The pipeline has six steps:
 ## Requirements
 
 - **Python 3.12** (tested with 3.12.10)
-- **NVIDIA GPU with CUDA** — developed and tested on an RTX 4060 (8 GB VRAM). On Linux, AMD GPUs work too, through ROCm (tested on an RX 7800 XT). It runs on CPU, but vocal separation and alignment get much slower.
+- **NVIDIA GPU with CUDA** — developed and tested on an RTX 4060 (8 GB VRAM). AMD GPUs work too, through ROCm: on Linux (tested on an RX 7800 XT) and on Windows with a Radeon RX 6000/7000/9000, through AMD's nightly builds (tested on an RX 6800 XT). It runs on CPU, but vocal separation and alignment get much slower.
 - **Node.js** and **Rust** (stable toolchain), for the Tauri part.
 - **ffmpeg** with `libvorbis` support (to produce `.ogg`). With the Windows installer (Option A) it is **downloaded automatically** by `setup-sidecar.ps1`; on Linux it comes from your distribution (the `.deb`/`.rpm` install it); in development mode, have it on your PATH.
 

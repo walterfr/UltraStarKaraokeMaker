@@ -57,7 +57,7 @@ O pipeline tem seis etapas:
 ## Requisitos
 
 - **Python 3.12** (testado com 3.12.10)
-- **GPU NVIDIA com CUDA** — desenvolvido e testado numa RTX 4060 (8 GB VRAM). No Linux, GPUs AMD também funcionam, via ROCm (testado numa RX 7800 XT). Roda em CPU, mas a separação vocal e o alinhamento ficam bem mais lentos.
+- **GPU NVIDIA com CUDA** — desenvolvido e testado numa RTX 4060 (8 GB VRAM). GPUs AMD também funcionam, via ROCm: no Linux (testado numa RX 7800 XT) e no Windows com Radeon RX 6000/7000/9000, pelos builds noturnos da AMD (testado numa RX 6800 XT). Roda em CPU, mas a separação vocal e o alinhamento ficam bem mais lentos.
 - **Node.js** e **Rust** (toolchain estável), para a parte Tauri.
 - **ffmpeg** com suporte a `libvorbis` (para gerar `.ogg`). Pelo instalador do Windows (Opção A) ele é **baixado automaticamente** pelo `setup-sidecar.ps1`; no Linux ele vem da distribuição (o `.deb`/`.rpm` já o instalam); no modo desenvolvimento, tenha-o no PATH.
 
