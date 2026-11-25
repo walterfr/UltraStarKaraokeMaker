@@ -49,6 +49,8 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod midi;
+
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -2426,7 +2428,10 @@ fn main() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(PipelineState::default())
+        .manage(midi::MidiState::default())
         .invoke_handler(tauri::generate_handler![
+            midi::midi_start,
+            midi::midi_stop,
             run_pipeline,
             open_folder,
             save_queue_file,

@@ -25,6 +25,12 @@ tauri-plugin-updater = "2"
 # NFKD para tirar o acento dos nomes de pasta/arquivo (ver fold_to_ascii)
 unicode-normalization = "0.1"
 
+# Teclado MIDI da Revisão (src/midi.rs), só no Windows: a Web MIDI do WebView2
+# depende de uma permissão que ele não sabe pedir para MIDI comum. No Linux
+# fica a Web MIDI (e o midir puxaria a libasound no build).
+[target.'cfg(windows)'.dependencies]
+midir = "0.10"
+
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]

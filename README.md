@@ -145,6 +145,8 @@ O pacote resultante contém o `.txt` UltraStar, o áudio `.ogg`/`.mp3`, a capa `
    - Arraste notas no tempo/pitch, divida sílabas, ajuste quebras de frase e altere o GAP global.
    - Referência de tom via **piano roll** e edição de notas em lote (Normal, Golden, Freestyle, Rap).
    - **🎤 Cantar junto:** ligue o microfone (atalho `M`) para desenhar sua voz em tempo real sobre as notas e testar a afinação na hora.
+   - **🎹 Teclado MIDI e piano na tela:** toque a melodia por cima da música num teclado MIDI ou no piano embaixo do editor (clique ou arraste). Com **⏺ Gravar** (atalho `R`) cada nota fica com o pitch da tecla segurada durante ela; **🥁 Clique** (atalho `T`) liga um metrônomo.
+   - **Edição estilo DAW:** **✂ Dividir** (atalho `S`) corta uma nota em duas, e a 2ª parte vira `~`, a mesma palavra em outro pitch; `Ctrl+E` divide no playhead; `Ctrl+C`/`Ctrl+X`/`Ctrl+V` copiam, recortam e colam no playhead; `Ctrl+D` duplica (numa nota só, continua a palavra com `~`).
    - Salve com segurança: alterações nunca são perdidas em caso de erro, e gerar novamente cria backup `.bak` automático.
 
 ### Dicas para outros idiomas (Japonês, Chinês, etc.)

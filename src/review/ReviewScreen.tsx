@@ -3,9 +3,28 @@ import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { PitchDetector } from "pitchy";
 import { MIC_GAP_S, pushMicSample, type MicSample } from "./micPitch";
+import {
+  HeldKeys,
+  KeySynth,
+  PitchRecorder,
+  clickPeriodSec,
+  clickTimesBetween,
+  estimateBeatPhase,
+  midiSupported,
+  nativeMidiAvailable,
+  midiToPitch,
+  onsetEnvelope,
+  openMidiInputs,
+  scheduleClick,
+  volumeGain,
+  type MidiEvent,
+} from "./midiKeyboard";
 import { countLines, lineOf, nextSuspectLine, suspectLines, type LineRange } from "./suspectLines";
 import { useI18n } from "../i18n";
 import LyricTimingPanel from "./LyricTimingPanel";
+import PianoKeyboard from "./PianoKeyboard";
+import ShortcutLegend from "./ShortcutLegend";
+import { copyNotes, duplicateNotes, extendNote, insertClip, sliceBeat, splitNote, type NoteClip } from "./noteEdit";
 import { BufferPlayer, ReviewAudio } from "./bufferPlayer";
 import {
   approvedSettledForRows,
@@ -393,6 +412,92 @@ type DragMode =
   // Retângulo de seleção (Shift+arraste no fundo do piano roll).
   | { kind: "rubberband"; startX: number; startY: number; curX: number; curY: number };
 
+// Volumes da Revisão (0-100), lembrados entre sessões. localStorage pode
+// faltar ou falhar (WebView restrito): aí vale o padrão.
+const KEYS_VOLUME_KEY = "uskmaker-review-keys-volume";
+// conexão automática do teclado MIDI (Windows): ligada até o usuário desligar no botão
+const MIDI_AUTO_KEY = "uskmaker-review-midi-auto";
+function readMidiAuto(): boolean {
+  try {
+    return localStorage.getItem(MIDI_AUTO_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+function storeMidiAuto(on: boolean): void {
+  try {
+    localStorage.setItem(MIDI_AUTO_KEY, on ? "1" : "0");
+  } catch {
+    /* sem armazenamento: só não lembra */
+  }
+}
+const CLICK_VOLUME_KEY = "uskmaker-review-click-volume";
+function readStoredVolume(key: string, fallback: number): number {
+  try {
+    const v = Number(localStorage.getItem(key));
+    return localStorage.getItem(key) !== null && isFinite(v) ? Math.min(100, Math.max(0, v)) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function storeVolume(key: string, v: number): void {
+  try {
+    localStorage.setItem(key, String(v));
+  } catch {
+    /* sem armazenamento: só não lembra */
+  }
+}
+
+/**
+ * Controle de volume da barra: ícone (clique = mudo / volta ao volume
+ * anterior), nome e slider. 0 = desligado. Solta o foco ao largar o slider,
+ * senão Espaço e os atalhos ficariam presos nele (o teclado ignora INPUT).
+ */
+function VolumeControl(props: {
+  label: string;
+  icon: string;
+  title: string;
+  muteTitle: string;
+  value: number;
+  onChange: (v: number) => void;
+  onToggle?: () => void;
+  accent: string;
+}) {
+  const { label, icon, title, muteTitle, value, onChange, onToggle, accent } = props;
+  const lastRef = useRef(value > 0 ? value : 70);
+  if (value > 0) lastRef.current = value;
+  const on = value > 0;
+  return (
+    <span
+      className={`vol-control${on ? " on" : ""}`}
+      title={title}
+      style={{ "--vol-accent": accent } as React.CSSProperties}
+    >
+      <button
+        type="button"
+        className="vol-mute"
+        title={muteTitle}
+        aria-pressed={on}
+        onClick={() => (onToggle ? onToggle() : onChange(on ? 0 : lastRef.current))}
+      >
+        {on ? icon : "🔇"}
+      </button>
+      <span className="vol-label">{label}</span>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        step={5}
+        value={value}
+        aria-label={label}
+        onChange={(e) => onChange(Number(e.target.value))}
+        onPointerUp={(e) => e.currentTarget.blur()}
+      />
+      <span className="vol-value">{value}</span>
+    </span>
+  );
+}
+
 /** MIME do áudio do pacote, para a blob: URL do player (ogg/mp3/wav/m4a). */
 function audioMimeType(path: string): string {
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
@@ -486,6 +591,53 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   const synthNodesRef = useRef<{ osc: OscillatorNode; gain: GainNode } | null>(null);
   const activeSynthPitchRef = useRef<number | null>(null);
 
+  // Teclado MIDI (midiKeyboard.ts): ouvir as teclas por cima da música e
+  // gravar o pitch das notas tocando junto. Por sessão, como o microfone -
+  // pedir acesso ao MIDI sozinho ao reabrir a tela seria intrusivo.
+  const midiAvailable = midiSupported();
+  const [midiEnabled, setMidiEnabled] = useState(false);
+  const [midiDevices, setMidiDevices] = useState<string[]>([]);
+  const [midiError, setMidiError] = useState<string | null>(null);
+  // volumes (0-100, 0 = mudo), lembrados entre sessões
+  const [keysVolume, setKeysVolumeState] = useState(() => readStoredVolume(KEYS_VOLUME_KEY, 70));
+  const keysVolumeRef = useRef(keysVolume);
+  const [recording, setRecording] = useState(false);
+  const recordingRef = useRef(false);
+  const [heldLabel, setHeldLabel] = useState<string | null>(null);
+  // teclas acesas no teclado horizontal (MIDI + mouse)
+  const [pressedKeys, setPressedKeys] = useState<readonly number[]>([]);
+  const heldKeysRef = useRef(new HeldKeys());
+  const keySynthRef = useRef<KeySynth | null>(null);
+  const recorderRef = useRef(new PitchRecorder());
+
+  // Edição estilo DAW (noteEdit.ts): ferramenta de corte (S), Ctrl+E corta no
+  // playhead, Ctrl+C/X/V e Ctrl+D. A área de transferência é só da tela.
+  const [sliceMode, setSliceMode] = useState(false);
+  const sliceModeRef = useRef(false);
+  const sliceHoverRef = useRef<{ idx: number; beat: number } | null>(null);
+  const clipboardRef = useRef<NoteClip<USNote> | null>(null);
+  // as ações ficam em refs porque o mouse e o teclado chamam a versão atual
+  const sliceAtRef = useRef<(idx: number, beat: number) => void>(() => {});
+  const hoverCursorRef = useRef<(canvas: HTMLCanvasElement, s: USSong | null, mx: number, my: number) => void>(
+    () => {}
+  );
+  const tRef = useRef(t);
+  tRef.current = t;
+  // um undo por passe de gravação (play -> pausa), não um por nota
+  const recordUndoTakenRef = useRef(false);
+  const midiCleanupRef = useRef<(() => void) | null>(null);
+  const midiMountedRef = useRef(true);
+  // Clique do metrônomo: agendado no relógio do BufferPlayer, um pouco à frente
+  const [clickVolume, setClickVolumeState] = useState(() => readStoredVolume(CLICK_VOLUME_KEY, 0));
+  const clickVolumeRef = useRef(clickVolume);
+  // o T liga/desliga o clique: volta para o último volume usado
+  const lastClickVolumeRef = useRef(clickVolume > 0 ? clickVolume : 60);
+  const decodedRef = useRef<AudioBuffer | null>(null);
+  const clickGridRef = useRef<{ bpm: number; period: number; phase: number } | null>(null);
+  const clickScheduledUntilRef = useRef<number | null>(null);
+  const clickLastFrameRef = useRef<number | null>(null);
+  const scheduledClicksRef = useRef<OscillatorNode[]>([]);
+
   const PIANO_ROLL_W = 92;
 
   // Fecha o AudioContext do piano roll ao desmontar - sem isso, cada vez que
@@ -496,6 +648,8 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   useEffect(() => {
     return () => {
       micStreamRef.current?.getTracks().forEach((t) => t.stop());
+      midiCleanupRef.current?.();
+      keySynthRef.current?.allOff();
       try {
         synthNodesRef.current?.osc.stop();
         synthNodesRef.current?.osc.disconnect();
@@ -509,6 +663,9 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   multiSelectedRef.current = multiSelected;
   micEnabledRef.current = micEnabled;
   synthEnabledRef.current = synthEnabled;
+  keysVolumeRef.current = keysVolume;
+  recordingRef.current = recording;
+  clickVolumeRef.current = clickVolume;
 
   // Busca a versão aprovada assim que artista/título são conhecidos. Não
   // achar é o caso normal (a maioria das músicas nunca foi conferida), então
@@ -613,6 +770,8 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
       if (decoded) {
         player.setBuffer(decoded);
         audioRef.current = player;
+        decodedRef.current = decoded;
+        clickGridRef.current = null; // fase do clique é recalculada sobre o novo áudio
         peaksRef.current = { peaks: computePeaks(decoded, 8000), duration: decoded.duration };
         draw();
         return;
@@ -620,6 +779,8 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
 
       // reserva: <audio> (toca, com o relógio impreciso do Linux) e sem waveform
       peaksRef.current = null;
+      decodedRef.current = null;
+      clickGridRef.current = null;
       const keepTime = audioRef.current?.currentTime ?? 0;
       audioRef.current?.pause();
       const el = new Audio();
@@ -673,6 +834,9 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     },
     [pushHistory]
   );
+  // o loop de animação (gravação MIDI) chama o mutate atual por aqui
+  const mutateRef = useRef(mutate);
+  mutateRef.current = mutate;
 
   const undo = useCallback(() => {
     const s = songRef.current;
@@ -744,6 +908,21 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
 
     oscillator.start();
     oscillator.stop(ctx.currentTime + durationSec);
+  }, []);
+
+  // Contexto de áudio do piano roll (prévia de nota, microfone, teclas MIDI),
+  // criado sob demanda - o mesmo para todos, ver o comentário do toggleMic.
+  const ensurePianoAudio = useCallback((): AudioContext | null => {
+    const AudioContextClass =
+      window.AudioContext ||
+      (
+        window as typeof window & {
+          webkitAudioContext?: typeof AudioContext;
+        }
+      ).webkitAudioContext;
+    if (!AudioContextClass) return null;
+    if (!pianoAudioRef.current) pianoAudioRef.current = new AudioContextClass();
+    return pianoAudioRef.current;
   }, []);
 
   const toggleSynth = useCallback(() => {
@@ -907,6 +1086,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
         pctx.fillRect(0, 0, pw, h);
 
         const selectedIndex = selectedRef.current;
+        const heldPitches = new Set(heldKeysRef.current.all.map(midiToPitch));
 
         const selectedPitch =
           selectedIndex !== null &&
@@ -928,10 +1108,12 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
             );
 
           const isSelected = selectedPitch === p;
+          // tecla segurada no teclado MIDI: verde, por cima da seleção
+          const isHeld = heldPitches.has(p);
 
           // White/black piano key.
-          if (isSelected) {
-            pctx.fillStyle = "#ff8c00";
+          if (isSelected || isHeld) {
+            pctx.fillStyle = isHeld ? "#3ddc84" : "#ff8c00";
             pctx.fillRect(
               0,
               y,
@@ -939,7 +1121,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
               semitoneH
             );
 
-            pctx.strokeStyle = "#bd5f00";
+            pctx.strokeStyle = isHeld ? "#1f8a4c" : "#bd5f00";
             pctx.lineWidth = 2;
 
             pctx.strokeRect(
@@ -1117,6 +1299,34 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
       ctx.lineWidth = 1;
       ctx.fillRect(rx, ry, rw, rh);
       ctx.strokeRect(rx, ry, rw, rh);
+    }
+
+    // --- ferramenta de corte: onde o clique vai cortar ---
+    const sh = sliceHoverRef.current;
+    if (sliceModeRef.current && sh && s.notes[sh.idx]) {
+      const sx = xOf(beatToSec(s, sh.beat));
+      const sy = yOfPitch(s.notes[sh.idx].pitch);
+      ctx.save();
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([3, 2]);
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - 5);
+      ctx.lineTo(sx, sy + Math.max(8, semitoneH - 2) + 5);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // --- teclado MIDI: faixa na altura da tecla que vale agora ---
+    // (vermelha gravando, verde só tocando) - dá pra ver contra as notas se
+    // a tecla é a mesma da nota sob o playhead.
+    const heldNow = heldKeysRef.current.active;
+    if (heldNow !== null) {
+      const hp = midiToPitch(heldNow);
+      if (hp >= pMin && hp <= pMax) {
+        ctx.fillStyle = recordingRef.current ? "rgba(232, 85, 77, 0.2)" : "rgba(61, 220, 132, 0.16)";
+        ctx.fillRect(0, yOfPitch(hp), w, semitoneH);
+      }
     }
 
     // --- rastro do sing-along (mic), por cima das notas ---
@@ -1375,6 +1585,48 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     draw();
   }, [song, selected, draw]);
 
+  // ------------------------------------------------- teclado MIDI + clique
+  const cancelClicks = useCallback(() => {
+    for (const osc of scheduledClicksRef.current) {
+      try {
+        osc.stop();
+        osc.disconnect();
+      } catch {}
+    }
+    scheduledClicksRef.current = [];
+    clickScheduledUntilRef.current = null;
+    clickLastFrameRef.current = null;
+  }, []);
+
+  // Andamento do clique pelo #BPM; fase pelos ataques do áudio decodificado
+  // (o GAP é o início da 1ª nota, não um tempo forte). Sem buffer (reserva
+  // <audio>), cai no GAP. Recalcula só quando o BPM ou o áudio mudam.
+  const clickGridFor = useCallback((s: USSong) => {
+    const cached = clickGridRef.current;
+    if (cached && cached.bpm === s.bpm) return cached;
+    const period = clickPeriodSec(s.bpm);
+    let phase = isFinite(period) ? (((s.gap_ms / 1000) % period) + period) % period : 0;
+    const buf = decodedRef.current;
+    if (buf && isFinite(period)) {
+      const hop = Math.max(1, Math.round(buf.sampleRate * 0.01));
+      const env = onsetEnvelope(buf.getChannelData(0), buf.sampleRate, hop / buf.sampleRate);
+      phase = estimateBeatPhase(env, buf.sampleRate / hop, period);
+    }
+    const grid = { bpm: s.bpm, period, phase };
+    clickGridRef.current = grid;
+    return grid;
+  }, []);
+
+  // Pausou: fecha o passe de gravação (o próximo play abre outro undo) e
+  // descarta cliques já agendados.
+  useEffect(() => {
+    if (!playing) {
+      recorderRef.current.reset();
+      recordUndoTakenRef.current = false;
+      cancelClicks();
+    }
+  }, [playing, cancelClicks]);
+
   // loop de animação: acompanha o playhead durante o playback
   useEffect(() => {
     const tick = () => {
@@ -1476,13 +1728,58 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
           gain.gain.setTargetAtTime(0, gain.context.currentTime, 0.015);
           activeSynthPitchRef.current = null;
         }
+        // Teclado MIDI, gravando: a nota sob o playhead fica com o pitch da
+        // tecla que mais tempo ocupou ela (PitchRecorder). Só o pitch muda.
+        if (recordingRef.current && s) {
+          const key = heldKeysRef.current.active;
+          const change = recorderRef.current.step(
+            s.notes,
+            audio.currentTime,
+            key === null ? null : midiToPitch(key),
+            (b) => beatToSec(s, b)
+          );
+          if (change) {
+            const snapshot = !recordUndoTakenRef.current;
+            recordUndoTakenRef.current = true;
+            mutateRef.current((d) => {
+              d.notes[change.index].pitch = change.pitch;
+            }, snapshot);
+          }
+        }
+        // Clique do metrônomo: agenda no relógio do BufferPlayer os cliques
+        // dos próximos 150 ms. Salto de playhead (seek) descarta o agendado.
+        const player = playerRef.current;
+        if (clickVolumeRef.current > 0 && s && player && audioRef.current === player) {
+          const grid = clickGridFor(s);
+          const now = audio.currentTime;
+          const lastFrame = clickLastFrameRef.current;
+          if (lastFrame !== null && (now < lastFrame - 0.01 || now > lastFrame + 0.3)) cancelClicks();
+          clickLastFrameRef.current = now;
+          if (isFinite(grid.period)) {
+            const until = now + 0.15;
+            const from = clickScheduledUntilRef.current ?? now;
+            const ctx = player.context;
+            const latency = (ctx as AudioContext & { outputLatency?: number }).outputLatency || 0;
+            for (const c of clickTimesBetween(from, until, grid.period, grid.phase)) {
+              // `now` já é a posição OUVIDA; o clique também sai com a latência de saída
+              const when = ctx.currentTime + (c - now) - latency;
+              if (when < ctx.currentTime) continue;
+              const osc = scheduleClick(ctx, when, volumeGain(clickVolumeRef.current));
+              scheduledClicksRef.current.push(osc);
+              osc.onended = () => {
+                scheduledClicksRef.current = scheduledClicksRef.current.filter((o) => o !== osc);
+              };
+            }
+            clickScheduledUntilRef.current = until;
+          }
+        }
         draw();
       }
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [draw]);
+  }, [draw, clickGridFor, cancelClicks]);
 
   // redesenho em resize da janela
   useEffect(() => {
@@ -1512,6 +1809,139 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     },
     [draw]
   );
+
+  // sintetizador das teclas (MIDI e piano da tela), no volume do controle
+  const keySynth = useCallback((): KeySynth => {
+    if (!keySynthRef.current) {
+      keySynthRef.current = new KeySynth(ensurePianoAudio);
+      keySynthRef.current.setLevel(volumeGain(keysVolumeRef.current));
+    }
+    return keySynthRef.current;
+  }, [ensurePianoAudio]);
+
+  // Tecla do teclado MIDI ou do piano da tela: segura/solta, toca no
+  // sintetizador (no volume de "Teclas"; 0 = mudo) e atualiza o realce. A
+  // gravação em si acontece no loop de animação, que lê heldKeysRef.
+  const onMidiEvent = useCallback(
+    (ev: MidiEvent) => {
+      const keys = heldKeysRef.current;
+      if (ev.kind === "on") {
+        keys.press(ev.note);
+        keySynth().noteOn(ev.note, ev.velocity);
+      } else {
+        keys.release(ev.note);
+        keySynthRef.current?.noteOff(ev.note);
+      }
+      const active = keys.active;
+      setHeldLabel(active === null ? null : pitchName(midiToPitch(active)));
+      setPressedKeys([...keys.all]);
+      draw();
+    },
+    [draw, keySynth]
+  );
+  // os listeners da Web MIDI são presos uma vez; chamam sempre o atual
+  const onMidiEventRef = useRef(onMidiEvent);
+  onMidiEventRef.current = onMidiEvent;
+
+  // teclado horizontal: o mouse entra pelo mesmo caminho das teclas MIDI, então
+  // acende, soa e grava (com ⏺ Gravar ligado) do mesmo jeito
+  const onScreenKeyPress = useCallback((note: number) => {
+    onMidiEventRef.current({ kind: "on", note, velocity: 100 });
+  }, []);
+  const onScreenKeyRelease = useCallback((note: number) => {
+    onMidiEventRef.current({ kind: "off", note, velocity: 0 });
+  }, []);
+  const pressedKeySet = useMemo(() => new Set(pressedKeys), [pressedKeys]);
+
+  // `auto`: conexão automática ao abrir a tela - falha calada (sem aviso
+  // vermelho); o botão continua lá para tentar de novo.
+  const connectMidi = useCallback(
+    async (auto: boolean) => {
+      setMidiError(null);
+      try {
+        keySynth();
+        const cleanup = await openMidiInputs((ev) => onMidiEventRef.current(ev), setMidiDevices);
+        // a tela pode ter fechado enquanto as entradas abriam
+        if (!midiMountedRef.current) {
+          cleanup();
+          return;
+        }
+        midiCleanupRef.current = cleanup;
+        setMidiEnabled(true);
+      } catch (e) {
+        if (!auto) setMidiError(t("midiPermissionDenied"));
+        console.error("abrir o MIDI falhou:", e);
+      }
+    },
+    [keySynth, t]
+  );
+
+  const toggleMidi = useCallback(async () => {
+    if (!midiAvailable) return;
+    if (midiEnabled) {
+      midiCleanupRef.current?.();
+      midiCleanupRef.current = null;
+      keySynthRef.current?.allOff();
+      heldKeysRef.current.clear();
+      setHeldLabel(null);
+      setPressedKeys([]);
+      setMidiDevices([]);
+      setMidiEnabled(false);
+      storeMidiAuto(false); // desligou no botão: não conecta sozinho da próxima vez
+      draw();
+      return;
+    }
+    storeMidiAuto(true);
+    await connectMidi(false);
+  }, [midiAvailable, midiEnabled, draw, connectMidi]);
+
+  // No Windows o teclado MIDI conecta sozinho ao abrir a Revisão: a leitura é
+  // nativa (sem pedido de permissão) e um teclado plugado depois entra em até
+  // 2 s. Quem desligar no botão fica desligado nas próximas vezes. Fora do
+  // Windows (Web MIDI) continua só pelo botão, porque lá conectar pode abrir
+  // um pedido de permissão do sistema.
+  const connectMidiRef = useRef(connectMidi);
+  connectMidiRef.current = connectMidi;
+  useEffect(() => {
+    midiMountedRef.current = true;
+    if (nativeMidiAvailable() && readMidiAuto()) void connectMidiRef.current(true);
+    return () => {
+      midiMountedRef.current = false;
+    };
+  }, []);
+
+  // Gravar vale para o teclado MIDI e para o teclado da tela
+  const toggleRecording = useCallback(() => {
+    recorderRef.current.reset();
+    recordUndoTakenRef.current = false;
+    setRecording((prev) => {
+      recordingRef.current = !prev;
+      return !prev;
+    });
+  }, []);
+
+  const setKeysVolume = useCallback((v: number) => {
+    keysVolumeRef.current = v;
+    setKeysVolumeState(v);
+    keySynthRef.current?.setLevel(volumeGain(v));
+    storeVolume(KEYS_VOLUME_KEY, v);
+  }, []);
+
+  const setClickVolume = useCallback(
+    (v: number) => {
+      if (v > 0) lastClickVolumeRef.current = v;
+      else cancelClicks();
+      clickVolumeRef.current = v;
+      setClickVolumeState(v);
+      storeVolume(CLICK_VOLUME_KEY, v);
+    },
+    [cancelClicks]
+  );
+
+  // atalho T: liga/desliga o clique sem perder o volume escolhido
+  const toggleClick = useCallback(() => {
+    setClickVolume(clickVolumeRef.current > 0 ? 0 : lastClickVolumeRef.current);
+  }, [setClickVolume]);
 
   // Pula pra próxima linha suspeita depois da nota selecionada (sem seleção,
   // depois da nota sob o marcador de tempo): seleciona a 1ª nota da linha,
@@ -1695,6 +2125,13 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
       }
 
       const hit = noteAt(mx, my);
+      if (hit && sliceModeRef.current && !e.shiftKey) {
+        // ferramenta de corte: o clique corta a nota no beat mais perto
+        const { start, pxPerSec } = viewRef.current;
+        sliceAtRef.current(hit.idx, (start + mx / pxPerSec - s.gap_ms / 1000) / beatDuration(s));
+        dragRef.current = { kind: "none" };
+        return;
+      }
       if (hit) {
         setSelected(hit.idx);
         selectedRef.current = hit.idx;
@@ -1776,9 +2213,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
 
       // cursor de feedback fora de drag
       if (drag.kind === "none") {
-        const hit = noteAt(mx, my);
-        canvas.style.cursor =
-          my <= RULER_H + WAVE_H ? "text" : hit ? (hit.onEdge ? "ew-resize" : "grab") : "default";
+        hoverCursorRef.current(canvas, s, mx, my);
         return;
       }
       if (!s) return;
@@ -1863,6 +2298,14 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     dragRef.current = { kind: "none" };
   }, [notesInRect, draw]);
 
+  const onCanvasLeave = useCallback(() => {
+    onMouseUp();
+    if (sliceHoverRef.current) {
+      sliceHoverRef.current = null;
+      draw();
+    }
+  }, [onMouseUp, draw]);
+
   const onDoubleClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       const canvas = canvasRef.current;
@@ -1916,6 +2359,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
         redo();
         return;
       }
+      if (handleEditKey(e)) return;
       if (e.key.toLowerCase() === "n") {
         e.preventDefault();
         addNote();
@@ -1929,6 +2373,17 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
       if (e.key.toLowerCase() === "p") {
         e.preventDefault();
         toggleSynth();
+        return;
+      }
+      if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === "r") {
+        e.preventDefault();
+        toggleRecording();
+        return;
+      }
+      // T, não C: com nota selecionada, C-B já dão o pitch da nota
+      if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === "t") {
+        e.preventDefault();
+        toggleClick();
         return;
       }
       if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === "l") {
@@ -2063,7 +2518,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [togglePlay, undo, redo, mutate, playNote, draw, toggleMic, jumpToNextSuspectLine, confirmSelectedLine]);
+  }, [togglePlay, undo, redo, mutate, playNote, draw, toggleMic, jumpToNextSuspectLine, confirmSelectedLine, toggleRecording, toggleClick]);
 
   // ------------------------------------------------------ ações pontuais
   // Generalização de deleteNote pra várias notas de uma vez (issue #11):
@@ -2177,6 +2632,202 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     setMultiSelected(new Set());
     multiSelectedRef.current = new Set();
 
+    draw();
+  }
+
+  // --------------------------------------------- edição estilo DAW (noteEdit.ts)
+  function selectionIdxs(): number[] {
+    const group = multiSelectedRef.current;
+    if (group.size > 1) return Array.from(group).sort((a, b) => a - b);
+    return selectedRef.current === null ? [] : [selectedRef.current];
+  }
+
+  function selectNotes(idxs: number[]) {
+    const first = idxs.length > 0 ? idxs[0] : null;
+    setSelected(first);
+    selectedRef.current = first;
+    const group = new Set(idxs.length > 1 ? idxs : []);
+    setMultiSelected(group);
+    multiSelectedRef.current = group;
+    draw();
+  }
+
+  function playheadBeat(s: USSong): number {
+    const t = audioRef.current?.currentTime ?? 0;
+    return (t - s.gap_ms / 1000) / beatDuration(s);
+  }
+
+  function sliceAt(idx: number, beat: number) {
+    const note = songRef.current?.notes[idx];
+    if (!note) return;
+    if (sliceBeat(note, beat) === null) {
+      setStatusMsg(tRef.current("sliceTooShort"));
+      return;
+    }
+    let tail = idx + 1;
+    mutate((d) => {
+      tail = splitNote(d, idx, beat) ?? tail;
+    });
+    sliceHoverRef.current = null;
+    selectNotes([tail]);
+    playPianoPitch(note.pitch, 0.2);
+  }
+  sliceAtRef.current = sliceAt;
+
+  /** Ctrl+E: corta as notas selecionadas que o playhead atravessa. */
+  function sliceAtPlayhead(): boolean {
+    const s = songRef.current;
+    const idxs = selectionIdxs();
+    if (!s || idxs.length === 0) return false;
+    const beat = playheadBeat(s);
+    const hits = idxs.filter((i) => {
+      const n = s.notes[i];
+      return beat > n.start_beat && beat < n.start_beat + n.duration_beats && sliceBeat(n, beat) !== null;
+    });
+    if (hits.length === 0) {
+      setStatusMsg(tRef.current("sliceNoNoteAtPlayhead"));
+      return true;
+    }
+    const tails: number[] = [];
+    mutate((d) => {
+      // de trás pra frente: cortar uma nota não mexe no índice das anteriores
+      for (const i of [...hits].sort((a, b) => b - a)) {
+        const tail = splitNote(d, i, beat);
+        if (tail !== null) tails.push(tail);
+      }
+    });
+    // cada corte acima de uma nota empurra as de depois uma casa
+    const fixed = tails
+      .sort((a, b) => a - b)
+      .map((tail, k) => tail + k);
+    selectNotes(fixed);
+    return true;
+  }
+
+  function copySelection(): boolean {
+    const s = songRef.current;
+    const idxs = selectionIdxs();
+    if (!s || idxs.length === 0) return false;
+    clipboardRef.current = copyNotes(s, idxs);
+    setStatusMsg(tRef.current("notesCopied", { n: idxs.length }));
+    return true;
+  }
+
+  function cutSelection(): boolean {
+    const idxs = selectionIdxs();
+    if (!copySelection()) return false;
+    deleteNotes(idxs);
+    setStatusMsg(tRef.current("notesCut", { n: idxs.length }));
+    return true;
+  }
+
+  function pasteAtPlayhead(): boolean {
+    const s = songRef.current;
+    const clip = clipboardRef.current;
+    if (!s || !clip) return false;
+    const at = Math.max(0, Math.round(playheadBeat(s)));
+    let placed: number[] = [];
+    mutate((d) => {
+      placed = insertClip(d, clip, at);
+    });
+    selectNotes(placed);
+    return true;
+  }
+
+  /** Ctrl+D: uma nota estende a palavra com "~"; várias viram cópia exata logo depois. */
+  function duplicateSelection(): boolean {
+    const idxs = selectionIdxs();
+    if (!songRef.current || idxs.length === 0) return false;
+    let placed: number[] = [];
+    let noRoom = false;
+    mutate((d) => {
+      if (idxs.length === 1) {
+        const i = extendNote(d, idxs[0]);
+        placed = i === null ? [] : [i];
+        noRoom = i === null;
+      } else {
+        placed = duplicateNotes(d, idxs);
+      }
+    });
+    if (noRoom) {
+      historyRef.current.pop(); // nada mudou: sem Ctrl+Z vazio
+      setStatusMsg(tRef.current("extendNoRoom"));
+      return true;
+    }
+    selectNotes(placed);
+    return true;
+  }
+
+  /**
+   * Atalhos da edição estilo DAW; devolve true se a tecla foi usada. Ctrl (Cmd
+   * no Mac) + C/X/V/D/E, e S / Esc para a ferramenta de corte. Ctrl+C/V só
+   * seguram a tecla quando há o que copiar/colar - senão o atalho do sistema
+   * segue normal. Fica fora do onKeyDown para ele não crescer mais.
+   */
+  function handleEditKey(e: KeyboardEvent): boolean {
+    const k = e.key.toLowerCase();
+    const plain = !e.ctrlKey && !e.altKey && !e.metaKey;
+    if (plain && k === "s") {
+      e.preventDefault();
+      toggleSliceMode();
+      return true;
+    }
+    if (e.key === "Escape" && sliceModeRef.current) {
+      e.preventDefault();
+      toggleSliceMode();
+      return true;
+    }
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return false;
+    const actions: Record<string, () => boolean> = {
+      c: copySelection,
+      x: cutSelection,
+      v: pasteAtPlayhead,
+      d: duplicateSelection,
+      e: sliceAtPlayhead,
+    };
+    const action = actions[k];
+    if (!action) return false;
+    // Ctrl+D (favorito) e Ctrl+E (busca) nunca vão para o navegador
+    if (action() || k === "d" || k === "e") e.preventDefault();
+    return true;
+  }
+
+  /**
+   * Cursor fora de drag (texto na régua, redimensionar na borda, agarrar na
+   * nota) ou, com a ferramenta de corte, a linha de onde o clique vai cortar.
+   * Fica fora do onMouseMove para ele não crescer mais.
+   */
+  function updateHoverCursor(canvas: HTMLCanvasElement, s: USSong | null, mx: number, my: number) {
+    const hit = noteAt(mx, my);
+    if (sliceModeRef.current && s) {
+      moveSliceHover(canvas, s, mx, my, hit);
+      return;
+    }
+    canvas.style.cursor = my <= RULER_H + WAVE_H ? "text" : hit ? (hit.onEdge ? "ew-resize" : "grab") : "default";
+  }
+  hoverCursorRef.current = updateHoverCursor;
+
+  /** Ferramenta de corte: linha onde o clique vai cortar e o cursor certo. */
+  function moveSliceHover(canvas: HTMLCanvasElement, s: USSong, mx: number, my: number, hit: { idx: number } | null) {
+    const inLanes = my > RULER_H + WAVE_H;
+    const { start, pxPerSec } = viewRef.current;
+    const beat = (start + mx / pxPerSec - s.gap_ms / 1000) / beatDuration(s);
+    const cut = hit && inLanes ? sliceBeat(s.notes[hit.idx], beat) : null;
+    const hover = hit && cut !== null ? { idx: hit.idx, beat: cut } : null;
+    const prev = sliceHoverRef.current;
+    if (prev?.idx !== hover?.idx || prev?.beat !== hover?.beat) {
+      sliceHoverRef.current = hover;
+      draw();
+    }
+    canvas.style.cursor = !inLanes ? "text" : hover ? "crosshair" : hit ? "not-allowed" : "default";
+  }
+
+  function toggleSliceMode() {
+    const next = !sliceModeRef.current;
+    sliceModeRef.current = next;
+    setSliceMode(next);
+    sliceHoverRef.current = null;
+    if (canvasRef.current) canvasRef.current.style.cursor = "default";
     draw();
   }
 
@@ -2479,7 +3130,54 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
         >
           {t("synthToggleLabel")}
         </button>
+        {midiAvailable && (
+          <button
+            className={midiEnabled ? "midi-on" : undefined}
+            onClick={() => void toggleMidi()}
+            title={t("midiToggleHint")}
+            aria-pressed={midiEnabled}
+          >
+            {t("midiToggleLabel")}
+          </button>
+        )}
+        <VolumeControl
+          label={t("keysVolumeLabel")}
+          icon="🔊"
+          title={t("keysVolumeHint")}
+          muteTitle={t("volumeMuteHint")}
+          value={keysVolume}
+          onChange={setKeysVolume}
+          accent="#3ddc84"
+        />
+            <button
+              className={recording ? "rec-on" : undefined}
+              onClick={toggleRecording}
+              title={t("midiRecordHint")}
+              aria-pressed={recording}
+            >
+              {recording ? t("midiRecordOn") : t("midiRecordLabel")}
+            </button>
+        {(midiEnabled || heldLabel) && (
+          <span className="field-hint" title={midiDevices.join("\n")}>
+            {heldLabel
+              ? t("midiHeld", { note: heldLabel })
+              : midiDevices.length > 0
+                ? t("midiConnected", { n: midiDevices.length })
+                : t("midiNoDevice")}
+          </span>
+        )}
+        <VolumeControl
+          label={t("clickLabel")}
+          icon="🥁"
+          title={t("clickHint")}
+          muteTitle={t("volumeMuteHint")}
+          value={clickVolume}
+          onChange={setClickVolume}
+          onToggle={toggleClick}
+          accent="#f0b573"
+        />
         {micError && <span className="field-hint">{micError}</span>}
+        {midiError && <span className="field-hint">{midiError}</span>}
         <span className="toolbar-sep" />
         <label className="inline-label">
           {t("revGap")}
@@ -2506,6 +3204,9 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
         <span className="toolbar-sep" />
         <button onClick={addNote} title={t("revAddNoteTitle")}>
           {t("revAddNote")}
+        </button>
+        <button className={sliceMode ? "slice-on" : undefined} onClick={toggleSliceMode} title={t("sliceHint")}>
+          {t("sliceLabel")}
         </button>
         <button onClick={undo} title="Ctrl+Z">
           {t("revUndo")}
@@ -2620,7 +3321,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
-            onMouseLeave={onMouseUp}
+            onMouseLeave={onCanvasLeave}
             onDoubleClick={onDoubleClick}
             onWheel={onWheel}
           />
@@ -2641,30 +3342,53 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
         </div>
       </div>
 
-      <p className="review-hints">{t("revHints")}</p>
+      <PianoKeyboard
+        low={36}
+        high={96}
+        pressed={pressedKeySet}
+        onPress={onScreenKeyPress}
+        onRelease={onScreenKeyRelease}
+        title={t("pianoKeyboardHint")}
+      />
 
       {hasSourceInfo && (
-        <p className="review-legend">
-          {t("revLegendTiming")}{" "}
-          <span className="legend-chip" style={{ background: SOURCE_COLORS.anchor }} />{" "}
-          {song.notes.some((n) => n.source === "ctc" || n.source === "ctc_low")
-            ? t("revLegendCtc")
-            : t("revLegendAnchor")}{" "}
-          <span className="legend-chip" style={{ background: SOURCE_COLORS.fuzzy }} />{" "}
-          {t("revLegendFuzzy")}{" "}
-          <span className="legend-chip" style={{ background: SOURCE_COLORS.realign }} />{" "}
-          {t("revLegendRealign")}{" "}
-          <span className="legend-chip" style={{ background: SOURCE_COLORS.lrc }} />{" "}
-          {t("revLegendLrc")}{" "}
-          <span className="legend-chip" style={{ background: SOURCE_COLORS.interpolated }} />{" "}
-          {t("revLegendInterp")}{" "}
-          <span className="legend-chip" style={{ background: SOURCE_COLORS.confirmed }} />{" "}
-          {t("revLegendConfirmed")} · <span className="legend-chip" style={{ background: LOW_CONFIDENCE_COLOR }} />{" "}
-          {t("revLegendLowScore")} · <span className="legend-chip" style={{ background: "#c9a227" }} />{" "}
-          {t("revLegendGolden")} · <span className="legend-chip" style={{ background: "#4a4a58" }} />{" "}
-          {t("revLegendFreestyle")}
-        </p>
+        <div className="review-legend">
+          <span className="legend-title">{t("revLegendTiming")}</span>
+          {(
+            [
+              [
+                SOURCE_COLORS.anchor,
+                song.notes.some((n) => n.source === "ctc" || n.source === "ctc_low")
+                  ? t("revLegendCtc")
+                  : t("revLegendAnchor"),
+              ],
+              [SOURCE_COLORS.fuzzy, t("revLegendFuzzy")],
+              [SOURCE_COLORS.realign, t("revLegendRealign")],
+              [SOURCE_COLORS.lrc, t("revLegendLrc")],
+              [SOURCE_COLORS.interpolated, t("revLegendInterp")],
+              [LOW_CONFIDENCE_COLOR, t("revLegendLowScore")],
+              [SOURCE_COLORS.confirmed, t("revLegendConfirmed")],
+              ["#c9a227", t("revLegendGolden")],
+              ["#4a4a58", t("revLegendFreestyle")],
+            ] as const
+          ).map(([color, label]) => (
+            <span key={label} className="legend-item">
+              <span className="legend-chip" style={{ background: color }} />
+              {label}
+            </span>
+          ))}
+        </div>
       )}
+
+      <ShortcutLegend
+        summary={t("shortcutsTitle")}
+        groups={[
+          { title: t("shortcutsNotesTitle"), items: t("shortcutsNotes") },
+          { title: t("shortcutsEditTitle"), items: t("shortcutsEdit") },
+          { title: t("shortcutsPlayTitle"), items: t("shortcutsPlay") },
+          { title: t("shortcutsAlongTitle"), items: t("shortcutsAlong") },
+        ]}
+      />
 
       {multiSelected.size > 1 && (
         <div className="note-inspector">
