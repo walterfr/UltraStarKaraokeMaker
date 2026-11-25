@@ -309,7 +309,9 @@ export class KeySynth {
   }
 
   allOff(): void {
-    for (const note of [...this.voices.keys()]) this.noteOff(note);
+    // apagar a entrada atual durante a iteração de um Map é seguro (a
+    // iteração segue com as que faltam), então não precisa copiar as chaves
+    for (const note of this.voices.keys()) this.noteOff(note);
   }
 }
 
