@@ -14,6 +14,12 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
   - Controle de volume "🔊 Teclas" (0 = mudo, lembrado entre sessões): as teclas tocam num sintetizador por cima da música, para achar a melodia de ouvido.
   - Piano horizontal embaixo do editor (C2-C7, com o nome de cada tecla branca, como o piano lateral): acende as teclas apertadas no teclado MIDI ou com o mouse. Clicar toca a nota, arrastar faz glissando, e o mouse grava igual ao teclado MIDI, então dá para usar o "⏺ Gravar" sem teclado nenhum.
   - "⏺ Gravar" (atalho `R`): com a música tocando, cada nota fica com o pitch da tecla segurada durante ela, no teclado MIDI ou no piano da tela. Ganha a tecla que mais durou dentro da nota, então apertar um pouco antes ou depois, ou um legato desleixado, não muda o pitch da vizinha. O timing não muda, só o pitch; notas freestyle ficam de fora; cada passe de gravação é um único `Ctrl+Z`.
+- **Edição estilo DAW na Revisão:**
+  - "✂ Dividir" (atalho `S`, `Esc` sai): clicar numa nota divide ali, no beat mais perto (uma linha tracejada mostra onde). A 2ª parte vira `~`, a continuação da mesma palavra, e recebe o espaço de fim de palavra, como o pipeline e o editor oficial gravam; a quebra de frase vai junto para o fim. `Ctrl+E` divide a nota selecionada no playhead.
+  - `Ctrl+C`, `Ctrl+X` e `Ctrl+V` copiam, recortam e colam notas, com as quebras de frase entre elas; a colagem começa no playhead.
+  - `Ctrl+D` duplica a seleção logo depois dela. Numa nota só, continua a palavra: uma nota `~` do mesmo tamanho, sem passar do início da nota seguinte.
+  - Cada ação é um único `Ctrl+Z`.
+- **Legenda da Revisão mais limpa:** as cores das notas viram uma linha de itens com rótulos curtos, sem travessão, e os atalhos saem da linha corrida para um painel recolhível "⌨ Atalhos do teclado", em quatro grupos (Notas, Editar, Tocar e navegar, Tocar junto) com as teclas desenhadas. Entram atalhos que já existiam e não estavam listados (`C`…`B`, `Tab`, `N`, `M`, `P`).
 - **Clique de metrônomo na Revisão** (controle de volume "🥁 Clique", 0 = desligado, que é o padrão; atalho `T` liga e desliga sem perder o volume): um clique a cada tempo durante o playback, no andamento do `#BPM` (dobrado/dividido para 70-180 por minuto) e alinhado aos ataques da música, medidos no áudio decodificado, já que o `#GAP` é onde a 1ª nota começa, não um tempo forte.
 
 ## [2.9.0] - 2026-11-20

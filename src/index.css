@@ -313,6 +313,10 @@ button.secondary {
   font-variant-numeric: tabular-nums;
   font-size: 0.75rem;
 }
+.review-toolbar button.slice-on {
+  border-color: #ffffff;
+  background: rgba(255, 255, 255, 0.15);
+}
 /* teclado horizontal da Revisão (PianoKeyboard.tsx) */
 .h-piano {
   position: relative;
@@ -397,10 +401,50 @@ button.secondary {
   touch-action: none;
 }
 
-.review-hints {
-  color: #77778a;
+/* atalhos da Revisão (ShortcutLegend.tsx): agrupados e recolhíveis */
+.review-shortcuts {
+  color: #9a9aa8;
   font-size: 0.75rem;
-  margin: 0.4rem 0 0.8rem;
+  margin: 0 0 0.8rem;
+}
+.review-shortcuts summary {
+  cursor: pointer;
+  color: #77778a;
+  width: fit-content;
+}
+.review-shortcuts summary:hover {
+  color: #c9c9d6;
+}
+.shortcut-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 0.4rem 1.5rem;
+  margin-top: 0.5rem;
+}
+.shortcut-group-title {
+  color: #c9c9d6;
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+}
+.shortcut-group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.shortcut-group li {
+  margin: 0.15rem 0;
+  line-height: 1.5;
+}
+.review-shortcuts kbd {
+  display: inline-block;
+  font: 600 0.7rem system-ui, sans-serif;
+  color: #e8e8ec;
+  background: #23232e;
+  border: 1px solid #3a3a48;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0 0.35rem;
+  margin-right: 0.2rem;
 }
 
 .note-inspector {
@@ -494,9 +538,23 @@ button.danger:hover {
 
 /* Proveniência do timing (cores por confiança) */
 .review-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.9rem;
   color: #9a9aa8;
   font-size: 0.75rem;
-  margin: 0 0 0.8rem;
+  margin: 0.5rem 0 0.4rem;
+}
+.review-legend .legend-title {
+  color: #c9c9d6;
+  font-weight: 600;
+}
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
 }
 .legend-chip {
   display: inline-block;

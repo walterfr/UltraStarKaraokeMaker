@@ -14,6 +14,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - "🔊 Keys" volume control (0 = mute, remembered between sessions): the keys play through a synth over the song, to find the melody by ear.
   - Horizontal piano below the editor (C2-C7, each white key named like the side strip): lights up the keys pressed on the MIDI keyboard or with the mouse. Clicking plays the note, dragging plays a glissando, and the mouse records just like the MIDI keyboard, so "⏺ Record" works with no keyboard at all.
   - "⏺ Record" (shortcut `R`): while the song plays, each note takes the pitch of the key held during it, on the MIDI keyboard or the on-screen piano. The key held longest within the note wins, so a press a little early or late, or a sloppy legato, does not move the neighbour's pitch. Timing does not change, only pitch; freestyle notes are skipped; each recording pass is a single `Ctrl+Z`.
+- **DAW-style editing in the Review:**
+  - "✂ Slice" (shortcut `S`, `Esc` to leave): clicking a note splits it there, on the nearest beat (a dashed line shows where). The second part becomes `~`, the same word carried on, and takes the end-of-word space, as the pipeline and the official editor write it; the phrase break moves to the end with it. `Ctrl+E` splits the selected note at the playhead.
+  - `Ctrl+C`, `Ctrl+X` and `Ctrl+V` copy, cut and paste notes, with the phrase breaks between them; pasting starts at the playhead.
+  - `Ctrl+D` duplicates the selection right after it. On a single note it carries the word on: a `~` note of the same length, stopping where the next note starts.
+  - Each action is a single `Ctrl+Z`.
+- **Tidier Review legend:** note colours become one row of items with short labels and no dashes, and the shortcuts move from a run-on line into a collapsible "⌨ Keyboard shortcuts" panel in four groups (Notes, Edit, Play and navigate, Play along) with drawn keys. Shortcuts that already existed but were not listed are included (`C`…`B`, `Tab`, `N`, `M`, `P`).
 - **Metronome click in the Review** ("🥁 Click" volume control, 0 = off, which is the default; shortcut `T` turns it on and off without losing the volume): a click on each beat during playback, at the `#BPM` tempo (folded into 70-180 per minute) and lined up with the song's attacks, measured from the decoded audio, since `#GAP` is where the first note starts, not a downbeat.
 
 ## [2.9.0] - 2026-11-20

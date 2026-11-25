@@ -23,6 +23,8 @@ import { countLines, lineOf, nextSuspectLine, suspectLines, type LineRange } fro
 import { useI18n } from "../i18n";
 import LyricTimingPanel from "./LyricTimingPanel";
 import PianoKeyboard from "./PianoKeyboard";
+import ShortcutLegend from "./ShortcutLegend";
+import { copyNotes, duplicateNotes, extendNote, insertClip, sliceBeat, splitNote, type NoteClip } from "./noteEdit";
 import { BufferPlayer, ReviewAudio } from "./bufferPlayer";
 import {
   approvedSettledForRows,
@@ -607,6 +609,17 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   const heldKeysRef = useRef(new HeldKeys());
   const keySynthRef = useRef<KeySynth | null>(null);
   const recorderRef = useRef(new PitchRecorder());
+
+  // Edição estilo DAW (noteEdit.ts): ferramenta de corte (S), Ctrl+E corta no
+  // playhead, Ctrl+C/X/V e Ctrl+D. A área de transferência é só da tela.
+  const [sliceMode, setSliceMode] = useState(false);
+  const sliceModeRef = useRef(false);
+  const sliceHoverRef = useRef<{ idx: number; beat: number } | null>(null);
+  const clipboardRef = useRef<NoteClip<USNote> | null>(null);
+  // as ações ficam em refs porque o mouse e o teclado chamam a versão atual
+  const sliceAtRef = useRef<(idx: number, beat: number) => void>(() => {});
+  const tRef = useRef(t);
+  tRef.current = t;
   // um undo por passe de gravação (play -> pausa), não um por nota
   const recordUndoTakenRef = useRef(false);
   const midiCleanupRef = useRef<(() => void) | null>(null);
@@ -1283,6 +1296,22 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
       ctx.lineWidth = 1;
       ctx.fillRect(rx, ry, rw, rh);
       ctx.strokeRect(rx, ry, rw, rh);
+    }
+
+    // --- ferramenta de corte: onde o clique vai cortar ---
+    const sh = sliceHoverRef.current;
+    if (sliceModeRef.current && sh && s.notes[sh.idx]) {
+      const sx = xOf(beatToSec(s, sh.beat));
+      const sy = yOfPitch(s.notes[sh.idx].pitch);
+      ctx.save();
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([3, 2]);
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - 5);
+      ctx.lineTo(sx, sy + Math.max(8, semitoneH - 2) + 5);
+      ctx.stroke();
+      ctx.restore();
     }
 
     // --- teclado MIDI: faixa na altura da tecla que vale agora ---
@@ -2093,6 +2122,13 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
       }
 
       const hit = noteAt(mx, my);
+      if (hit && sliceModeRef.current && !e.shiftKey) {
+        // ferramenta de corte: o clique corta a nota no beat mais perto
+        const { start, pxPerSec } = viewRef.current;
+        sliceAtRef.current(hit.idx, (start + mx / pxPerSec - s.gap_ms / 1000) / beatDuration(s));
+        dragRef.current = { kind: "none" };
+        return;
+      }
       if (hit) {
         setSelected(hit.idx);
         selectedRef.current = hit.idx;
@@ -2175,6 +2211,21 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
       // cursor de feedback fora de drag
       if (drag.kind === "none") {
         const hit = noteAt(mx, my);
+        if (sliceModeRef.current && s) {
+          // ferramenta de corte: linha onde o clique vai cortar
+          const { start, pxPerSec } = viewRef.current;
+          const beat = (start + mx / pxPerSec - s.gap_ms / 1000) / beatDuration(s);
+          const cut = hit && my > RULER_H + WAVE_H ? sliceBeat(s.notes[hit.idx], beat) : null;
+          const hover = hit && cut !== null ? { idx: hit.idx, beat: cut } : null;
+          const prev = sliceHoverRef.current;
+          if (prev?.idx !== hover?.idx || prev?.beat !== hover?.beat) {
+            sliceHoverRef.current = hover;
+            draw();
+          }
+          canvas.style.cursor =
+            my <= RULER_H + WAVE_H ? "text" : hover ? "crosshair" : hit ? "not-allowed" : "default";
+          return;
+        }
         canvas.style.cursor =
           my <= RULER_H + WAVE_H ? "text" : hit ? (hit.onEdge ? "ew-resize" : "grab") : "default";
         return;
@@ -2261,6 +2312,14 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     dragRef.current = { kind: "none" };
   }, [notesInRect, draw]);
 
+  const onCanvasLeave = useCallback(() => {
+    onMouseUp();
+    if (sliceHoverRef.current) {
+      sliceHoverRef.current = null;
+      draw();
+    }
+  }, [onMouseUp, draw]);
+
   const onDoubleClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       const canvas = canvasRef.current;
@@ -2314,6 +2373,20 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
         redo();
         return;
       }
+      // Ctrl (Cmd no Mac) + C/X/V/D/E: edição estilo DAW. Só segura a tecla
+      // quando há o que copiar/colar - senão o atalho do sistema segue normal.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+        const k = e.key.toLowerCase();
+        const handled =
+          k === "c" ? copySelection()
+          : k === "x" ? cutSelection()
+          : k === "v" ? pasteAtPlayhead()
+          : k === "d" ? duplicateSelection()
+          : k === "e" ? sliceAtPlayhead()
+          : false;
+        if (handled || k === "d" || k === "e") e.preventDefault();
+        if (["c", "x", "v", "d", "e"].includes(k)) return;
+      }
       if (e.key.toLowerCase() === "n") {
         e.preventDefault();
         addNote();
@@ -2338,6 +2411,16 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
       if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === "t") {
         e.preventDefault();
         toggleClick();
+        return;
+      }
+      if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        toggleSliceMode();
+        return;
+      }
+      if (e.key === "Escape" && sliceModeRef.current) {
+        e.preventDefault();
+        toggleSliceMode();
         return;
       }
       if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === "l") {
@@ -2586,6 +2669,138 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     setMultiSelected(new Set());
     multiSelectedRef.current = new Set();
 
+    draw();
+  }
+
+  // --------------------------------------------- edição estilo DAW (noteEdit.ts)
+  function selectionIdxs(): number[] {
+    const group = multiSelectedRef.current;
+    if (group.size > 1) return Array.from(group).sort((a, b) => a - b);
+    return selectedRef.current === null ? [] : [selectedRef.current];
+  }
+
+  function selectNotes(idxs: number[]) {
+    const first = idxs.length > 0 ? idxs[0] : null;
+    setSelected(first);
+    selectedRef.current = first;
+    const group = new Set(idxs.length > 1 ? idxs : []);
+    setMultiSelected(group);
+    multiSelectedRef.current = group;
+    draw();
+  }
+
+  function playheadBeat(s: USSong): number {
+    const t = audioRef.current?.currentTime ?? 0;
+    return (t - s.gap_ms / 1000) / beatDuration(s);
+  }
+
+  function sliceAt(idx: number, beat: number) {
+    const note = songRef.current?.notes[idx];
+    if (!note) return;
+    if (sliceBeat(note, beat) === null) {
+      setStatusMsg(tRef.current("sliceTooShort"));
+      return;
+    }
+    let tail = idx + 1;
+    mutate((d) => {
+      tail = splitNote(d, idx, beat) ?? tail;
+    });
+    sliceHoverRef.current = null;
+    selectNotes([tail]);
+    playPianoPitch(note.pitch, 0.2);
+  }
+  sliceAtRef.current = sliceAt;
+
+  /** Ctrl+E: corta as notas selecionadas que o playhead atravessa. */
+  function sliceAtPlayhead(): boolean {
+    const s = songRef.current;
+    const idxs = selectionIdxs();
+    if (!s || idxs.length === 0) return false;
+    const beat = playheadBeat(s);
+    const hits = idxs.filter((i) => {
+      const n = s.notes[i];
+      return beat > n.start_beat && beat < n.start_beat + n.duration_beats && sliceBeat(n, beat) !== null;
+    });
+    if (hits.length === 0) {
+      setStatusMsg(tRef.current("sliceNoNoteAtPlayhead"));
+      return true;
+    }
+    const tails: number[] = [];
+    mutate((d) => {
+      // de trás pra frente: cortar uma nota não mexe no índice das anteriores
+      for (const i of [...hits].sort((a, b) => b - a)) {
+        const tail = splitNote(d, i, beat);
+        if (tail !== null) tails.push(tail);
+      }
+    });
+    // cada corte acima de uma nota empurra as de depois uma casa
+    const fixed = tails
+      .sort((a, b) => a - b)
+      .map((tail, k) => tail + k);
+    selectNotes(fixed);
+    return true;
+  }
+
+  function copySelection(): boolean {
+    const s = songRef.current;
+    const idxs = selectionIdxs();
+    if (!s || idxs.length === 0) return false;
+    clipboardRef.current = copyNotes(s, idxs);
+    setStatusMsg(tRef.current("notesCopied", { n: idxs.length }));
+    return true;
+  }
+
+  function cutSelection(): boolean {
+    const idxs = selectionIdxs();
+    if (!copySelection()) return false;
+    deleteNotes(idxs);
+    setStatusMsg(tRef.current("notesCut", { n: idxs.length }));
+    return true;
+  }
+
+  function pasteAtPlayhead(): boolean {
+    const s = songRef.current;
+    const clip = clipboardRef.current;
+    if (!s || !clip) return false;
+    const at = Math.max(0, Math.round(playheadBeat(s)));
+    let placed: number[] = [];
+    mutate((d) => {
+      placed = insertClip(d, clip, at);
+    });
+    selectNotes(placed);
+    return true;
+  }
+
+  /** Ctrl+D: uma nota estende a palavra com "~"; várias viram cópia exata logo depois. */
+  function duplicateSelection(): boolean {
+    const idxs = selectionIdxs();
+    if (!songRef.current || idxs.length === 0) return false;
+    let placed: number[] = [];
+    let noRoom = false;
+    mutate((d) => {
+      if (idxs.length === 1) {
+        const i = extendNote(d, idxs[0]);
+        placed = i === null ? [] : [i];
+        noRoom = i === null;
+      } else {
+        placed = duplicateNotes(d, idxs);
+      }
+    });
+    if (noRoom) {
+      historyRef.current.pop(); // nada mudou: sem Ctrl+Z vazio
+      setStatusMsg(tRef.current("extendNoRoom"));
+      return true;
+    }
+    selectNotes(placed);
+    return true;
+  }
+
+  function toggleSliceMode() {
+    const next = !sliceModeRef.current;
+    sliceModeRef.current = next;
+    setSliceMode(next);
+    sliceHoverRef.current = null;
+    if (canvasRef.current) canvasRef.current.style.cursor = "default";
     draw();
   }
 
@@ -2963,6 +3178,9 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
         <button onClick={addNote} title={t("revAddNoteTitle")}>
           {t("revAddNote")}
         </button>
+        <button className={sliceMode ? "slice-on" : undefined} onClick={toggleSliceMode} title={t("sliceHint")}>
+          {t("sliceLabel")}
+        </button>
         <button onClick={undo} title="Ctrl+Z">
           {t("revUndo")}
         </button>
@@ -3076,7 +3294,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
-            onMouseLeave={onMouseUp}
+            onMouseLeave={onCanvasLeave}
             onDoubleClick={onDoubleClick}
             onWheel={onWheel}
           />
@@ -3106,30 +3324,44 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
         title={t("pianoKeyboardHint")}
       />
 
-      <p className="review-hints">{t("revHints")}</p>
-
       {hasSourceInfo && (
-        <p className="review-legend">
-          {t("revLegendTiming")}{" "}
-          <span className="legend-chip" style={{ background: SOURCE_COLORS.anchor }} />{" "}
-          {song.notes.some((n) => n.source === "ctc" || n.source === "ctc_low")
-            ? t("revLegendCtc")
-            : t("revLegendAnchor")}{" "}
-          <span className="legend-chip" style={{ background: SOURCE_COLORS.fuzzy }} />{" "}
-          {t("revLegendFuzzy")}{" "}
-          <span className="legend-chip" style={{ background: SOURCE_COLORS.realign }} />{" "}
-          {t("revLegendRealign")}{" "}
-          <span className="legend-chip" style={{ background: SOURCE_COLORS.lrc }} />{" "}
-          {t("revLegendLrc")}{" "}
-          <span className="legend-chip" style={{ background: SOURCE_COLORS.interpolated }} />{" "}
-          {t("revLegendInterp")}{" "}
-          <span className="legend-chip" style={{ background: SOURCE_COLORS.confirmed }} />{" "}
-          {t("revLegendConfirmed")} · <span className="legend-chip" style={{ background: LOW_CONFIDENCE_COLOR }} />{" "}
-          {t("revLegendLowScore")} · <span className="legend-chip" style={{ background: "#c9a227" }} />{" "}
-          {t("revLegendGolden")} · <span className="legend-chip" style={{ background: "#4a4a58" }} />{" "}
-          {t("revLegendFreestyle")}
-        </p>
+        <div className="review-legend">
+          <span className="legend-title">{t("revLegendTiming")}</span>
+          {(
+            [
+              [
+                SOURCE_COLORS.anchor,
+                song.notes.some((n) => n.source === "ctc" || n.source === "ctc_low")
+                  ? t("revLegendCtc")
+                  : t("revLegendAnchor"),
+              ],
+              [SOURCE_COLORS.fuzzy, t("revLegendFuzzy")],
+              [SOURCE_COLORS.realign, t("revLegendRealign")],
+              [SOURCE_COLORS.lrc, t("revLegendLrc")],
+              [SOURCE_COLORS.interpolated, t("revLegendInterp")],
+              [LOW_CONFIDENCE_COLOR, t("revLegendLowScore")],
+              [SOURCE_COLORS.confirmed, t("revLegendConfirmed")],
+              ["#c9a227", t("revLegendGolden")],
+              ["#4a4a58", t("revLegendFreestyle")],
+            ] as const
+          ).map(([color, label]) => (
+            <span key={label} className="legend-item">
+              <span className="legend-chip" style={{ background: color }} />
+              {label}
+            </span>
+          ))}
+        </div>
       )}
+
+      <ShortcutLegend
+        summary={t("shortcutsTitle")}
+        groups={[
+          { title: t("shortcutsNotesTitle"), items: t("shortcutsNotes") },
+          { title: t("shortcutsEditTitle"), items: t("shortcutsEdit") },
+          { title: t("shortcutsPlayTitle"), items: t("shortcutsPlay") },
+          { title: t("shortcutsAlongTitle"), items: t("shortcutsAlong") },
+        ]}
+      />
 
       {multiSelected.size > 1 && (
         <div className="note-inspector">
