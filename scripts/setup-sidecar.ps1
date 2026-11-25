@@ -495,7 +495,15 @@ Write-Step "Installing/updating the pipeline dependencies (audio-separator extra
 # onnxruntime-gpu: teto <1.21.0 necessário no Windows com CUDA 12 / Torch 2.8+cu126.
 # A partir da 1.21/1.27 o onnxruntime-gpu no PyPI é compilado contra CUDA 13
 # (exige cublasLt64_13.dll que não existe no CUDA 12, caindo silenciosamente para CPU).
-$extraPkgs = if ($hasNvidia) { @("audio-separator[gpu]>=0.44.0", "onnxruntime-gpu<1.21.0") } else { @("audio-separator[cpu]>=0.44.0") }
+#
+# THE OUTER @( ) IS LOAD-BEARING. An `if` used as an expression unrolls what it
+# returns, so the one-item CPU array came back as a plain STRING, and splatting
+# a string (`@extraPkgs`) hands it over ONE CHARACTER PER ARGUMENT. MEASURED on
+# 2026-11-25 (PowerShell 5.1, RX 6800 XT, no NVIDIA): uv received "a" "u" "d"
+# ... "-" ... and stopped with "Failed to parse: `-`", so since v2.2.0 every
+# Windows machine without an NVIDIA card failed the setup at this step. The
+# NVIDIA path never saw it: its two-item array stays an array.
+$extraPkgs = @(if ($hasNvidia) { @("audio-separator[gpu]>=0.44.0", "onnxruntime-gpu<1.21.0") } else { @("audio-separator[cpu]>=0.44.0") })
 & $uvExe pip install --python "$venvPython" @upgradeArgs -r "$reqFile" @extraPkgs
 if ($LASTEXITCODE -ne 0) { Fail "Failed to install the dependencies (requirements.txt + audio-separator[$sepExtra])." }
 
