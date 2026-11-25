@@ -349,6 +349,21 @@ def resolve_whisper_model(requested: str, device: str) -> str:
     return WHISPER_MODEL_DEFAULT
 
 
+def whisper_for(device: str, whisper_model: str) -> tuple[str, str]:
+    """
+    (device do Whisper, nome real do modelo) para quem chama o Whisper fora do
+    _align_with_whisper: a auto-transcrição (sem letra) e a detecção de trechos
+    faltantes na letra.
+
+    O "auto" é o padrão do app e só existe no USKMaker: o faster-whisper não
+    conhece esse nome e recusa com "Invalid model size 'auto'". Passado cru,
+    a auto-transcrição quebrava e a detecção de trechos faltantes falhava em
+    silêncio em toda geração (o erro só aparecia no pipeline_debug.log).
+    """
+    whisper_device = resolve_whisper_device(device)
+    return whisper_device, resolve_whisper_model(whisper_model, whisper_device)
+
+
 def get_audio_duration_seconds(path: Path) -> float:
     """Lê só o cabeçalho do áudio (rápido, não carrega o arquivo inteiro)."""
     info = sf.info(str(path))
@@ -1120,11 +1135,14 @@ def run_pipeline(
         console.print("[yellow]Nenhuma letra fornecida: iniciando auto-transcrição pelo áudio com Whisper...[/yellow]")
         debug_log("Auto-transcrição ativada: transcrevendo vocais...")
         from pipeline.align import transcribe_lyrics
+        transcribe_device, transcribe_model = whisper_for(device, whisper_model)
+        debug_log(f"Auto-transcrição: Whisper {transcribe_model} em {transcribe_device} (pedido: {whisper_model})")
         transcribed_lines = transcribe_lyrics(
             stems.vocals,
             language=language,
             device=device,
-            whisper_model_size=whisper_model,
+            whisper_device=transcribe_device,
+            whisper_model_size=transcribe_model,
         )
         if not transcribed_lines:
             raise RuntimeError("Auto-transcrição não detectou palavras no áudio.")
@@ -1177,9 +1195,12 @@ def run_pipeline(
             try:
                 from pipeline.align import detect_missing_lyrics_gaps
                 lead_vocal_path = work_path / "lead_vocal" / "vocals_lead.wav"
+                gap_device, gap_model = whisper_for(device, whisper_model)
+                debug_log(f"Trechos faltantes: Whisper {gap_model} em {gap_device}")
                 gap_warnings = detect_missing_lyrics_gaps(
                     word_timings, stems.vocals, language, device=device,
-                    whisper_model_size=whisper_model,
+                    whisper_model_size=gap_model,
+                    whisper_device=gap_device,
                     lead_vocals_wav=lead_vocal_path if lead_vocal_path.exists() else None,
                     work_dir=work_path,
                 )
