@@ -28,6 +28,14 @@
 # O pin acompanha o requires_dist do whisperx. AO ATUALIZAR O WHISPERX,
 # conferir e alinhar os dois - inclusive em scripts/setup-sidecar.ps1.
 #
+# EXCEÇÃO ÚNICA: GPU AMD no Windows. A AMD não publica torch 2.8 para Windows
+# (os builds noturnos por família - gfx103X/110X/120X - começam no 2.9), então
+# ali o setup-sidecar.ps1 instala torch 2.9.1 / torchaudio 2.9.0 / torchvision
+# 0.24.0 (+rocm7.13) e SOBREPÕE o pin do whisperx com `uv --overrides`, junto
+# com torchcodec 0.8 (o do torch 2.9). Medido numa RX 6800 XT em 25/11/2026: o
+# pipeline inteiro roda. Os três pins ROCm ficam no setup-sidecar.ps1
+# ($rocmTorchPin); mudar lá, mudar aqui.
+#
 # Verifique antes: `nvidia-smi` deve mostrar um driver CUDA recente.
 # Depois de instalar, confirme com:
 #   python -c "import torch; print(torch.cuda.is_available())"

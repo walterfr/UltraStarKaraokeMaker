@@ -189,6 +189,74 @@ def debug_log(message: str) -> None:
         f.flush()
 
 
+def _windows_rocm_torch_installed(platform: str | None = None) -> bool:
+    """
+    Windows com o torch ROCm (GPU AMD)? Lê só a VERSÃO instalada pelos
+    metadados do pacote (ex.: "2.9.1+rocm7.13.0a20260421"), SEM importar o
+    torch: o ajuste de OpenMP abaixo precisa valer antes desse import.
+    """
+    if (platform or sys.platform) != "win32":
+        return False
+    try:
+        from importlib.metadata import version
+        return "rocm" in version("torch")
+    except Exception:
+        return False
+
+
+def _prepare_amd_windows_runtime(platform: str | None = None) -> None:
+    """
+    Windows + torch ROCm: deixa os DOIS runtimes de OpenMP conviverem no
+    processo.
+
+    O torch ROCm para Windows traz o OpenMP da Microsoft/LLVM (libomp140) e o
+    CTranslate2 (Whisper) traz o da Intel (libiomp5md). Quando o da Intel
+    sobe com o outro já carregado, ele ABORTA o processo inteiro - "OMP: Error
+    #15: Initializing libiomp5md.dll, but found libomp140.x86_64.dll already
+    initialized" (RX 6800 XT, 25/11/2026, no 1º uso do Whisper na GPU).
+    KMP_DUPLICATE_LIB_OK=TRUE é a saída que a própria mensagem indica; com ela
+    a transcrição na GPU bateu com a da CPU (90 s de áudio: 12,4 s contra
+    112 s, as mesmas palavras). setdefault: quem já definiu a variável manda.
+    Precisa rodar ANTES do primeiro import do torch/ctranslate2 do processo.
+    """
+    if _windows_rocm_torch_installed(platform):
+        os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
+
+# Se o MIOpen foi desligado neste processo (o run_pipeline registra no log).
+_MIOPEN_DISABLED = False
+
+
+def _disable_miopen_on_windows_hip(torch, platform: str | None = None) -> bool:
+    """
+    Windows + torch ROCm: desliga o MIOpen (torch.backends.cudnn.enabled =
+    False); o torch passa a usar os próprios kernels HIP no lugar dele.
+
+    O MIOpen compila parte dos kernels NA HORA (hiprtc), e no build Windows do
+    ROCm 7.13 essa compilação falha ("'type_traits' file not found" ao compilar
+    o MIOpenBatchNormFwdTrainSpatial para gfx1030). Toda instance_norm e LSTM
+    na GPU morre com "miopenStatusUnknownError" - e o VAD do pyannote, que o
+    whisperx roda na GPU quando o Whisper está nela, usa as duas: a geração
+    caía no alinhamento (RX 6800 XT, 25/11/2026). Com o MIOpen desligado a
+    mesma instance_norm bate com a CPU (diferença máxima 9,5e-07). É o mesmo
+    que o ComfyUI-Zluda faz em AMD (comfy/zluda.py).
+
+    USKMAKER_ENABLE_MIOPEN=1 mantém o MIOpen (para testar um ROCm mais novo).
+    Só vale neste processo: o Demucs roda em subprocesso, e lá o MIOpen
+    funcionou (nenhuma das camadas que quebram).
+    """
+    global _MIOPEN_DISABLED
+    if (platform or sys.platform) != "win32":
+        return False
+    if not getattr(getattr(torch, "version", None), "hip", None):
+        return False
+    if os.environ.get("USKMAKER_ENABLE_MIOPEN") == "1":
+        return False
+    torch.backends.cudnn.enabled = False
+    _MIOPEN_DISABLED = True
+    return True
+
+
 def resolve_device(requested: str) -> str:
     """
     Decide o device REAL de processamento. "cpu" é sempre respeitado; "cuda"
@@ -211,6 +279,9 @@ def resolve_device(requested: str) -> str:
     próprio torch usa pra emitir o aviso "supports CUDA capabilities sm_XX...";
     comparamos a capacidade REAL da placa contra ela antes de decidir "cuda".
     """
+    # GPU AMD no Windows: o OpenMP precisa estar liberado ANTES do 1º import
+    # do torch (ver _prepare_amd_windows_runtime). No-op em qualquer outro caso.
+    _prepare_amd_windows_runtime()
     if requested == "cpu":
         return "cpu"
     try:
@@ -226,6 +297,7 @@ def resolve_device(requested: str) -> str:
             # o torch consegue rodar (usando PTX JIT se a placa não estiver explícita na lista, ex: sm_89).
             # O erro "no kernel image" só ocorre em placas MAIS ANTIGAS que o min_arch (ex: sm_50 < sm_61).
             if sm_val >= min_arch:
+                _disable_miopen_on_windows_hip(torch)
                 return "cuda"
             
             print(t("main.gpu_too_old", cap=f"{major}{minor}", min_arch=min_arch,
@@ -1025,6 +1097,8 @@ def run_pipeline(
     requested_device = device
     device = resolve_device(device)
     debug_log(f"Device solicitado={requested_device!r} -> efetivo={device!r}")
+    if _MIOPEN_DISABLED:
+        debug_log("ROCm no Windows: MIOpen desligado (torch.backends.cudnn.enabled = False)")
 
     # Põe o ffmpeg embutido no PATH ANTES da Etapa 4: o whisperx.load_audio e o
     # pyannote chamam "ffmpeg" cru por subprocess, sem passar pelo ffmpeg_exe().

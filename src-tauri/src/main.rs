@@ -984,7 +984,7 @@ struct EnvCheck {
     ffmpeg_ok: bool,
     /// libvorbis é necessário para gerar o .ogg do pacote
     vorbis_ok: bool,
-    /// nome da GPU (NVIDIA, ou AMD no Linux), ou None = processamento em CPU (bem mais lento)
+    /// nome da GPU (NVIDIA, ou AMD), ou None = processamento em CPU (bem mais lento)
     gpu_name: Option<String>,
     /// "nvidia" | "amd" - a interface usa para falar CUDA ou ROCm
     gpu_vendor: Option<String>,
@@ -995,7 +995,8 @@ struct EnvCheck {
 /// O `nvidia-smi` só enxerga NVIDIA; com torch ROCm uma GPU AMD roda o Demucs
 /// e o alinhamento, mas o app mostrava "sem GPU NVIDIA". Procura no sysfs uma
 /// placa de vídeo com vendor 0x1002 (AMD) e pega o nome pelo `lspci`; sem
-/// lspci, fica um nome genérico. Só Linux: o torch ROCm não existe no Windows.
+/// lspci, fica um nome genérico. No Windows quem faz isso é
+/// `detect_amd_gpu_windows`.
 #[cfg(target_os = "linux")]
 fn detect_amd_gpu() -> Option<String> {
     let mut cards: Vec<_> = std::fs::read_dir("/sys/class/drm")
@@ -1040,6 +1041,41 @@ fn amd_name_from_lspci(line: &str) -> Option<String> {
         .and_then(|i| device[i + 1..].strip_suffix(']'))
         .unwrap_or(device);
     Some(format!("AMD {marketing}"))
+}
+
+/// Nome de uma GPU AMD dedicada no Windows, para o status de ambiente - o
+/// mesmo papel do `detect_amd_gpu` do Linux.
+///
+/// Desde que o setup instala o torch ROCm para Radeon RX 6000/7000/9000 no
+/// Windows, a GPU AMD roda o pipeline, mas o `nvidia-smi` não a enxerga e o
+/// app mostrava "sem GPU" com a geração na placa (RX 6800 XT, 25/11/2026).
+/// Lê o Win32_VideoController por um PowerShell oculto (~0,5 s, só quando
+/// não há NVIDIA) e com limite de tempo: falhar aqui só deixa o chip como era.
+#[cfg(windows)]
+async fn detect_amd_gpu_windows() -> Option<String> {
+    const QUERY: &str = "Get-CimInstance Win32_VideoController | \
+Where-Object { $_.PNPDeviceID -like 'PCI\\VEN_1002*' } | ForEach-Object { $_.Name }";
+    let mut cmd = Command::new("powershell.exe");
+    cmd.args(["-NoProfile", "-NonInteractive", "-Command", QUERY]);
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let out = tokio::time::timeout(Duration::from_secs(8), cmd.output()).await.ok()?.ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    amd_name_from_video_controllers(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// Das placas AMD listadas pelo Windows (uma por linha), a DEDICADA: "Radeon
+/// RX", "Radeon PRO" ou "Radeon AI PRO". A integrada ("AMD Radeon(TM)
+/// Graphics", 780M...) não conta: o setup a deixa em CPU, e mostrá-la viraria
+/// um aviso "torch sem ROCm" falso.
+#[cfg(any(windows, test))]
+fn amd_name_from_video_controllers(text: &str) -> Option<String> {
+    let name = text.lines().map(str::trim).find(|l| {
+        let u = l.to_ascii_uppercase();
+        u.contains("RADEON RX ") || u.contains("RADEON PRO ") || u.contains("RADEON AI PRO ")
+    })?;
+    Some(if name.to_ascii_uppercase().starts_with("AMD") { name.to_string() } else { format!("AMD {name}") })
 }
 
 /// Confere se as bibliotecas do pipeline estão REALMENTE instaladas no venv.
@@ -1115,7 +1151,9 @@ async fn check_environment(app: tauri::AppHandle, lang: String) -> Result<EnvChe
     };
     #[cfg(target_os = "linux")]
     let amd_name = if nvidia_name.is_none() { detect_amd_gpu() } else { None };
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    let amd_name = if nvidia_name.is_none() { detect_amd_gpu_windows().await } else { None };
+    #[cfg(not(any(target_os = "linux", windows)))]
     let amd_name: Option<String> = None;
     let (gpu_name, gpu_vendor) = match (nvidia_name, amd_name) {
         (Some(n), _) => (Some(n), Some("nvidia".to_string())),
@@ -2335,6 +2373,7 @@ fn load_queue_file(path: String) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::amd_name_from_lspci;
+    use super::amd_name_from_video_controllers;
 
     #[test]
     fn linhas_suspeitas_seguem_o_criterio_da_revisao() {
@@ -2390,6 +2429,30 @@ mod tests {
     #[test]
     fn saida_vazia_do_lspci_nao_inventa_nome() {
         assert_eq!(amd_name_from_lspci(""), None);
+    }
+
+    #[test]
+    fn windows_pega_a_radeon_dedicada() {
+        // saída real do Win32_VideoController numa RX 6800 XT (25/11/2026)
+        assert_eq!(
+            amd_name_from_video_controllers("AMD Radeon RX 6800 XT\r\n").as_deref(),
+            Some("AMD Radeon RX 6800 XT")
+        );
+        // integrada listada antes da dedicada: fica a dedicada
+        let both = "AMD Radeon(TM) Graphics\r\nAMD Radeon RX 7800 XT\r\n";
+        assert_eq!(amd_name_from_video_controllers(both).as_deref(), Some("AMD Radeon RX 7800 XT"));
+        assert_eq!(
+            amd_name_from_video_controllers("AMD Radeon AI PRO R9700\n").as_deref(),
+            Some("AMD Radeon AI PRO R9700")
+        );
+    }
+
+    #[test]
+    fn windows_ignora_so_integrada_ou_nada() {
+        // só a integrada: o setup deixa em CPU, então não é "GPU" no chip
+        assert_eq!(amd_name_from_video_controllers("AMD Radeon(TM) Graphics\r\n"), None);
+        assert_eq!(amd_name_from_video_controllers("AMD Radeon 780M Graphics"), None);
+        assert_eq!(amd_name_from_video_controllers(""), None);
     }
 
     #[test]
