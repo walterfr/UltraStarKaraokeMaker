@@ -4,6 +4,12 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [Unreleased]
+
+### Fixed
+
+- **Auto-transcription and missing-lyrics detection with the "auto" model:** the app's default Whisper model is "auto", and these two steps passed it straight to faster-whisper, which rejects the name (`Invalid model size 'auto'`). Without lyrics (auto-transcription) generation failed; with lyrics, the missing-lyrics detection silently failed on every song (only visible in `pipeline_debug.log`). Both now resolve the Whisper model and device the way alignment already did (`whisper_for`).
+
 ## [2.9.0] - 2026-11-20
 
 ### Added

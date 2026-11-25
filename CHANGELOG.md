@@ -4,6 +4,12 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [Não lançado]
+
+### Corrigido
+
+- **Auto-transcrição e detecção de trechos faltantes com o modelo "auto":** o padrão do app para o modelo do Whisper é "auto", e essas duas etapas o passavam cru ao faster-whisper, que recusa o nome (`Invalid model size 'auto'`). Sem letra (auto-transcrição) a geração quebrava; com letra, a detecção de trechos faltantes falhava em silêncio em toda música (só no `pipeline_debug.log`). Agora as duas resolvem o modelo e o device do Whisper como o alinhamento já fazia (`whisper_for`).
+
 ## [2.9.0] - 2026-11-20
 
 ### Adicionado
