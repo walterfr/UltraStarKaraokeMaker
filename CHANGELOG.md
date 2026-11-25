@@ -4,6 +4,12 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [Unreleased]
+
+### Corrigido
+
+- **Configurar Ambiente de IA sem NVIDIA no Windows:** desde a v2.2.0 a etapa das dependências falhava em toda máquina sem placa NVIDIA (`Failed to parse: '-'`): o PowerShell entregava o pacote `audio-separator[cpu]` ao uv uma letra por argumento. Com NVIDIA não acontecia.
+
 ## [2.9.0] - 2026-11-20
 
 ### Adicionado
