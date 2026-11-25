@@ -618,6 +618,9 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   const clipboardRef = useRef<NoteClip<USNote> | null>(null);
   // as ações ficam em refs porque o mouse e o teclado chamam a versão atual
   const sliceAtRef = useRef<(idx: number, beat: number) => void>(() => {});
+  const sliceHoverMoveRef = useRef<
+    (canvas: HTMLCanvasElement, s: USSong, mx: number, my: number, hit: { idx: number } | null) => void
+  >(() => {});
   const tRef = useRef(t);
   tRef.current = t;
   // um undo por passe de gravação (play -> pausa), não um por nota
@@ -2212,18 +2215,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
       if (drag.kind === "none") {
         const hit = noteAt(mx, my);
         if (sliceModeRef.current && s) {
-          // ferramenta de corte: linha onde o clique vai cortar
-          const { start, pxPerSec } = viewRef.current;
-          const beat = (start + mx / pxPerSec - s.gap_ms / 1000) / beatDuration(s);
-          const cut = hit && my > RULER_H + WAVE_H ? sliceBeat(s.notes[hit.idx], beat) : null;
-          const hover = hit && cut !== null ? { idx: hit.idx, beat: cut } : null;
-          const prev = sliceHoverRef.current;
-          if (prev?.idx !== hover?.idx || prev?.beat !== hover?.beat) {
-            sliceHoverRef.current = hover;
-            draw();
-          }
-          canvas.style.cursor =
-            my <= RULER_H + WAVE_H ? "text" : hover ? "crosshair" : hit ? "not-allowed" : "default";
+          sliceHoverMoveRef.current(canvas, s, mx, my, hit);
           return;
         }
         canvas.style.cursor =
@@ -2373,20 +2365,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
         redo();
         return;
       }
-      // Ctrl (Cmd no Mac) + C/X/V/D/E: edição estilo DAW. Só segura a tecla
-      // quando há o que copiar/colar - senão o atalho do sistema segue normal.
-      if ((e.ctrlKey || e.metaKey) && !e.altKey) {
-        const k = e.key.toLowerCase();
-        const handled =
-          k === "c" ? copySelection()
-          : k === "x" ? cutSelection()
-          : k === "v" ? pasteAtPlayhead()
-          : k === "d" ? duplicateSelection()
-          : k === "e" ? sliceAtPlayhead()
-          : false;
-        if (handled || k === "d" || k === "e") e.preventDefault();
-        if (["c", "x", "v", "d", "e"].includes(k)) return;
-      }
+      if (handleEditKey(e)) return;
       if (e.key.toLowerCase() === "n") {
         e.preventDefault();
         addNote();
@@ -2411,16 +2390,6 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
       if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === "t") {
         e.preventDefault();
         toggleClick();
-        return;
-      }
-      if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        toggleSliceMode();
-        return;
-      }
-      if (e.key === "Escape" && sliceModeRef.current) {
-        e.preventDefault();
-        toggleSliceMode();
         return;
       }
       if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === "l") {
@@ -2794,6 +2763,56 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     selectNotes(placed);
     return true;
   }
+
+  /**
+   * Atalhos da edição estilo DAW; devolve true se a tecla foi usada. Ctrl (Cmd
+   * no Mac) + C/X/V/D/E, e S / Esc para a ferramenta de corte. Ctrl+C/V só
+   * seguram a tecla quando há o que copiar/colar - senão o atalho do sistema
+   * segue normal. Fica fora do onKeyDown para ele não crescer mais.
+   */
+  function handleEditKey(e: KeyboardEvent): boolean {
+    const k = e.key.toLowerCase();
+    const plain = !e.ctrlKey && !e.altKey && !e.metaKey;
+    if (plain && k === "s") {
+      e.preventDefault();
+      toggleSliceMode();
+      return true;
+    }
+    if (e.key === "Escape" && sliceModeRef.current) {
+      e.preventDefault();
+      toggleSliceMode();
+      return true;
+    }
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return false;
+    const actions: Record<string, () => boolean> = {
+      c: copySelection,
+      x: cutSelection,
+      v: pasteAtPlayhead,
+      d: duplicateSelection,
+      e: sliceAtPlayhead,
+    };
+    const action = actions[k];
+    if (!action) return false;
+    // Ctrl+D (favorito) e Ctrl+E (busca) nunca vão para o navegador
+    if (action() || k === "d" || k === "e") e.preventDefault();
+    return true;
+  }
+
+  /** Ferramenta de corte: linha onde o clique vai cortar e o cursor certo. */
+  function moveSliceHover(canvas: HTMLCanvasElement, s: USSong, mx: number, my: number, hit: { idx: number } | null) {
+    const inLanes = my > RULER_H + WAVE_H;
+    const { start, pxPerSec } = viewRef.current;
+    const beat = (start + mx / pxPerSec - s.gap_ms / 1000) / beatDuration(s);
+    const cut = hit && inLanes ? sliceBeat(s.notes[hit.idx], beat) : null;
+    const hover = hit && cut !== null ? { idx: hit.idx, beat: cut } : null;
+    const prev = sliceHoverRef.current;
+    if (prev?.idx !== hover?.idx || prev?.beat !== hover?.beat) {
+      sliceHoverRef.current = hover;
+      draw();
+    }
+    canvas.style.cursor = !inLanes ? "text" : hover ? "crosshair" : hit ? "not-allowed" : "default";
+  }
+  sliceHoverMoveRef.current = moveSliceHover;
 
   function toggleSliceMode() {
     const next = !sliceModeRef.current;
