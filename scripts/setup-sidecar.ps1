@@ -186,7 +186,10 @@ if (-not $hasNvidia) {
         $amdGpuName = Get-CimInstance Win32_VideoController -ErrorAction Stop |
             Where-Object { $_.PNPDeviceID -like 'PCI\VEN_1002*' -and $_.Name -match 'Radeon (RX|PRO|AI PRO) ' } |
             Select-Object -ExpandProperty Name -First 1
-    } catch { }
+    } catch {
+        # sem a lista de placas o setup segue pelo caminho da CPU
+        Write-Verbose "falha ao consultar Win32_VideoController: $_"
+    }
     if ($amdGpuName) { $rocmFamily = Get-RocmFamily $amdGpuName }
     if ($env:USKMAKER_ROCM_FAMILY) {
         $rocmFamily = if ($env:USKMAKER_ROCM_FAMILY -eq 'cpu') { $null } else { $env:USKMAKER_ROCM_FAMILY }
