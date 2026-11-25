@@ -4,6 +4,16 @@ All notable changes to USKMaker. *(Português: [CHANGELOG.md](CHANGELOG.md))*
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [Unreleased]
+
+### Added
+
+- **MIDI keyboard in the Review:**
+  - New "🎹 MIDI keyboard" button connects every MIDI input (Web MIDI; keyboards plugged in later are picked up too). The held key lights up on the piano strip and shows as a band at its pitch across the notes, to compare it with the note under the playhead.
+  - "🔊 Hear keys" plays the keys through the synth over the song, to find the melody by ear.
+  - "⏺ Record" (shortcut `R`): while the song plays, each note takes the pitch of the key held during it. The key held longest within the note wins, so a press a little early or late, or a sloppy legato, does not move the neighbour's pitch. Timing does not change, only pitch; freestyle notes are skipped; each recording pass is a single `Ctrl+Z`.
+- **Metronome click in the Review** ("🥁 Click", shortcut `C`, off by default): a click on each beat during playback, at the `#BPM` tempo (folded into 70-180 per minute) and lined up with the song's attacks, measured from the decoded audio, since `#GAP` is where the first note starts, not a downbeat.
+
 ## [2.9.0] - 2026-11-20
 
 ### Added

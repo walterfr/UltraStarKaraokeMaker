@@ -3,6 +3,20 @@ import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { PitchDetector } from "pitchy";
 import { MIC_GAP_S, pushMicSample, type MicSample } from "./micPitch";
+import {
+  HeldKeys,
+  KeySynth,
+  PitchRecorder,
+  clickPeriodSec,
+  clickTimesBetween,
+  estimateBeatPhase,
+  midiSupported,
+  midiToPitch,
+  onsetEnvelope,
+  openMidiInputs,
+  scheduleClick,
+  type MidiEvent,
+} from "./midiKeyboard";
 import { countLines, lineOf, nextSuspectLine, suspectLines, type LineRange } from "./suspectLines";
 import { useI18n } from "../i18n";
 import LyricTimingPanel from "./LyricTimingPanel";
@@ -486,6 +500,33 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   const synthNodesRef = useRef<{ osc: OscillatorNode; gain: GainNode } | null>(null);
   const activeSynthPitchRef = useRef<number | null>(null);
 
+  // Teclado MIDI (midiKeyboard.ts): ouvir as teclas por cima da música e
+  // gravar o pitch das notas tocando junto. Por sessão, como o microfone -
+  // pedir acesso ao MIDI sozinho ao reabrir a tela seria intrusivo.
+  const midiAvailable = midiSupported();
+  const [midiEnabled, setMidiEnabled] = useState(false);
+  const [midiDevices, setMidiDevices] = useState<string[]>([]);
+  const [midiError, setMidiError] = useState<string | null>(null);
+  const [hearKeys, setHearKeys] = useState(true);
+  const hearKeysRef = useRef(true);
+  const [recording, setRecording] = useState(false);
+  const recordingRef = useRef(false);
+  const [heldLabel, setHeldLabel] = useState<string | null>(null);
+  const heldKeysRef = useRef(new HeldKeys());
+  const keySynthRef = useRef<KeySynth | null>(null);
+  const recorderRef = useRef(new PitchRecorder());
+  // um undo por passe de gravação (play -> pausa), não um por nota
+  const recordUndoTakenRef = useRef(false);
+  const midiCleanupRef = useRef<(() => void) | null>(null);
+  // Clique do metrônomo: agendado no relógio do BufferPlayer, um pouco à frente
+  const [clickEnabled, setClickEnabled] = useState(false);
+  const clickEnabledRef = useRef(false);
+  const decodedRef = useRef<AudioBuffer | null>(null);
+  const clickGridRef = useRef<{ bpm: number; period: number; phase: number } | null>(null);
+  const clickScheduledUntilRef = useRef<number | null>(null);
+  const clickLastFrameRef = useRef<number | null>(null);
+  const scheduledClicksRef = useRef<OscillatorNode[]>([]);
+
   const PIANO_ROLL_W = 92;
 
   // Fecha o AudioContext do piano roll ao desmontar - sem isso, cada vez que
@@ -496,6 +537,8 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   useEffect(() => {
     return () => {
       micStreamRef.current?.getTracks().forEach((t) => t.stop());
+      midiCleanupRef.current?.();
+      keySynthRef.current?.allOff();
       try {
         synthNodesRef.current?.osc.stop();
         synthNodesRef.current?.osc.disconnect();
@@ -509,6 +552,9 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   multiSelectedRef.current = multiSelected;
   micEnabledRef.current = micEnabled;
   synthEnabledRef.current = synthEnabled;
+  hearKeysRef.current = hearKeys;
+  recordingRef.current = recording;
+  clickEnabledRef.current = clickEnabled;
 
   // Busca a versão aprovada assim que artista/título são conhecidos. Não
   // achar é o caso normal (a maioria das músicas nunca foi conferida), então
@@ -613,6 +659,8 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
       if (decoded) {
         player.setBuffer(decoded);
         audioRef.current = player;
+        decodedRef.current = decoded;
+        clickGridRef.current = null; // fase do clique é recalculada sobre o novo áudio
         peaksRef.current = { peaks: computePeaks(decoded, 8000), duration: decoded.duration };
         draw();
         return;
@@ -620,6 +668,8 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
 
       // reserva: <audio> (toca, com o relógio impreciso do Linux) e sem waveform
       peaksRef.current = null;
+      decodedRef.current = null;
+      clickGridRef.current = null;
       const keepTime = audioRef.current?.currentTime ?? 0;
       audioRef.current?.pause();
       const el = new Audio();
@@ -673,6 +723,9 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     },
     [pushHistory]
   );
+  // o loop de animação (gravação MIDI) chama o mutate atual por aqui
+  const mutateRef = useRef(mutate);
+  mutateRef.current = mutate;
 
   const undo = useCallback(() => {
     const s = songRef.current;
@@ -744,6 +797,21 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
 
     oscillator.start();
     oscillator.stop(ctx.currentTime + durationSec);
+  }, []);
+
+  // Contexto de áudio do piano roll (prévia de nota, microfone, teclas MIDI),
+  // criado sob demanda - o mesmo para todos, ver o comentário do toggleMic.
+  const ensurePianoAudio = useCallback((): AudioContext | null => {
+    const AudioContextClass =
+      window.AudioContext ||
+      (
+        window as typeof window & {
+          webkitAudioContext?: typeof AudioContext;
+        }
+      ).webkitAudioContext;
+    if (!AudioContextClass) return null;
+    if (!pianoAudioRef.current) pianoAudioRef.current = new AudioContextClass();
+    return pianoAudioRef.current;
   }, []);
 
   const toggleSynth = useCallback(() => {
@@ -907,6 +975,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
         pctx.fillRect(0, 0, pw, h);
 
         const selectedIndex = selectedRef.current;
+        const heldPitches = new Set(heldKeysRef.current.all.map(midiToPitch));
 
         const selectedPitch =
           selectedIndex !== null &&
@@ -928,10 +997,12 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
             );
 
           const isSelected = selectedPitch === p;
+          // tecla segurada no teclado MIDI: verde, por cima da seleção
+          const isHeld = heldPitches.has(p);
 
           // White/black piano key.
-          if (isSelected) {
-            pctx.fillStyle = "#ff8c00";
+          if (isSelected || isHeld) {
+            pctx.fillStyle = isHeld ? "#3ddc84" : "#ff8c00";
             pctx.fillRect(
               0,
               y,
@@ -939,7 +1010,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
               semitoneH
             );
 
-            pctx.strokeStyle = "#bd5f00";
+            pctx.strokeStyle = isHeld ? "#1f8a4c" : "#bd5f00";
             pctx.lineWidth = 2;
 
             pctx.strokeRect(
@@ -1117,6 +1188,18 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
       ctx.lineWidth = 1;
       ctx.fillRect(rx, ry, rw, rh);
       ctx.strokeRect(rx, ry, rw, rh);
+    }
+
+    // --- teclado MIDI: faixa na altura da tecla que vale agora ---
+    // (vermelha gravando, verde só tocando) - dá pra ver contra as notas se
+    // a tecla é a mesma da nota sob o playhead.
+    const heldNow = heldKeysRef.current.active;
+    if (heldNow !== null) {
+      const hp = midiToPitch(heldNow);
+      if (hp >= pMin && hp <= pMax) {
+        ctx.fillStyle = recordingRef.current ? "rgba(232, 85, 77, 0.2)" : "rgba(61, 220, 132, 0.16)";
+        ctx.fillRect(0, yOfPitch(hp), w, semitoneH);
+      }
     }
 
     // --- rastro do sing-along (mic), por cima das notas ---
@@ -1375,6 +1458,48 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     draw();
   }, [song, selected, draw]);
 
+  // ------------------------------------------------- teclado MIDI + clique
+  const cancelClicks = useCallback(() => {
+    for (const osc of scheduledClicksRef.current) {
+      try {
+        osc.stop();
+        osc.disconnect();
+      } catch {}
+    }
+    scheduledClicksRef.current = [];
+    clickScheduledUntilRef.current = null;
+    clickLastFrameRef.current = null;
+  }, []);
+
+  // Andamento do clique pelo #BPM; fase pelos ataques do áudio decodificado
+  // (o GAP é o início da 1ª nota, não um tempo forte). Sem buffer (reserva
+  // <audio>), cai no GAP. Recalcula só quando o BPM ou o áudio mudam.
+  const clickGridFor = useCallback((s: USSong) => {
+    const cached = clickGridRef.current;
+    if (cached && cached.bpm === s.bpm) return cached;
+    const period = clickPeriodSec(s.bpm);
+    let phase = isFinite(period) ? (((s.gap_ms / 1000) % period) + period) % period : 0;
+    const buf = decodedRef.current;
+    if (buf && isFinite(period)) {
+      const hop = Math.max(1, Math.round(buf.sampleRate * 0.01));
+      const env = onsetEnvelope(buf.getChannelData(0), buf.sampleRate, hop / buf.sampleRate);
+      phase = estimateBeatPhase(env, buf.sampleRate / hop, period);
+    }
+    const grid = { bpm: s.bpm, period, phase };
+    clickGridRef.current = grid;
+    return grid;
+  }, []);
+
+  // Pausou: fecha o passe de gravação (o próximo play abre outro undo) e
+  // descarta cliques já agendados.
+  useEffect(() => {
+    if (!playing) {
+      recorderRef.current.reset();
+      recordUndoTakenRef.current = false;
+      cancelClicks();
+    }
+  }, [playing, cancelClicks]);
+
   // loop de animação: acompanha o playhead durante o playback
   useEffect(() => {
     const tick = () => {
@@ -1476,13 +1601,58 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
           gain.gain.setTargetAtTime(0, gain.context.currentTime, 0.015);
           activeSynthPitchRef.current = null;
         }
+        // Teclado MIDI, gravando: a nota sob o playhead fica com o pitch da
+        // tecla que mais tempo ocupou ela (PitchRecorder). Só o pitch muda.
+        if (recordingRef.current && s) {
+          const key = heldKeysRef.current.active;
+          const change = recorderRef.current.step(
+            s.notes,
+            audio.currentTime,
+            key === null ? null : midiToPitch(key),
+            (b) => beatToSec(s, b)
+          );
+          if (change) {
+            const snapshot = !recordUndoTakenRef.current;
+            recordUndoTakenRef.current = true;
+            mutateRef.current((d) => {
+              d.notes[change.index].pitch = change.pitch;
+            }, snapshot);
+          }
+        }
+        // Clique do metrônomo: agenda no relógio do BufferPlayer os cliques
+        // dos próximos 150 ms. Salto de playhead (seek) descarta o agendado.
+        const player = playerRef.current;
+        if (clickEnabledRef.current && s && player && audioRef.current === player) {
+          const grid = clickGridFor(s);
+          const now = audio.currentTime;
+          const lastFrame = clickLastFrameRef.current;
+          if (lastFrame !== null && (now < lastFrame - 0.01 || now > lastFrame + 0.3)) cancelClicks();
+          clickLastFrameRef.current = now;
+          if (isFinite(grid.period)) {
+            const until = now + 0.15;
+            const from = clickScheduledUntilRef.current ?? now;
+            const ctx = player.context;
+            const latency = (ctx as AudioContext & { outputLatency?: number }).outputLatency || 0;
+            for (const c of clickTimesBetween(from, until, grid.period, grid.phase)) {
+              // `now` já é a posição OUVIDA; o clique também sai com a latência de saída
+              const when = ctx.currentTime + (c - now) - latency;
+              if (when < ctx.currentTime) continue;
+              const osc = scheduleClick(ctx, when);
+              scheduledClicksRef.current.push(osc);
+              osc.onended = () => {
+                scheduledClicksRef.current = scheduledClicksRef.current.filter((o) => o !== osc);
+              };
+            }
+            clickScheduledUntilRef.current = until;
+          }
+        }
         draw();
       }
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [draw]);
+  }, [draw, clickGridFor, cancelClicks]);
 
   // redesenho em resize da janela
   useEffect(() => {
@@ -1512,6 +1682,81 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     },
     [draw]
   );
+
+  // Tecla do teclado MIDI: segura/solta, toca no sintetizador se "ouvir
+  // teclas" estiver ligado e atualiza o realce. A gravação em si acontece no
+  // loop de animação, que lê heldKeysRef a cada quadro.
+  const onMidiEvent = useCallback(
+    (ev: MidiEvent) => {
+      const keys = heldKeysRef.current;
+      if (ev.kind === "on") {
+        keys.press(ev.note);
+        if (hearKeysRef.current) keySynthRef.current?.noteOn(ev.note, ev.velocity);
+      } else {
+        keys.release(ev.note);
+        keySynthRef.current?.noteOff(ev.note);
+      }
+      const active = keys.active;
+      setHeldLabel(active === null ? null : pitchName(midiToPitch(active)));
+      draw();
+    },
+    [draw]
+  );
+  // os listeners da Web MIDI são presos uma vez; chamam sempre o atual
+  const onMidiEventRef = useRef(onMidiEvent);
+  onMidiEventRef.current = onMidiEvent;
+
+  const toggleMidi = useCallback(async () => {
+    if (!midiAvailable) return;
+    if (midiEnabled) {
+      midiCleanupRef.current?.();
+      midiCleanupRef.current = null;
+      keySynthRef.current?.allOff();
+      heldKeysRef.current.clear();
+      setHeldLabel(null);
+      setRecording(false);
+      recordingRef.current = false;
+      setMidiDevices([]);
+      setMidiEnabled(false);
+      draw();
+      return;
+    }
+    setMidiError(null);
+    try {
+      if (!keySynthRef.current) keySynthRef.current = new KeySynth(ensurePianoAudio);
+      midiCleanupRef.current = await openMidiInputs((ev) => onMidiEventRef.current(ev), setMidiDevices);
+      setMidiEnabled(true);
+    } catch (e) {
+      setMidiError(t("midiPermissionDenied"));
+      console.error("requestMIDIAccess falhou:", e);
+    }
+  }, [midiAvailable, midiEnabled, draw, ensurePianoAudio, t]);
+
+  const toggleRecording = useCallback(() => {
+    if (!midiEnabled) return;
+    recorderRef.current.reset();
+    recordUndoTakenRef.current = false;
+    setRecording((prev) => {
+      recordingRef.current = !prev;
+      return !prev;
+    });
+  }, [midiEnabled]);
+
+  const toggleHearKeys = useCallback(() => {
+    setHearKeys((prev) => {
+      if (prev) keySynthRef.current?.allOff();
+      hearKeysRef.current = !prev;
+      return !prev;
+    });
+  }, []);
+
+  const toggleClick = useCallback(() => {
+    setClickEnabled((prev) => {
+      if (prev) cancelClicks();
+      clickEnabledRef.current = !prev;
+      return !prev;
+    });
+  }, [cancelClicks]);
 
   // Pula pra próxima linha suspeita depois da nota selecionada (sem seleção,
   // depois da nota sob o marcador de tempo): seleciona a 1ª nota da linha,
@@ -1931,6 +2176,16 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
         toggleSynth();
         return;
       }
+      if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === "r" && midiEnabled) {
+        e.preventDefault();
+        toggleRecording();
+        return;
+      }
+      if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        toggleClick();
+        return;
+      }
       if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === "l") {
         e.preventDefault();
         jumpToNextSuspectLine();
@@ -2063,7 +2318,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [togglePlay, undo, redo, mutate, playNote, draw, toggleMic, jumpToNextSuspectLine, confirmSelectedLine]);
+  }, [togglePlay, undo, redo, mutate, playNote, draw, toggleMic, jumpToNextSuspectLine, confirmSelectedLine, midiEnabled, toggleRecording, toggleClick]);
 
   // ------------------------------------------------------ ações pontuais
   // Generalização de deleteNote pra várias notas de uma vez (issue #11):
@@ -2479,7 +2734,53 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
         >
           {t("synthToggleLabel")}
         </button>
+        {midiAvailable && (
+          <button
+            className={midiEnabled ? "midi-on" : undefined}
+            onClick={() => void toggleMidi()}
+            title={t("midiToggleHint")}
+            aria-pressed={midiEnabled}
+          >
+            {t("midiToggleLabel")}
+          </button>
+        )}
+        {midiEnabled && (
+          <>
+            <button
+              className={hearKeys ? "midi-on" : undefined}
+              onClick={toggleHearKeys}
+              title={t("midiHearHint")}
+              aria-pressed={hearKeys}
+            >
+              {t("midiHearLabel")}
+            </button>
+            <button
+              className={recording ? "rec-on" : undefined}
+              onClick={toggleRecording}
+              title={t("midiRecordHint")}
+              aria-pressed={recording}
+            >
+              {recording ? t("midiRecordOn") : t("midiRecordLabel")}
+            </button>
+            <span className="field-hint" title={midiDevices.join("\n")}>
+              {heldLabel
+                ? t("midiHeld", { note: heldLabel })
+                : midiDevices.length > 0
+                  ? t("midiConnected", { n: midiDevices.length })
+                  : t("midiNoDevice")}
+            </span>
+          </>
+        )}
+        <button
+          className={clickEnabled ? "click-on" : undefined}
+          onClick={toggleClick}
+          title={t("clickHint")}
+          aria-pressed={clickEnabled}
+        >
+          {t("clickLabel")}
+        </button>
         {micError && <span className="field-hint">{micError}</span>}
+        {midiError && <span className="field-hint">{midiError}</span>}
         <span className="toolbar-sep" />
         <label className="inline-label">
           {t("revGap")}

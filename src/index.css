@@ -272,6 +272,19 @@ button.secondary {
   border-color: #38bdf8;
   background: rgba(56, 189, 248, 0.15);
 }
+.review-toolbar button.midi-on {
+  border-color: #3ddc84;
+  background: rgba(61, 220, 132, 0.15);
+}
+.review-toolbar button.rec-on {
+  border-color: #e8554d;
+  background: rgba(232, 85, 77, 0.25);
+  color: #ffb3ad;
+}
+.review-toolbar button.click-on {
+  border-color: #f0b573;
+  background: rgba(240, 181, 115, 0.15);
+}
 .toolbar-sep {
   width: 1px;
   height: 22px;

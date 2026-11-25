@@ -4,6 +4,16 @@ Todas as mudanças relevantes do USKMaker. *(English: [CHANGELOG.en.md](CHANGELO
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota o [Pride Versioning 0.3.0](https://pridever.org/) (`PROUD.DEFAULT.SHAME`).
 
+## [Não lançado]
+
+### Adicionado
+
+- **Teclado MIDI na Revisão:**
+  - Novo botão "🎹 Teclado MIDI" conecta todas as entradas MIDI (Web MIDI; teclado plugado depois também entra). A tecla segurada acende no piano e vira uma faixa na altura dela por cima das notas, para comparar com a nota sob o playhead.
+  - "🔊 Ouvir teclas" toca as teclas no sintetizador por cima da música, para achar a melodia de ouvido.
+  - "⏺ Gravar" (atalho `R`): com a música tocando, cada nota fica com o pitch da tecla segurada durante ela. Ganha a tecla que mais durou dentro da nota, então apertar um pouco antes ou depois, ou um legato desleixado, não muda o pitch da vizinha. O timing não muda, só o pitch; notas freestyle ficam de fora; cada passe de gravação é um único `Ctrl+Z`.
+- **Clique de metrônomo na Revisão** ("🥁 Clique", atalho `C`, desligado por padrão): um clique a cada tempo durante o playback, no andamento do `#BPM` (dobrado/dividido para 70-180 por minuto) e alinhado aos ataques da música, medidos no áudio decodificado, já que o `#GAP` é onde a 1ª nota começa, não um tempo forte.
+
 ## [2.9.0] - 2026-11-20
 
 ### Adicionado
