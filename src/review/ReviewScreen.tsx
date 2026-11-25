@@ -618,9 +618,9 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
   const clipboardRef = useRef<NoteClip<USNote> | null>(null);
   // as ações ficam em refs porque o mouse e o teclado chamam a versão atual
   const sliceAtRef = useRef<(idx: number, beat: number) => void>(() => {});
-  const sliceHoverMoveRef = useRef<
-    (canvas: HTMLCanvasElement, s: USSong, mx: number, my: number, hit: { idx: number } | null) => void
-  >(() => {});
+  const hoverCursorRef = useRef<(canvas: HTMLCanvasElement, s: USSong | null, mx: number, my: number) => void>(
+    () => {}
+  );
   const tRef = useRef(t);
   tRef.current = t;
   // um undo por passe de gravação (play -> pausa), não um por nota
@@ -2213,13 +2213,7 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
 
       // cursor de feedback fora de drag
       if (drag.kind === "none") {
-        const hit = noteAt(mx, my);
-        if (sliceModeRef.current && s) {
-          sliceHoverMoveRef.current(canvas, s, mx, my, hit);
-          return;
-        }
-        canvas.style.cursor =
-          my <= RULER_H + WAVE_H ? "text" : hit ? (hit.onEdge ? "ew-resize" : "grab") : "default";
+        hoverCursorRef.current(canvas, s, mx, my);
         return;
       }
       if (!s) return;
@@ -2798,6 +2792,21 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     return true;
   }
 
+  /**
+   * Cursor fora de drag (texto na régua, redimensionar na borda, agarrar na
+   * nota) ou, com a ferramenta de corte, a linha de onde o clique vai cortar.
+   * Fica fora do onMouseMove para ele não crescer mais.
+   */
+  function updateHoverCursor(canvas: HTMLCanvasElement, s: USSong | null, mx: number, my: number) {
+    const hit = noteAt(mx, my);
+    if (sliceModeRef.current && s) {
+      moveSliceHover(canvas, s, mx, my, hit);
+      return;
+    }
+    canvas.style.cursor = my <= RULER_H + WAVE_H ? "text" : hit ? (hit.onEdge ? "ew-resize" : "grab") : "default";
+  }
+  hoverCursorRef.current = updateHoverCursor;
+
   /** Ferramenta de corte: linha onde o clique vai cortar e o cursor certo. */
   function moveSliceHover(canvas: HTMLCanvasElement, s: USSong, mx: number, my: number, hit: { idx: number } | null) {
     const inLanes = my > RULER_H + WAVE_H;
@@ -2812,7 +2821,6 @@ export default function ReviewScreen({ outDir, onClose, onSendToForm }: Props) {
     }
     canvas.style.cursor = !inLanes ? "text" : hover ? "crosshair" : hit ? "not-allowed" : "default";
   }
-  sliceHoverMoveRef.current = moveSliceHover;
 
   function toggleSliceMode() {
     const next = !sliceModeRef.current;
